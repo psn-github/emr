@@ -20,12 +20,20 @@ const session = (permissions: Role["permissions"], mfa: boolean): Session => ({
 });
 
 describe("Authorizer", () => {
-  it("allows when the permission is held and no MFA is required", async () => {
+  it("allows a non-PHI (scheduling) action without MFA — reception/front-desk", async () => {
+    const { audit } = setup();
+    const authz = new Authorizer(audit);
+    const r = await authz.authorize(session(["scheduling:appointment.book"], false), "scheduling:appointment.book");
+    expect(r.ok).toBe(true);
+    expect(await audit.entries()).toHaveLength(0); // no denial recorded
+  });
+
+  it("requires MFA for admin by default (PHI/privileged domain)", async () => {
     const { audit } = setup();
     const authz = new Authorizer(audit);
     const r = await authz.authorize(session(["admin:settings.read"], false), "admin:settings.read");
-    expect(r.ok).toBe(true);
-    expect(await audit.entries()).toHaveLength(0); // no denial recorded
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.detailKey).toBe("auth.mfa_required");
   });
 
   it("denies and audits when the permission is missing", async () => {
