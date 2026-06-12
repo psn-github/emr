@@ -21,6 +21,11 @@
     "@oxford/core": "workspace:*",
     "@oxford/audit": "workspace:*",
     "@oxford/crypto": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.38.3",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "@oxford/identity": "workspace:*"
   }
 }

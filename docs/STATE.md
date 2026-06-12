@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** Phase 0 — Foundation (in progress). Both gating modules done (audit + registry). Remaining: document store, notifications, then API wiring/DB.
-- **Last updated:** 2026-06-12 — patient & couple registry + marriage-verification gate + Civil-ID field encryption (PR 0.4).
+- **Last updated:** 2026-06-12 — registry + Postgres store + adversarial self-review (attacks b/c/d) (PR 0.4).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -39,8 +39,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## 2026-06-12 — Patient & couple registry + marriage-verification HARD GATE (PR 0.4)
 **Shipped:** `@oxford/crypto` — `KeyProvider` seam + `LocalKeyProvider` (AES-256-GCM with AAD field-binding; refuses to run in production), so Civil-ID field-level encryption is built/tested now (ADR-0012). `@oxford/registry` — `Person` (Arabic+English names; **Civil ID held only as an encrypted envelope**, plaintext never stored/logged/audited), `Couple` as the first-class clinical unit with **explicit husband/wife → own-gametes-only by construction** (no donor/surrogate field exists — ADR-0005), `MarriageVerification`, and `assertMayStartFertility` — **THE HARD GATE**, enforced server-side. `RegistryService`: registerPerson / createCouple (validates own-gametes roles) / verifyMarriage / canStartFertility / revealCivilId (audited sensitive export, value never recorded) / mergePersons (audited de-dup with couple-reference repointing). All mutations audited + emit domain events. **100% coverage** (crypto 6 + registry 22 tests), CI-enforced.
-**Changed:** added `crypto` to the platform tier in the boundary checker. Drizzle `registry` schema (person/couple/marriage_verification — encrypted Civil ID column, logical cross-refs, soft-delete only).
+**Changed:** added `crypto` to the platform tier in the boundary checker; boundary checker now skips test files (tests may legitimately span modules). Drizzle `registry` schema + forward-only migration `migrations/0001_registry.sql`; **Postgres-backed `PgRegistryStore`** (Civil ID persisted as encrypted envelope only; soft-delete only).
 **Decisions:** implements ADR-0005 (donor/surrogacy structurally absent) + ADR-0012 (KeyProvider seam).
+**Adversarial self-review (pre-merge, against real Postgres — attacks b, c, d):** actual test output:
+- `[attack b] start fertility, NO marriage record → REJECTED (registry.marriage.unverified)`; verified couple → `ALLOWED`. The fertility gate holds at the server-side enforcement path (the API route is a thin wrapper over `canStartFertility`), not the UI.
+- `[attack c] raw civil_id_enc at rest: v1.9lo1OEB/EVMVmPnC.g5Da…` · `contains plaintext Civil ID? NO (encrypted)`. Reading the column straight from Postgres yields only the AES-256-GCM envelope; the value is recoverable solely through the audited `revealCivilId` path.
+- `[attack d] non-embryology role → embryology:lab.read: DENIED (auth.forbidden)`; embryologist → `ALLOWED`. Deny-by-default holds across permission domains.
+- All attacks fail as required; module coverage remains 100% → cleared to merge.
 **Open / needs product owner:** the real in-region KMS slots in behind `KeyProvider` after the residency review; marital-status-change → specimen disposition workflow is a docs/03 `[CONFIRM]` item for the cryostore phase (couple `dissolved` status is modelled, the disposition workflow is not — correctly deferred).
 **Next:** PR 0.5 — versioned, access-controlled, OCR-indexed document store (consent forms, ID scans, marriage certificates, external reports); then PR 0.6 notifications.
 
