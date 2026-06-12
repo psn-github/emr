@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (in progress). Both gating modules done (audit + registry). Remaining: document store, notifications, then API wiring/DB.
-- **Last updated:** 2026-06-12 — patient & couple registry + marriage-verification gate + Civil-ID field encryption (PR 0.4).
+- **Phase:** Phase 0 — Foundation (in progress). Gating modules + document store done. Remaining: notifications (PR 0.6), then API/DB wiring + e2e.
+- **Last updated:** 2026-06-12 — versioned, access-controlled, OCR-indexed document store (PR 0.5).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — Versioned, access-controlled, OCR-indexed document store (PR 0.5)
+**Shipped:** `@oxford/documents` — `DocumentService` with append-only versioning (consent forms, ID scans, marriage certificates, external reports), `OcrProvider` seam (+ `NoopOcrProvider`) feeding a searchable index, and an `AccessGuard` seam so reads are RBAC-gated **without** documents depending on the identity module (platform→domain forbidden). create / addVersion / access (audited READ_EXPORT, denial not audited as a read — the Authorizer audits it) / softDelete / search (OCR text, access-filtered). Blobs live in encrypted in-region storage — only refs are stored. **100% coverage** (11 tests), CI-enforced.
+**Changed:** Drizzle `documents` schema (document, document_version — append-only versions, soft-delete).
+**Decisions:** none new (the OcrProvider follows the seam pattern of ADR-0011/0012; real OCR provider is residency-reviewed before wiring).
+**Open / needs product owner:** real OCR provider + object storage are residency-reviewed before wiring (docs/03 §4).
+**Next:** PR 0.6 — notification service (SMS/WhatsApp/email, provider-abstracted, bilingual, discreet, audit-logged), then API/DB wiring (Postgres-backed stores, tRPC/REST routes, BullMQ chain-integrity cron) + the e2e proving the exit gate end-to-end.
 
 ## 2026-06-12 — Patient & couple registry + marriage-verification HARD GATE (PR 0.4)
 **Shipped:** `@oxford/crypto` — `KeyProvider` seam + `LocalKeyProvider` (AES-256-GCM with AAD field-binding; refuses to run in production), so Civil-ID field-level encryption is built/tested now (ADR-0012). `@oxford/registry` — `Person` (Arabic+English names; **Civil ID held only as an encrypted envelope**, plaintext never stored/logged/audited), `Couple` as the first-class clinical unit with **explicit husband/wife → own-gametes-only by construction** (no donor/surrogate field exists — ADR-0005), `MarriageVerification`, and `assertMayStartFertility` — **THE HARD GATE**, enforced server-side. `RegistryService`: registerPerson / createCouple (validates own-gametes roles) / verifyMarriage / canStartFertility / revealCivilId (audited sensitive export, value never recorded) / mergePersons (audited de-dup with couple-reference repointing). All mutations audited + emit domain events. **100% coverage** (crypto 6 + registry 22 tests), CI-enforced.

@@ -68,6 +68,18 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/documents:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4
+
   packages/i18n:
     dependencies:
       '@oxford/core':
