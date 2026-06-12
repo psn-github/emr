@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (in progress). Scaffold + audit spine landing; registry + auth next on the critical path.
-- **Last updated:** 2026-06-12 — audit subsystem + Postgres-backed store + adversarial self-review (PR 0.1).
+- **Phase:** Phase 0 — Foundation (merge train in progress). Scaffold + audit + auth/RBAC merged/landing; i18n/RTL + registry next.
+- **Last updated:** 2026-06-12 — auth + RBAC + MFA-domain policy (ADR-0013) + OCI provisional host (ADR-0014) (PR 0.2).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — Auth (OIDC relying-party seam) + deny-by-default RBAC (PR 0.2)
+**Shipped:** `@oxford/identity` — permission model namespaced by domain (clinical/embryology/financial/hr/admin) with `<domain>:<action>` + `<domain>:*` + `*:*` matching; `can()` deny-by-default authorization; `Authorizer` server-side enforcement point (MFA step-up required for clinical/financial by default, configurable) that writes every denial to the audit log; `AuthService` that verifies a token via the OIDC seam, maps claims→staff/roles, and audits LOGIN / LOGIN_FAILED; `OidcProvider` interface + `DevOidcProvider` (refuses to run in production); Drizzle schema (`identity`: staff, role, role_assignment — cross-module refs as logical ids, not DB FKs). **100% coverage** (24 tests), CI-enforced.
+**Changed:** security events (LOGIN/LOGIN_FAILED/PERMISSION_DENIED) now flow into the PR 0.1 audit chain. Added non-PHI `scheduling` permission domain; MFA now required by default for all PHI domains (clinical/embryology/financial/hr/admin) via `DEFAULT_MFA_REQUIRED_DOMAINS`, sourced as configuration and injected (not hardcoded).
+**Decisions:** ADR-0011 (OIDC RP seam); **ADR-0013** (MFA required for all PHI domains; reception password+device-trust on `scheduling` only, auto-escalates to MFA on any PHI permission; domain→MFA mapping is configuration); **ADR-0014** (Oracle Cloud Kuwait provisional production target + OCI Vault as production KeyProvider — provisional, gated on residency review; host-touching code is config-swappable).
+**Open / needs product owner:** [CONFIRM] exact reception capability list (ADR-0013); OCI Kuwait + KMS pending the formal docs/03 residency review and sign-off (ADR-0014) — no real PHI until then.
+**Next:** PR 0.3 — i18n/RTL framework (en/ar) + Oxford design-system UI shell; zero hardcoded strings, RTL tested.
 
 ## 2026-06-12 — Immutable, hash-chained audit + domain-event subsystem (PR 0.1)
 **Shipped:** `@oxford/audit` — generic append-only `HashChainLog` with SHA-256 link hashing over canonical payloads (binds prevHash + seq + occurredAt + payload, so reorder/back-date/edit all break the chain); `AuditLog` (who/what/when/before/after; CREATE/UPDATE/SOFT_DELETE/RESTORE/READ_EXPORT/LOGIN/LOGIN_FAILED/PERMISSION_DENIED) and `DomainEventLog`; `ChainStore` interface + `InMemoryChainStore`; `verifyChain` tamper detector (seq-out-of-order / prev-hash-mismatch / hash-mismatch); `runChainIntegrityCheck` scheduled-job function. **100% coverage** (CI-enforced via the package's own threshold).
