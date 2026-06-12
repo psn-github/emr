@@ -20,11 +20,35 @@ describe("notification templates", () => {
     expect(() => assertCatalogComplete(notificationMessages)).not.toThrow();
   });
 
-  it("previews are discreet (no clinically explicit content)", () => {
+  it("every template in every locale is discreet (no clinically explicit content)", () => {
+    // English and Arabic forbidden terms — IVF/embryo must never appear (docs/03 §5).
+    const forbiddenEn = /embryo|pregnan|IVF|ICSI|sperm|oocyte|follicl|fertil/i;
+    const forbiddenAr = /جنين|أطفال الأنابيب|حيوان منوي|بويضة|إخصاب|خصوب/;
     for (const locale of ["en", "ar"] as const) {
-      const body = notificationMessages[locale]["notif.results.ready.body"]!;
-      expect(body).not.toMatch(/embryo|pregnan|IVF|ICSI|sperm|oocyte/i);
+      for (const [key, body] of Object.entries(notificationMessages[locale])) {
+        expect(body, `${locale}/${key}`).not.toMatch(forbiddenEn);
+        expect(body, `${locale}/${key}`).not.toMatch(forbiddenAr);
+      }
     }
+  });
+
+  it("ships the agreed starter template set (7 templates)", () => {
+    const ids = new Set(
+      Object.keys(notificationMessages.en)
+        .filter((k) => k.endsWith(".body"))
+        .map((k) => k.replace(/^notif\./, "").replace(/\.body$/, "")),
+    );
+    expect(ids).toEqual(
+      new Set([
+        "appointment.reminder",
+        "monitoring.next_step",
+        "results.ready",
+        "payment.due",
+        "discharge.prescription_ready",
+        "consent.awaiting_signature",
+        "message.secure",
+      ]),
+    );
   });
 });
 
