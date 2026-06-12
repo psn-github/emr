@@ -5,6 +5,7 @@ export type { ChainRecord, ChainBreak, ChainBreakReason } from "./chain.js";
 export { linkRecord, verifyChain } from "./chain.js";
 export type { ChainStore } from "./store.js";
 export { InMemoryChainStore } from "./store.js";
+export { PgAuditChainStore } from "./pg-store.js";
 export { HashChainLog } from "./log.js";
 export { AuditLog } from "./audit-log.js";
 export { DomainEventLog } from "./event-log.js";

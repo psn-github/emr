@@ -9,6 +9,11 @@ export const PERMISSION_DOMAINS = [
   "financial",
   "hr",
   "admin",
+  // Non-PHI front-desk domain (booking, check-in). Reception roles limited to
+  // this may authenticate with password + device trust (no MFA). The moment a
+  // role is granted any PHI-domain permission (clinical/embryology/financial/
+  // hr/admin), MFA is required for those actions — see ADR-0013.
+  "scheduling",
 ] as const;
 export type PermissionDomain = (typeof PERMISSION_DOMAINS)[number];
 
