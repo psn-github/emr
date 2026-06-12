@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (in progress). Scaffold landing; audit + registry next on the critical path.
-- **Last updated:** 2026-06-12 — monorepo scaffold + stack ADRs (PR 0.0).
+- **Phase:** Phase 0 — Foundation (in progress). Scaffold + audit spine landing; registry + auth next on the critical path.
+- **Last updated:** 2026-06-12 — immutable hash-chained audit/event subsystem (PR 0.1).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — Immutable, hash-chained audit + domain-event subsystem (PR 0.1)
+**Shipped:** `@oxford/audit` — generic append-only `HashChainLog` with SHA-256 link hashing over canonical payloads (binds prevHash + seq + occurredAt + payload, so reorder/back-date/edit all break the chain); `AuditLog` (who/what/when/before/after; CREATE/UPDATE/SOFT_DELETE/RESTORE/READ_EXPORT/LOGIN/LOGIN_FAILED/PERMISSION_DENIED) and `DomainEventLog`; `ChainStore` interface + `InMemoryChainStore`; `verifyChain` tamper detector (seq-out-of-order / prev-hash-mismatch / hash-mismatch); `runChainIntegrityCheck` scheduled-job function. **100% coverage** (CI-enforced via the package's own threshold).
+**Changed:** added Drizzle schema (`audit` schema: `audit_log`, `domain_event` — append-only, hash-unique, prev-hash linked). No live migration yet — the Postgres-backed `ChainStore` + integration test land with DB infra wiring; unit gate runs on the pure logic + in-memory store.
+**Decisions:** no new ADRs (implements ADR-0003); follows ADR-0008 (Drizzle) for the schema.
+**Open / needs product owner:** none new. Postgres-backed store + advisory-lock serialization is the one deferred piece (tracked for the DB-infra step).
+**Next:** PR 0.2 — auth + deny-by-default RBAC (OIDC relying-party seam per ADR-0011), every audit-worthy security event flowing into this log.
 
 ## 2026-06-12 — Phase 0 kickoff: monorepo scaffold + locked stack ADRs (PR 0.0)
 **Shipped:** pnpm-workspace monorepo (`apps/{api,web,portal}`, `packages/core` + placeholders), TypeScript strict (no `any`), ESLint flat config, Prettier, Vitest workspace; `@oxford/core` shared primitives (Result, typed AppError, branded ids, injectable Clock, canonical JSON for audit hashing) at **100% coverage**; deterministic module-boundary checker (`scripts/check-boundaries.mjs`) and dependency-free secret scan (`scripts/secret-scan.mjs`); CI activated (`pnpm -r typecheck/lint/test/build` + module-boundaries + secret-scan now run for real, no longer a no-op).
