@@ -1,0 +1,24 @@
+{
+  "name": "@oxford/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@oxford/core": "workspace:*",
+    "@oxford/i18n": "workspace:*"
+  }
+}

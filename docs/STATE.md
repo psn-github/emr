@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (in progress). Scaffold + audit + auth/RBAC landing; i18n/RTL + registry next.
-- **Last updated:** 2026-06-12 — auth + deny-by-default RBAC (PR 0.2).
+- **Phase:** Phase 0 — Foundation (in progress). Scaffold + audit + auth + i18n/RTL landing; **registry (the other gating module)** next.
+- **Last updated:** 2026-06-12 — i18n/RTL framework + design-system foundation (PR 0.3).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — i18n/RTL framework (en/ar) + design-system foundation (PR 0.3)
+**Shipped:** `@oxford/i18n` — `I18n` translator (named-param interpolation; missing key throws rather than shipping an untranslated string), `directionFor`/`isRtl` (Arabic RTL, tested), Intl number + **dual-calendar Gregorian/Hijri (Umm al-Qura)** formatting (ar-KW / en-GB), catalog parity tools (`findMissingKeys`/`assertCatalogComplete`) that guarantee the "zero untranslated strings" exit-gate condition, bilingual `coreMessages` seed (en/ar at parity), Drizzle schema (`i18n`: translation_key, translation — versioned config). `@oxford/ui` — Oxford design tokens (Cormorant Garamond + DM Sans/Inter Tight, palette, spacing) and RTL helpers (`htmlDirAttributes` flips dir/lang; logical→physical side mapping). **100% coverage** (23 tests across both packages), CI-enforced.
+**Changed:** none to existing modules.
+**Decisions:** implements ADR-0004 (bilingual + RTL from commit one).
+**Open / needs product owner:** confirm exact Oxford palette hex against the brand guide (token names are stable; values are placeholders). React component library + the actual web shell that sets `<html dir/lang>` land in Phase 1 on this foundation.
+**Next:** PR 0.4 — patient & **couple** registry with the **marriage-verification hard gate** (the second gating module; must pass its tests before downstream), Civil-ID field-level encryption via the `KeyProvider` seam (ADR-0012), audited merge tooling.
 
 ## 2026-06-12 — Auth (OIDC relying-party seam) + deny-by-default RBAC (PR 0.2)
 **Shipped:** `@oxford/identity` — permission model namespaced by domain (clinical/embryology/financial/hr/admin) with `<domain>:<action>` + `<domain>:*` + `*:*` matching; `can()` deny-by-default authorization; `Authorizer` server-side enforcement point (MFA step-up required for clinical/financial by default, configurable) that writes every denial to the audit log; `AuthService` that verifies a token via the OIDC seam, maps claims→staff/roles, and audits LOGIN / LOGIN_FAILED; `OidcProvider` interface + `DevOidcProvider` (refuses to run in production); Drizzle schema (`identity`: staff, role, role_assignment — cross-module refs as logical ids, not DB FKs). **100% coverage** (24 tests), CI-enforced.
