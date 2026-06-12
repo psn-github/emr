@@ -3,7 +3,7 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (in progress). Both gating modules done (audit + registry). Remaining: document store, notifications, then API wiring/DB.
+- **Phase:** Phase 0 — Foundation (merge train in progress). Scaffold + audit + auth + i18n merged; registry (2nd gating module) landing; documents + notifications next.
 - **Last updated:** 2026-06-12 — registry + Postgres store + adversarial self-review (attacks b/c/d) (PR 0.4).
 
 ## How to use this file
@@ -53,21 +53,26 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 **Shipped:** `@oxford/i18n` — `I18n` translator (named-param interpolation; missing key throws rather than shipping an untranslated string), `directionFor`/`isRtl` (Arabic RTL, tested), Intl number + **dual-calendar Gregorian/Hijri (Umm al-Qura)** formatting (ar-KW / en-GB), catalog parity tools (`findMissingKeys`/`assertCatalogComplete`) that guarantee the "zero untranslated strings" exit-gate condition, bilingual `coreMessages` seed (en/ar at parity), Drizzle schema (`i18n`: translation_key, translation — versioned config). `@oxford/ui` — Oxford design tokens (Cormorant Garamond + DM Sans/Inter Tight, palette, spacing) and RTL helpers (`htmlDirAttributes` flips dir/lang; logical→physical side mapping). **100% coverage** (23 tests across both packages), CI-enforced.
 **Changed:** none to existing modules.
 **Decisions:** implements ADR-0004 (bilingual + RTL from commit one).
-**Open / needs product owner:** confirm exact Oxford palette hex against the brand guide (token names are stable; values are placeholders). React component library + the actual web shell that sets `<html dir/lang>` land in Phase 1 on this foundation.
+**Open / needs product owner:** palette now uses the **canonical om-software `PALETTE.md`** (Satoshi/Plus Jakarta Sans/Geist/Noto Sans Arabic; warm-neutral canvas + teal accent; fixed clinical/drug-class colours; clinical LTR exception) — this **conflicts with docs/02 §2** (Cormorant/DM Sans), logged as **AMD-0001**: confirm docs/02 §2 should be updated to match. React component library + the web shell that sets `<html dir/lang>` land in Phase 1 on this foundation.
 **Next:** PR 0.4 — patient & **couple** registry with the **marriage-verification hard gate** (the second gating module; must pass its tests before downstream), Civil-ID field-level encryption via the `KeyProvider` seam (ADR-0012), audited merge tooling.
 
 ## 2026-06-12 — Auth (OIDC relying-party seam) + deny-by-default RBAC (PR 0.2)
 **Shipped:** `@oxford/identity` — permission model namespaced by domain (clinical/embryology/financial/hr/admin) with `<domain>:<action>` + `<domain>:*` + `*:*` matching; `can()` deny-by-default authorization; `Authorizer` server-side enforcement point (MFA step-up required for clinical/financial by default, configurable) that writes every denial to the audit log; `AuthService` that verifies a token via the OIDC seam, maps claims→staff/roles, and audits LOGIN / LOGIN_FAILED; `OidcProvider` interface + `DevOidcProvider` (refuses to run in production); Drizzle schema (`identity`: staff, role, role_assignment — cross-module refs as logical ids, not DB FKs). **100% coverage** (24 tests), CI-enforced.
-**Changed:** security events (LOGIN/LOGIN_FAILED/PERMISSION_DENIED) now flow into the PR 0.1 audit chain.
-**Decisions:** implements ADR-0011 (self-hosted OIDC behind an RP seam; managed in-region IdP swappable later).
-**Open / needs product owner:** real OIDC provider + the staff↦role seed/admin UI land with DB wiring and Phase 1; MFA-required domain set is a config default to confirm with the clinic.
+**Changed:** security events (LOGIN/LOGIN_FAILED/PERMISSION_DENIED) now flow into the PR 0.1 audit chain. Added non-PHI `scheduling` permission domain; MFA now required by default for all PHI domains (clinical/embryology/financial/hr/admin) via `DEFAULT_MFA_REQUIRED_DOMAINS`, sourced as configuration and injected (not hardcoded).
+**Decisions:** ADR-0011 (OIDC RP seam); **ADR-0013** (MFA required for all PHI domains; reception password+device-trust on `scheduling` only, auto-escalates to MFA on any PHI permission; domain→MFA mapping is configuration); **ADR-0014** (Oracle Cloud Kuwait provisional production target + OCI Vault as production KeyProvider — provisional, gated on residency review; host-touching code is config-swappable).
+**Open / needs product owner:** [CONFIRM] exact reception capability list (ADR-0013); OCI Kuwait + KMS pending the formal docs/03 residency review and sign-off (ADR-0014) — no real PHI until then.
 **Next:** PR 0.3 — i18n/RTL framework (en/ar) + Oxford design-system UI shell; zero hardcoded strings, RTL tested.
 
 ## 2026-06-12 — Immutable, hash-chained audit + domain-event subsystem (PR 0.1)
 **Shipped:** `@oxford/audit` — generic append-only `HashChainLog` with SHA-256 link hashing over canonical payloads (binds prevHash + seq + occurredAt + payload, so reorder/back-date/edit all break the chain); `AuditLog` (who/what/when/before/after; CREATE/UPDATE/SOFT_DELETE/RESTORE/READ_EXPORT/LOGIN/LOGIN_FAILED/PERMISSION_DENIED) and `DomainEventLog`; `ChainStore` interface + `InMemoryChainStore`; `verifyChain` tamper detector (seq-out-of-order / prev-hash-mismatch / hash-mismatch); `runChainIntegrityCheck` scheduled-job function. **100% coverage** (CI-enforced via the package's own threshold).
-**Changed:** added Drizzle schema (`audit` schema: `audit_log`, `domain_event` — append-only, hash-unique, prev-hash linked). No live migration yet — the Postgres-backed `ChainStore` + integration test land with DB infra wiring; unit gate runs on the pure logic + in-memory store.
+**Changed:** Drizzle schema (`audit`: `audit_log`, `domain_event` — append-only, hash-unique, prev-hash linked) + forward-only migration `migrations/0001_audit.sql`; **Postgres-backed `PgAuditChainStore`** with advisory-lock-serialised appends (no UPDATE/DELETE paths).
 **Decisions:** no new ADRs (implements ADR-0003); follows ADR-0008 (Drizzle) for the schema.
-**Open / needs product owner:** none new. Postgres-backed store + advisory-lock serialization is the one deferred piece (tracked for the DB-infra step).
+**Adversarial self-review (pre-merge, against real Postgres — attack a):** actively attacked the audit log at rest in the database, bypassing the app, and confirmed the hash chain catches it. Actual test output:
+- `[attack a1] chain intact before attack: true`
+- `[attack a1] after tampering with seq 2 → verification: DETECTED (hash-mismatch @ seq 2)` — editing an invoice total directly in `audit.audit_log` is caught.
+- `[attack a2] after deleting seq 2 → verification: DETECTED (seq-out-of-order @ seq 3)` — deleting a row to hide it is caught.
+- No false positives: a genuinely intact chain still verifies. Pure-logic coverage remains 100%. Attacks fail as required → cleared to merge.
+**Open / needs product owner:** none new.
 **Next:** PR 0.2 — auth + deny-by-default RBAC (OIDC relying-party seam per ADR-0011), every audit-worthy security event flowing into this log.
 
 ## 2026-06-12 — Phase 0 kickoff: monorepo scaffold + locked stack ADRs (PR 0.0)
