@@ -24,8 +24,24 @@
 - **Documents involved:** docs/02 §2 vs the product-owner-supplied `PALETTE.md` (canonical om-software EMR design system)
 - **Issue:** docs/02 §2 specifies **Cormorant Garamond + DM Sans/Inter Tight** and an unspecified "Oxford palette". The product owner provided the canonical om-software design system, which instead uses **Satoshi (display) / Plus Jakarta Sans (body+UI) / Geist (data) / Noto Sans Arabic**, a warm-neutral canvas (`#F5F5F0`) with a single teal-green accent (`#2A7C6F`), and fixed semantic/clinical/drug-class colours — explicitly so the EMR and the existing clinical tools are one visual family.
 - **Proposed resolution:** adopt the canonical `PALETTE.md` (done — `@oxford/ui` tokens now carry these exact values) and **update docs/02 §2** to reference the canonical palette rather than Cormorant/DM Sans, so the architecture doc stops contradicting the design system. Token *names* in `@oxford/ui` stay stable regardless.
-- **Status:** open (implemented per explicit product-owner instruction "this is the palette to use"; docs/02 §2 text still needs the corresponding edit)
-- **Product-owner decision:** _pending — confirm docs/02 §2 should be updated to match._
+- **Status:** **approved** (product owner: the `PALETTE.md` is canonical, from the live om-software design system; docs/02 §2 + the design ADR updated to match; Cormorant/DM Sans reference superseded).
+- **Product-owner decision:** Approved 2026-06-12. Use Satoshi / Plus Jakarta Sans / Geist, teal accent, and the palette file's token values; keep token names stable. Recorded as ADR-0016.
+
+## AMD-0002 — Single-person fertility preservation (the marriage gate over-restricts)
+- **Date:** 2026-06-12
+- **Raised by:** product owner
+- **Type:** proposed-change (**approved**)
+- **Documents involved:** docs/03 §1, docs/01 §E3/§E6, docs/04 (data model), `@oxford/registry` gating
+- **Issue:** the spec gates **any** fertility workflow on a verified marriage. That over-restricts: fertility **preservation** for an unmarried individual is permitted.
+- **Resolution (approved):**
+  - The **marriage gate stays unchanged for treatment and embryo creation** — insemination, IUI, IVF/ICSI, embryo culture, embryo transfer, FET, and **embryo** storage all require a verified `Couple`.
+  - **Fertility preservation is permitted for unmarried individuals** — oocyte (and ovarian tissue) freezing for a single woman; sperm (and testicular tissue) freezing for a single man. **Person-scoped, not couple-scoped.**
+  - Data model: add a **fertility-preservation cycle type linked to a `Person`** (the only cycle type that may be person-scoped). `CryoSpecimen` ownership becomes **`person_id` OR `couple_id`**. Witnessing, chain-of-custody, consent-to-store, and storage-expiry tracking apply **identically** to person-owned specimens.
+  - **HARD INVARIANT (adversarially tested like the others):** person-owned stored gametes may **never** be used in treatment directly. Any **thaw-for-treatment** of a person-owned specimen requires, *at time of use*: (1) a verified `Couple` including that person, (2) marriage verification **current**, and (3) own-gametes-only resolution (her oocytes / his sperm within that marriage). Bypass attempts via the API must be rejected by the server (Phase 2 adversarial test).
+  - **No posthumous-use pathway exists. Do not build one.**
+  - **[CONFIRM WITH CLINIC LEGAL COUNSEL]** the exact permitted indications for single-woman oocyte freezing (medical preservation vs elective/social). Build the indication as a **configurable coded field** so clinic policy can restrict it without a code change.
+- **Status:** **approved** — recorded as ADR-0015. Spec edits: docs/03 §1 updated now; docs/01 §E3/§E6 + docs/04 detailed edits land with the Phase 2 cryostore/cycle build (the rule is authoritative via ADR-0015 + docs/03 §1 in the meantime).
+- **Product-owner decision:** Approved 2026-06-12.
 
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.
