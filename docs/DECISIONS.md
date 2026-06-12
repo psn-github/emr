@@ -102,4 +102,19 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** put key operations behind a **`KeyProvider` interface** (wrap/unwrap data keys, or encrypt/decrypt envelopes — KMS-shaped) with a **local development implementation** (a deterministic, clearly-labelled dev key, never used for real PHI). The Civil-ID field-level encryption path is built and unit-tested against this seam now; the real **in-region KMS** (Oracle Cloud Kuwait / approved CSP) is implemented behind the same interface after the review. The dev provider refuses to run where a production flag is set.
 - **Consequences:** the encryption code, key-rotation shape, and tests exist and are exercised in CI immediately; only the key-custody backend remains pending the review. Risk to manage: ensure the dev provider can never be selected in staging/production (guarded by config + a startup assertion). Pairs with ADR-0011's residency posture.
 
-_(Claude Code: continue numbering from ADR-0013.)_
+## ADR-0013 — MFA required for all PHI domains; reception is the only password-only domain; the mapping is configuration
+- **Date:** 2026-06-12
+- **Status:** accepted
+- **Context:** docs/02 §2 requires MFA for clinical/financial roles. The product owner widened this: MFA is required for **anyone who can read or write PHI, lab data, money, or staff records** — the `clinical`, `embryology`, `financial`, `hr`, and `admin` domains. Reception/front-desk roles limited to booking and check-in (no clinical-note read) may use **password + device trust**, but must **escalate to MFA the moment they are granted any PHI-domain permission**.
+- **Decision:** add a non-PHI **`scheduling`** permission domain for front-desk work. The MFA-required set = all domains **except** `scheduling` (`DEFAULT_MFA_REQUIRED_DOMAINS`). Because MFA is enforced per-domain at the point of authorization, a reception role that is later granted, say, `clinical:note.read` automatically requires MFA for that action — escalation is structural, not a separate rule. The domain→MFA mapping is **configuration, not code**: it lives in the versioned config table (docs/02 §1) and is injected into the `Authorizer`; the constant is only the default.
+- **Consequences:** least-privilege front-desk login without weakening PHI protection; the mapping can be tightened/loosened by authorised admins without a deploy. Risk to watch: ensure the `scheduling` domain never accretes PHI-bearing actions — any such action belongs in a PHI domain. **[CONFIRM with clinic]** the exact reception capability list before go-live.
+
+## ADR-0014 — Oracle Cloud Infrastructure (Kuwait region) as the provisional production target
+- **Date:** 2026-06-12
+- **Status:** proposed (provisional — pending the formal docs/03 residency review and product-owner sign-off)
+- **Context:** ADR-0007 established that production needs a genuine in-region (CITRA-permissible) host and that the DigitalOcean VPS is staging/synthetic-only. A concrete provisional target is needed so host-touching code (DB, KMS, object storage) is designed against it now.
+- **Options considered:** AWS Bahrain (in-GCC but not in-country), Oracle Cloud Kuwait (in-country region), other GCC CSPs. In-country residency is the strongest posture under CITRA.
+- **Decision:** **provisionally** target **Oracle Cloud Infrastructure, Kuwait region**: managed PostgreSQL for the database and **OCI Vault as the production `KeyProvider`** (behind the ADR-0012 seam). Everything host-touching (DB connection, KMS, object storage, Redis) is built so that switching to OCI is a **configuration change**, not a rewrite. This is **provisional**: it does **not** authorise loading real PHI anywhere until the docs/03 residency review is logged and the product owner signs off. The DO VPS remains staging/synthetic-only (ADR-0007, unchanged).
+- **Consequences:** gives a concrete in-region design target without committing PHI; if the review selects a different CSP, the seams (KeyProvider, DB config, storage) localise the change. Standing gate: no real PHI until review + sign-off.
+
+_(Claude Code: continue numbering from ADR-0015.)_

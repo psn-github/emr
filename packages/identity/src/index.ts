@@ -16,5 +16,5 @@ export {
 } from "./oidc.js";
 export type { Session, SubjectResolver } from "./session.js";
 export { AuthService } from "./auth-service.js";
-export { Authorizer, type AuthorizerOptions } from "./authorizer.js";
+export { Authorizer, DEFAULT_MFA_REQUIRED_DOMAINS, type AuthorizerOptions } from "./authorizer.js";
 export { identitySchema, staff, role, roleAssignment } from "./schema.js";
