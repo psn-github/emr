@@ -35,9 +35,34 @@ importers:
 
   apps/api:
     dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
       '@oxford/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@oxford/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
+      '@oxford/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
+      '@oxford/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
+      '@oxford/registry':
+        specifier: workspace:*
+        version: link:../../packages/registry
+      '@trpc/server':
+        specifier: ^11.0.0
+        version: 11.17.0(typescript@5.9.3)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
 
   apps/portal:
     dependencies:
@@ -528,6 +553,12 @@ packages:
     resolution: {integrity: sha512-X+zaP2x+j4RXGfbp/seSoRHWnPxzApilDszisZxbYH5C/jTxFhCtDNdPGZb9lJyYPs24wGxruPF7Y+sIXt9Gzw==}
     cpu: [x64]
     os: [win32]
+
+  '@trpc/server@11.17.0':
+    resolution: {integrity: sha512-jbAOUe0PpUTCYqziyu+8vYXZdDXPudZgnEhWCQ2NjKnVEjfE93RqHTt1oycZJv/HNf51YlRXfEEwSIAbb161rw==}
+    hasBin: true
+    peerDependencies:
+      typescript: '>=5.7.2'
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
@@ -1667,6 +1698,10 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.61.1':
     optional: true
+
+  '@trpc/server@11.17.0(typescript@5.9.3)':
+    dependencies:
+      typescript: 5.9.3
 
   '@types/estree@1.0.9': {}
 

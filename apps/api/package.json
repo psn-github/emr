@@ -10,6 +10,16 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@oxford/core": "workspace:*"
+    "@oxford/core": "workspace:*",
+    "@oxford/audit": "workspace:*",
+    "@oxford/identity": "workspace:*",
+    "@oxford/registry": "workspace:*",
+    "@oxford/crypto": "workspace:*",
+    "@oxford/i18n": "workspace:*",
+    "@trpc/server": "^11.0.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10"
   }
 }
