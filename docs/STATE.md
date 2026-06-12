@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation. **All six foundation modules built (PRs 0.0–0.6) and merged to `main`** (CI green per PR; two gating modules carry adversarial self-reviews against real Postgres). Remaining for the exit gate: integration wiring (tRPC/REST routes behind the auth middleware, BullMQ chain-integrity cron) + the cross-cutting e2e.
-- **Last updated:** 2026-06-12 — notification service + 7-template starter set (PR 0.6); Phase 0 modules merged bottom-up.
+- **Phase:** Phase 0 — Foundation **COMPLETE** (pending merge of the closeout PR). All six modules + integration wiring (Postgres-backed stores, forward-only migrations + runner, tRPC API behind the deny-by-default auth middleware, chain-integrity scheduler seam, destructive-migration guard) on `main`. Exit gate met and proven by a cross-cutting e2e through the API against real Postgres. **Awaiting product-owner go-ahead before Phase 1.**
+- **Last updated:** 2026-06-12 — Phase 0 closeout: API wiring + scheduler + migration-safety guard + cross-cutting e2e.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,14 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — Phase 0 closeout: integration wiring + cross-cutting e2e (PR 0.7)
+**Shipped:** `apps/api` composition — Postgres pool + **forward-only migration runner** (`runMigrations` applies every `packages/*/migrations/*.sql` once, recorded in `_meta.migrations`) + `migrate` CLI; `buildServices` wiring the **Postgres-backed** AuditLog (`PgAuditChainStore`) + RegistryService (`PgRegistryStore` + `LocalKeyProvider`) + Authorizer + i18n; **tRPC API behind the deny-by-default auth middleware** (`protectedProcedure(permission)` runs the Authorizer, audits denials) with `registry.*`, `fertility.startIntake` (the marriage gate at the API), and `embryology.read`; **chain-integrity scheduler** (`IntervalScheduler` + `chainIntegrityJob` — the seam; BullMQ/Redis is the production transport, ADR-0010); **`scripts/check-migrations-safe.mjs` + `Makefile`** — the destructive-migration guard `deploy.yml` invokes (`make check-migrations-safe`), now also a CI step.
+**Cross-cutting e2e (real Postgres, through the tRPC API):** in one flow — no-permission user denied + wrong-domain role denied; **fertility blocked without a verified marriage, allowed after** (the gate at the API, not the UI); audit chain records every mutation + denial and **verifies intact**; bilingual catalog complete (zero untranslated) + Arabic RTL. 149 tests green across the workspace.
+**Changed:** `apps/api` now depends on the domain/platform modules + `@trpc/server` + `pg`; CI gains a Migration-safety step.
+**Decisions:** implements ADR-0009 (tRPC surface) + ADR-0010 (scheduler seam).
+**Open / needs product owner:** thin REST/FHIR surface + real HTTP server + BullMQ transport + Postgres-backed domain-event store are the next increments (Phase 1 foundations); no PHI until the residency review (ADR-0006/0007/0014).
+**Next:** await go-ahead, then propose Phase 1 (Cliniko parity).
 
 ## 2026-06-12 — Notification service (provider-abstracted, bilingual, discreet) (PR 0.6)
 **Shipped:** `@oxford/notifications` — `NotificationService` renders templated, **bilingual** messages from the i18n catalog (no hardcoded strings; previews **discreet** — no clinically explicit content, docs/03 §5), sends via a pluggable `NotificationProvider` (SMS/WhatsApp/email; `RecordingNotificationProvider` for dev — real providers residency-reviewed before wiring), and audit-logs each dispatch as a `NotificationEvent` with **metadata only — never the recipient or rendered body** (no PHI in logs). Bilingual `notificationMessages` seed (en/ar at parity); Drizzle `notifications` schema. **100% coverage** (6 tests), CI-enforced.
