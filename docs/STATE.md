@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (merge train in progress). Scaffold + audit + auth merged; i18n/RTL landing; registry next.
-- **Last updated:** 2026-06-12 — i18n/RTL framework + canonical palette (PR 0.3).
+- **Phase:** Phase 0 — Foundation (merge train in progress). Scaffold + audit + auth + i18n merged; registry (2nd gating module) landing; documents + notifications next.
+- **Last updated:** 2026-06-12 — registry + Postgres store + adversarial self-review (attacks b/c/d) (PR 0.4).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,18 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — Patient & couple registry + marriage-verification HARD GATE (PR 0.4)
+**Shipped:** `@oxford/crypto` — `KeyProvider` seam + `LocalKeyProvider` (AES-256-GCM with AAD field-binding; refuses to run in production), so Civil-ID field-level encryption is built/tested now (ADR-0012). `@oxford/registry` — `Person` (Arabic+English names; **Civil ID held only as an encrypted envelope**, plaintext never stored/logged/audited), `Couple` as the first-class clinical unit with **explicit husband/wife → own-gametes-only by construction** (no donor/surrogate field exists — ADR-0005), `MarriageVerification`, and `assertMayStartFertility` — **THE HARD GATE**, enforced server-side. `RegistryService`: registerPerson / createCouple (validates own-gametes roles) / verifyMarriage / canStartFertility / revealCivilId (audited sensitive export, value never recorded) / mergePersons (audited de-dup with couple-reference repointing). All mutations audited + emit domain events. **100% coverage** (crypto 6 + registry 22 tests), CI-enforced.
+**Changed:** added `crypto` to the platform tier in the boundary checker; boundary checker now skips test files (tests may legitimately span modules). Drizzle `registry` schema + forward-only migration `migrations/0001_registry.sql`; **Postgres-backed `PgRegistryStore`** (Civil ID persisted as encrypted envelope only; soft-delete only).
+**Decisions:** implements ADR-0005 (donor/surrogacy structurally absent) + ADR-0012 (KeyProvider seam).
+**Adversarial self-review (pre-merge, against real Postgres — attacks b, c, d):** actual test output:
+- `[attack b] start fertility, NO marriage record → REJECTED (registry.marriage.unverified)`; verified couple → `ALLOWED`. The fertility gate holds at the server-side enforcement path (the API route is a thin wrapper over `canStartFertility`), not the UI.
+- `[attack c] raw civil_id_enc at rest: v1.9lo1OEB/EVMVmPnC.g5Da…` · `contains plaintext Civil ID? NO (encrypted)`. Reading the column straight from Postgres yields only the AES-256-GCM envelope; the value is recoverable solely through the audited `revealCivilId` path.
+- `[attack d] non-embryology role → embryology:lab.read: DENIED (auth.forbidden)`; embryologist → `ALLOWED`. Deny-by-default holds across permission domains.
+- All attacks fail as required; module coverage remains 100% → cleared to merge.
+**Open / needs product owner:** the real in-region KMS slots in behind `KeyProvider` after the residency review; marital-status-change → specimen disposition workflow is a docs/03 `[CONFIRM]` item for the cryostore phase (couple `dissolved` status is modelled, the disposition workflow is not — correctly deferred).
+**Next:** PR 0.5 — versioned, access-controlled, OCR-indexed document store (consent forms, ID scans, marriage certificates, external reports); then PR 0.6 notifications.
 
 ## 2026-06-12 — i18n/RTL framework (en/ar) + design-system foundation (PR 0.3)
 **Shipped:** `@oxford/i18n` — `I18n` translator (named-param interpolation; missing key throws rather than shipping an untranslated string), `directionFor`/`isRtl` (Arabic RTL, tested), Intl number + **dual-calendar Gregorian/Hijri (Umm al-Qura)** formatting (ar-KW / en-GB), catalog parity tools (`findMissingKeys`/`assertCatalogComplete`) that guarantee the "zero untranslated strings" exit-gate condition, bilingual `coreMessages` seed (en/ar at parity), Drizzle schema (`i18n`: translation_key, translation — versioned config). `@oxford/ui` — Oxford design tokens (Cormorant Garamond + DM Sans/Inter Tight, palette, spacing) and RTL helpers (`htmlDirAttributes` flips dir/lang; logical→physical side mapping). **100% coverage** (23 tests across both packages), CI-enforced.

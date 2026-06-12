@@ -26,7 +26,7 @@ const ALLOWED = {
 };
 
 // Explicit classification; anything else under packages/ defaults to `domain`.
-const PLATFORM = new Set(["core", "audit", "i18n", "ui", "notifications", "documents"]);
+const PLATFORM = new Set(["core", "audit", "i18n", "ui", "notifications", "documents", "crypto"]);
 function classify(area, dir) {
   if (area === "apps") return "app";
   if (dir === "core") return "core";
@@ -59,7 +59,14 @@ function sourceFiles(dir) {
       const p = join(d, entry);
       const st = statSync(p);
       if (st.isDirectory()) walk(p);
-      else if (/\.(ts|tsx)$/.test(entry) && !/\.d\.ts$/.test(entry)) out.push(p);
+      // Boundaries govern PRODUCTION code. Tests may cross module boundaries
+      // (e.g. adversarial integration tests exercising several modules together).
+      else if (
+        /\.(ts|tsx)$/.test(entry) &&
+        !/\.d\.ts$/.test(entry) &&
+        !/\.(test|spec)\.(ts|tsx)$/.test(entry)
+      )
+        out.push(p);
     }
   };
   if (existsSync(dir)) walk(dir);
