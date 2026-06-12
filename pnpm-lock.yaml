@@ -62,6 +62,12 @@ importers:
 
   packages/core: {}
 
+  packages/crypto:
+    dependencies:
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/i18n:
     dependencies:
       '@oxford/core':
@@ -79,6 +85,21 @@ importers:
       '@oxford/core':
         specifier: workspace:*
         version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4
+
+  packages/registry:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      '@oxford/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4
