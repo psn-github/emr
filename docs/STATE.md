@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation (merge train in progress). Scaffold + audit + auth + i18n + registry merged; document store landing; notifications next.
-- **Last updated:** 2026-06-12 — versioned, access-controlled, OCR-indexed document store (PR 0.5).
+- **Phase:** Phase 0 — Foundation. **All six foundation modules built (PRs 0.0–0.6) and merged to `main`** (CI green per PR; two gating modules carry adversarial self-reviews against real Postgres). Remaining for the exit gate: integration wiring (tRPC/REST routes behind the auth middleware, BullMQ chain-integrity cron) + the cross-cutting e2e.
+- **Last updated:** 2026-06-12 — notification service + 7-template starter set (PR 0.6); Phase 0 modules merged bottom-up.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -36,6 +36,14 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-12 — Notification service (provider-abstracted, bilingual, discreet) (PR 0.6)
+**Shipped:** `@oxford/notifications` — `NotificationService` renders templated, **bilingual** messages from the i18n catalog (no hardcoded strings; previews **discreet** — no clinically explicit content, docs/03 §5), sends via a pluggable `NotificationProvider` (SMS/WhatsApp/email; `RecordingNotificationProvider` for dev — real providers residency-reviewed before wiring), and audit-logs each dispatch as a `NotificationEvent` with **metadata only — never the recipient or rendered body** (no PHI in logs). Bilingual `notificationMessages` seed (en/ar at parity); Drizzle `notifications` schema. **100% coverage** (6 tests), CI-enforced.
+**Changed:** none to existing modules.
+**Changed (templates):** seeded the 7-template starter set (bilingual en/ar, all discreet — no IVF/embryo or clinical values in any preview): appointment.reminder (T-48h/T-3h), monitoring.next_step, results.ready, payment.due, discharge.prescription_ready, consent.awaiting_signature, message.secure. A test scans every body in both locales for forbidden terms.
+**Decisions:** implements PRD E0 notification requirement under ADR-0006 residency posture (provider abstraction).
+**Open / needs product owner [assigned: PO]:** (1) **refine the template copy, especially the Khaleeji Arabic wording**, before go-live — current wording is placeholder. (2) real SMS/WhatsApp/email providers need a residency review (docs/03 §4) before any is wired.
+**Next (Phase 0 closeout):** integration wiring — Postgres-backed stores + Drizzle migrations (incl. the advisory-lock audit append), tRPC/REST routes behind the auth middleware, the BullMQ chain-integrity cron, and the cross-cutting **e2e** proving the exit gate (no-permission user sees nothing; audit chain verified; RTL flip with zero untranslated strings; marriage gate blocks fertility server-side; CI green).
 
 ## 2026-06-12 — Versioned, access-controlled, OCR-indexed document store (PR 0.5)
 **Shipped:** `@oxford/documents` — `DocumentService` with append-only versioning (consent forms, ID scans, marriage certificates, external reports), `OcrProvider` seam (+ `NoopOcrProvider`) feeding a searchable index, and an `AccessGuard` seam so reads are RBAC-gated **without** documents depending on the identity module (platform→domain forbidden). create / addVersion / access (audited READ_EXPORT, denial not audited as a read — the Authorizer audits it) / softDelete / search (OCR text, access-filtered). Blobs live in encrypted in-region storage — only refs are stored. **100% coverage** (11 tests), CI-enforced.

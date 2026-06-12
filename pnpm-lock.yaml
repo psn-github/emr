@@ -108,6 +108,21 @@ importers:
         specifier: ^0.38.3
         version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
 
+  packages/notifications:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      '@oxford/i18n':
+        specifier: workspace:*
+        version: link:../i18n
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+
   packages/registry:
     dependencies:
       '@oxford/audit':
