@@ -66,4 +66,40 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** the DO VPS is the **staging / synthetic-data target only** and must never load real PHI. Production runs on an **in-region (GCC/Kuwait-permissible) managed PostgreSQL + host** selected before go-live; swapping the deploy target to it is a secrets change. The `deploy.yml` and `docs/PATIENT-DATA.md` encode this.
 - **Consequences:** the pipeline is usable immediately for synthetic-data staging; a hard prerequisite remains (select + provision the in-region production host) before any real PHI — tracked in docs/STATE.md outstanding items. Refines ADR-0006 for this specific hosting choice.
 
-_(Claude Code: continue numbering from ADR-0008.)_
+## ADR-0008 — Drizzle for ORM + migrations (explicit, reviewable, forward-only)
+- **Date:** 2026-06-12
+- **Status:** accepted
+- **Context:** docs/02 §2 names "Prisma or Drizzle". The append-only/forward-only migration rule (CLAUDE.md, docs/PATIENT-DATA.md) is a **data-safety control, not a preference**: every migration must be human-reviewable against the destructive-migration block (`make check-migrations-safe`) before it can run in deploy.
+- **Options considered:** Prisma (ergonomic, but migrations are engine-generated SQL and the client abstracts the schema) vs Drizzle (TypeScript-first schema, plain-SQL migration files checked into the repo and reviewed like code).
+- **Decision:** **Drizzle**. Migrations are explicit SQL artifacts in the repo, diffable in PRs and greppable for destructive statements (DROP/ALTER...DROP/TRUNCATE) by the deploy guardrail. Type-safe query builder; one Postgres database, schema-per-module-domain (docs/02 §2).
+- **Consequences:** migration review is a first-class PR gate and the destructive-migration block can pattern-match real SQL; slightly more manual migration authoring than Prisma's auto-flow, accepted deliberately as the price of reviewability. Forward-only enforced in production.
+
+## ADR-0009 — API surface: tRPC for internal clients + a thin versioned REST/FHIR surface
+- **Date:** 2026-06-12
+- **Status:** accepted
+- **Context:** docs/02 §2 calls for a typed RPC layer for internal web/portal clients plus a versioned REST/FHIR-flavoured surface for external/integration consumers and future apps.
+- **Decision:** **tRPC** for `apps/web` and `apps/portal` (end-to-end types, no codegen, contracts shared via packages); **a separate thin, versioned REST surface modelled in FHIR-compatible shapes** (Patient, Encounter, Observation, DiagnosticReport, MedicationRequest) for integration consumers — without becoming a full FHIR server in v1 (docs/02 §6). Both are mounted in `apps/api`; domain packages contribute routers behind the deny-by-default auth middleware (ADR-0010).
+- **Consequences:** internal velocity and type-safety from tRPC; a stable, language-agnostic boundary for integrations and any future national-health-system interop. Two surfaces to maintain — kept thin by sharing the same domain services beneath both.
+
+## ADR-0010 — Redis + BullMQ for cache, sessions, and background jobs
+- **Date:** 2026-06-12
+- **Status:** accepted
+- **Context:** docs/02 §2 specifies Redis for sessions/rate-limits and a lightweight queue (BullMQ) for notifications, reminders, reconciliation jobs, and scheduled reports — including the scheduled **audit hash-chain integrity job** (CLAUDE.md testing bar) and the RI Witness reconciliation jobs.
+- **Decision:** **Redis** (in-region, inherits residency rules) for cache/sessions/rate-limits; **BullMQ** for durable background jobs. Job processors live in `apps/api`; jobs are enqueued by domain modules via a published queue interface, never by reaching into another module.
+- **Consequences:** reminders, reconciliation, and chain-verification run reliably off the request path; one more piece of in-region infrastructure to provision and back up. Residency review covers the Redis deployment alongside Postgres (ADR-0007).
+
+## ADR-0011 — Self-hosted OIDC identity provider, behind an OIDC-standard interface
+- **Date:** 2026-06-12
+- **Status:** accepted (provider gated on the in-region residency review — ADR-0006/0007)
+- **Context:** docs/02 §2/§5 require OIDC-capable auth with MFA and field-level encryption keyed in-region. A managed IdP could move identity/PHI-adjacent data cross-border, which the residency review (ADR-0006) has not yet cleared.
+- **Decision:** default to a **self-hosted, in-region OIDC provider** for now, and build all auth against a **standard OIDC interface** (authorization-code + PKCE, standard discovery/JWKS) so an in-region **managed** IdP can be swapped in later — we are leaning **Oracle Cloud Kuwait** for in-region hosting per ADR-0007 — **without a rewrite**. No bespoke crypto; the app is an OIDC relying party, not an identity store.
+- **Consequences:** no cross-border identity dependency taken before the review; the relying-party seam keeps the provider decision reversible. Running an IdP is operational overhead, accepted as the residency-safe default; revisit once the managed in-region option clears review (would supersede this ADR).
+
+## ADR-0012 — KeyProvider seam for field-level encryption; build the crypto now, slot the in-region KMS in later
+- **Date:** 2026-06-12
+- **Status:** accepted (real KMS provider gated on the residency review — ADR-0006/0007)
+- **Context:** docs/02 §5 / docs/03 §4 require field-level encryption for Civil ID (and payment refs) with keys in an in-region KMS. The KMS/CSP choice is blocked on the residency review, but the **encryption logic itself must not be blocked** — it underpins the registry (PR 0.4) and must be built and tested now.
+- **Decision:** put key operations behind a **`KeyProvider` interface** (wrap/unwrap data keys, or encrypt/decrypt envelopes — KMS-shaped) with a **local development implementation** (a deterministic, clearly-labelled dev key, never used for real PHI). The Civil-ID field-level encryption path is built and unit-tested against this seam now; the real **in-region KMS** (Oracle Cloud Kuwait / approved CSP) is implemented behind the same interface after the review. The dev provider refuses to run where a production flag is set.
+- **Consequences:** the encryption code, key-rotation shape, and tests exist and are exercised in CI immediately; only the key-custody backend remains pending the review. Risk to manage: ensure the dev provider can never be selected in staging/production (guarded by config + a startup assertion). Pairs with ADR-0011's residency posture.
+
+_(Claude Code: continue numbering from ADR-0013.)_
