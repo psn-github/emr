@@ -62,6 +62,18 @@ importers:
 
   packages/core: {}
 
+  packages/identity:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4
+
 packages:
 
   '@ampproject/remapping@2.3.0':
