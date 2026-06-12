@@ -1,0 +1,103 @@
+name: Deploy
+
+# Mirrors the proven om-software pattern: merging to main auto-deploys to the
+# VPS, and each area redeploys only when ITS files change (path-based selective
+# deploy). Manual deploys use the Makefile (make deploy, make deploy-api, ...).
+#
+# DATA-SAFETY INVARIANT (inherited from om-software, required by docs/02 + docs/03):
+#   - the database lives OUTSIDE the deployed code
+#   - deploys are ADDITIVE; destructive migrations are BLOCKED in this pipeline
+#   - patient history survives every deploy
+#   - backups run nightly (see scripts/backup, scheduled on the VPS)
+#
+# RESIDENCY (docs/03 + ADR-0007): the DigitalOcean VPS has no GCC region, so it
+# is the STAGING / synthetic-data target only. The production target is in-region
+# and is selected before any real PHI is loaded. Swapping it is a secrets change.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      area:
+        description: "Area to force-deploy (web, api, portal, all)"
+        default: "all"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a half-finished deploy
+
+jobs:
+  # Detect which areas changed so we only redeploy what moved.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      api: ${{ steps.filter.outputs.api }}
+      portal: ${{ steps.filter.outputs.portal }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+            api:
+              - 'apps/api/**'
+              - 'packages/**'
+            portal:
+              - 'apps/portal/**'
+              - 'packages/**'
+
+  deploy:
+    needs: changes
+    # Only run if something deployable changed, or a manual dispatch asked for it.
+    if: ${{ needs.changes.outputs.web == 'true' || needs.changes.outputs.api == 'true' || needs.changes.outputs.portal == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    environment: staging   # require-reviewer gate set in repo Settings → Environments
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy over SSH (selective, additive, migration-safe)
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_WEB: ${{ needs.changes.outputs.web }}
+          DEPLOY_API: ${{ needs.changes.outputs.api }}
+          DEPLOY_PORTAL: ${{ needs.changes.outputs.portal }}
+          FORCE_AREA: ${{ github.event.inputs.area }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DEPLOY_WEB,DEPLOY_API,DEPLOY_PORTAL,FORCE_AREA
+          script: |
+            set -euo pipefail
+            cd /opt/oxford-his || { echo "App dir missing — run one-time VPS setup (docs/CICD_SETUP.md)"; exit 1; }
+            git pull origin main
+
+            # Phase 0 will provide the Makefile; until then this is a safe no-op.
+            if [ ! -f Makefile ]; then
+              echo "No Makefile yet (spec-only repo). Nothing to deploy."
+              exit 0
+            fi
+
+            # Guardrail: forbid destructive migrations from ever running in deploy.
+            # (The migrate target itself is forward-only; this is belt-and-braces.)
+            make check-migrations-safe
+
+            run_area () { echo "Deploying $1"; make "deploy-$1"; }
+
+            if [ "${FORCE_AREA:-all}" = "all" ] && [ "${GITHUB_EVENT_NAME:-}" != "push" ]; then
+              make deploy            # full deploy on manual 'all'
+            else
+              [ "${FORCE_AREA:-}" = "web" ]    && run_area web    || true
+              [ "${FORCE_AREA:-}" = "api" ]    && run_area api    || true
+              [ "${FORCE_AREA:-}" = "portal" ] && run_area portal || true
+              if [ -z "${FORCE_AREA:-}" ] || [ "${FORCE_AREA:-}" = "all" ]; then
+                [ "${DEPLOY_API}" = "true" ]    && run_area api    || true
+                [ "${DEPLOY_WEB}" = "true" ]    && run_area web    || true
+                [ "${DEPLOY_PORTAL}" = "true" ] && run_area portal || true
+              fi
+            fi

@@ -58,4 +58,12 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** default in-region (GCC/Kuwait-permissible) hosting; any third-party PHI processor (SMS/WhatsApp, payments, translation, AI, analytics) gets a residency review logged as an ADR before integration.
 - **Consequences:** some convenient global SaaS disallowed; integration choices are deliberately gated.
 
-_(Claude Code: continue numbering from ADR-0007.)_
+## ADR-0007 — DigitalOcean VPS is staging/synthetic-only; production PHI needs an in-region host
+- **Date:** 2026-06-12
+- **Status:** accepted
+- **Context:** the cloud build/deploy pipeline (docs/CICD_SETUP.md) ships to a DigitalOcean VPS. DigitalOcean has no GCC/Kuwait region, so it cannot lawfully hold real PHI under the in-region/residency duties in docs/03 §4 and ADR-0006. We still want a working deploy target from day one.
+- **Options considered:** (a) run production on the DO VPS — rejected, violates residency; (b) wait for an in-region host before any deploy automation — rejected, blocks early pipeline value; (c) split targets: DO VPS as staging/synthetic-only now, in-region host as production later.
+- **Decision:** the DO VPS is the **staging / synthetic-data target only** and must never load real PHI. Production runs on an **in-region (GCC/Kuwait-permissible) managed PostgreSQL + host** selected before go-live; swapping the deploy target to it is a secrets change. The `deploy.yml` and `docs/PATIENT-DATA.md` encode this.
+- **Consequences:** the pipeline is usable immediately for synthetic-data staging; a hard prerequisite remains (select + provision the in-region production host) before any real PHI — tracked in docs/STATE.md outstanding items. Refines ADR-0006 for this specific hosting choice.
+
+_(Claude Code: continue numbering from ADR-0008.)_

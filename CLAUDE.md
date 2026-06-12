@@ -27,6 +27,11 @@ This file governs day-to-day work in this repository. It is the operational, sub
 - No secrets in the repo; CI scans for them.
 - No PHI in logs, URLs, or analytics events.
 
+## Deployment & patient-data safety
+- Deploys are automated: merging to `main` runs CI (`.github/workflows/ci.yml`) and then the gated deploy (`.github/workflows/deploy.yml`) — path-based selective, approval-gated on the `staging` environment. See `docs/CICD_SETUP.md`.
+- **Data-safety invariant (law, not preference):** the database lives outside the deployed code; deploys are additive and destructive migrations are blocked; clinical data is append-only/soft-delete; patient & clinical history survives every deploy; backups run nightly; every mutation is in the hash-chained audit log. Full statement in `docs/PATIENT-DATA.md` — a PR that violates it fails review.
+- **Residency:** the DigitalOcean VPS is staging/synthetic-data only (no GCC region) and must never hold real PHI; production runs on an in-region host selected before go-live (ADR-0007, docs/03).
+
 ## Testing bar
 - ≥80% coverage on domain logic; **100% on money, drug-dose, and witnessing logic**.
 - Each module ships migrations, seed data, unit tests, integration tests on API routes, and ≥1 e2e of its core happy path.

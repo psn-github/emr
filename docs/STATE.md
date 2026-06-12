@@ -23,6 +23,7 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 - **[legal]** Cryostorage maximum period + consent-renewal cadence (docs/03 §2). Blocks cryostore cutover.
 - **[legal]** Hosting region / approved CSP under CITRA Cloud Framework (docs/03 §4). Blocks any production PHI hosting.
+- **[ops]** Select + provision the in-region (GCC/Kuwait-permissible) production host + managed PostgreSQL to replace the DigitalOcean VPS, which is staging/synthetic-only (ADR-0007, docs/PATIENT-DATA.md). Blocks loading any real PHI / go-live; swapping the deploy target is a secrets change.
 - **[legal]** Permitted PGT indications scope (docs/03 §1). Blocks PGT capture cutover.
 - **[legal]** Marital-status-change specimen disposition handling (docs/03 §1). Blocks cryostore cutover.
 - **[legal]** Medical-record retention period (docs/03 §3). Blocks retention job.
