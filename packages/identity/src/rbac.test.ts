@@ -12,7 +12,7 @@ describe("rbac", () => {
   it("dedupes held permissions across roles", () => {
     const s = subject([
       role("nurse", ["clinical:note.read", "clinical:note.write"]),
-      role("coord", ["clinical:note.read", "scheduling:book" as never]),
+      role("coord", ["clinical:note.read", "scheduling:appointment.book"]),
     ]);
     expect(heldPermissions(s)).toContain("clinical:note.read");
     expect(heldPermissions(s).filter((p) => p === "clinical:note.read")).toHaveLength(1);

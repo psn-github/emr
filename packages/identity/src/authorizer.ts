@@ -5,8 +5,26 @@ import type { Permission, PermissionDomain } from "./permissions.js";
 import { can } from "./rbac.js";
 import type { Session } from "./session.js";
 
+/**
+ * Default MFA-required domains (ADR-0013): every domain that reads or writes
+ * PHI, lab data, money, or staff records. This is a CONFIGURATION VALUE, not
+ * hardcoded logic — in production it is sourced from the versioned config table
+ * (docs/02 §1, "configuration is data") and passed into the Authorizer. Only the
+ * non-PHI `scheduling` domain is absent, so reception/front-desk roles limited
+ * to scheduling/check-in may use password + device trust; the instant such a
+ * role holds a PHI-domain permission, that action requires MFA.
+ */
+export const DEFAULT_MFA_REQUIRED_DOMAINS: readonly PermissionDomain[] = [
+  "clinical",
+  "embryology",
+  "financial",
+  "hr",
+  "admin",
+];
+
 export interface AuthorizerOptions {
-  /** Domains that require an MFA-satisfied session (docs/02 §2). */
+  /** Domains that require an MFA-satisfied session (docs/02 §2). Configuration,
+   *  not code — defaults to DEFAULT_MFA_REQUIRED_DOMAINS. */
   readonly mfaRequiredDomains?: readonly PermissionDomain[];
 }
 
@@ -22,7 +40,7 @@ export class Authorizer {
     private readonly audit: AuditLog,
     options: AuthorizerOptions = {},
   ) {
-    this.mfaRequired = new Set(options.mfaRequiredDomains ?? ["clinical", "financial"]);
+    this.mfaRequired = new Set(options.mfaRequiredDomains ?? DEFAULT_MFA_REQUIRED_DOMAINS);
   }
 
   async authorize(
