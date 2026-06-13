@@ -39,6 +39,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-06-13 — Portal booking + bilingual reminders + check-in (PR 1.6)
+**Shipped (app layer, `apps/api`):** patient self-service **booking** via tRPC (`portal.book`) — orchestrates scheduling, **scoped to the patient's own record** (`assertOwnData`); **bilingual reminders** (`reminders.ts`: plan at T-48h/T-3h, idempotent due-selection, dispatch via the **stubbed** notification provider — discreet template, no clinical content); front-desk **check-in** (`flow.checkIn`) advancing the appointment and placing the patient on the flow board. Wired scheduling/facility/flow/notifications into the composition root; added a `PatientPrincipal` + `patientProcedure` to the tRPC layer. Orchestration lives in the app layer because it spans domain modules (boundaries forbid domain→domain). Cross-cutting e2e (real Postgres): book → reminder → check-in onto the board.
+**Adversarial self-review (patient identity/access):** `[attack] patient pat-1 → pat-2 data: DENIED` (own-data only); proven again via the API (`portal.book` for another patient → FORBIDDEN). Reminders carry no clinical content (asserted).
+**Changed:** `apps/api` vitest `fileParallelism:false` (e2e files share Postgres). No new migrations (app-layer).
+**Open / needs product owner:** the full patient app UI is Phase 6; deposit-to-book payment hook lands with the portal app. Reminder cadence is configurable (default T-48h/T-3h).
+**Next:** PR 1.7 — Cliniko migration tooling (Option B: active-slice cutover + reconciliation report); adversarial review (migration PHI).
+
 ## 2026-06-13 — Basic invoicing & payments (PR 1.5)
 **Shipped:** `@oxford/billing` — money as **integer fils** (1 KWD = 1000 fils; no float drift), pure `money` math (line/subtotal/tax-bps/total/balance/format) at **100%**; `Invoice` (bilingual lines, Kuwait tax-rate field defaulting 0) + `Payment` (cash/card/knet) with receipts; `BillingService.createInvoice/totals/postPayment` — partial payments, marks paid at zero balance, **rejects overpayment / zero / non-integer amounts / already-paid**. Drizzle schema + migration; Postgres-backed store (exact fils round-trip), integration-tested. Packages/instalments/KNET-gateway/refunds/discounts are Phase 5. **100% coverage** (13 tests).
 **Adversarial self-review (money):** `[attack] reception → financial:payment.post: DENIED`; financial role also requires **MFA**; `[attack] pay 10001 against 10000 balance: REJECTED`; money is exact integer fils (no float drift across many small lines).

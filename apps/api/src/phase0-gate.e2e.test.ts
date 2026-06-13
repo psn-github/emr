@@ -52,12 +52,12 @@ describe.skipIf(!DATABASE_URL)("Phase 0 exit gate (e2e via the API + real Postgr
   });
 
   it("a no-permission user can do nothing; a wrong-domain role is denied", async () => {
-    await expectCode(() => appRouter.createCaller({ session: noPermission, services }).embryology.read(), "FORBIDDEN");
-    await expectCode(() => appRouter.createCaller({ session: reception, services }).embryology.read(), "FORBIDDEN");
+    await expectCode(() => appRouter.createCaller({ session: noPermission, patient: null, services }).embryology.read(), "FORBIDDEN");
+    await expectCode(() => appRouter.createCaller({ session: reception, patient: null, services }).embryology.read(), "FORBIDDEN");
   });
 
   it("blocks a fertility workflow without a verified marriage — then allows it once verified", async () => {
-    const doc = appRouter.createCaller({ session: clinician, services });
+    const doc = appRouter.createCaller({ session: clinician, patient: null, services });
     const h = await doc.registry.registerPerson({ name: { ar: "محمد", en: "Mohammed" }, civilId: "284010112345", dob: "1984-01-01", sex: "male", nationality: "KW", languagePref: "ar" });
     const w = await doc.registry.registerPerson({ name: { ar: "سارة", en: "Sara" }, civilId: "286050167890", dob: "1986-05-01", sex: "female", nationality: "KW", languagePref: "ar" });
     const couple = await doc.registry.createCouple({ husbandPersonId: h.personId, wifePersonId: w.personId });
@@ -71,9 +71,9 @@ describe.skipIf(!DATABASE_URL)("Phase 0 exit gate (e2e via the API + real Postgr
   });
 
   it("the audit chain records every mutation + denial and verifies intact", async () => {
-    const doc = appRouter.createCaller({ session: clinician, services });
+    const doc = appRouter.createCaller({ session: clinician, patient: null, services });
     await doc.registry.registerPerson({ name: { ar: "أحمد", en: "Ahmed" }, civilId: "281010100000", dob: "1981-01-01", sex: "male", nationality: "KW", languagePref: "ar" });
-    await expectCode(() => appRouter.createCaller({ session: noPermission, services }).embryology.read(), "FORBIDDEN");
+    await expectCode(() => appRouter.createCaller({ session: noPermission, patient: null, services }).embryology.read(), "FORBIDDEN");
 
     const entries = await services.audit.entries();
     expect(entries.length).toBeGreaterThanOrEqual(2); // CREATE + PERMISSION_DENIED

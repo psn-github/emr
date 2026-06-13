@@ -44,15 +44,24 @@ importers:
       '@oxford/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
+      '@oxford/facility':
+        specifier: workspace:*
+        version: link:../../packages/facility
       '@oxford/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
       '@oxford/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@oxford/notifications':
+        specifier: workspace:*
+        version: link:../../packages/notifications
       '@oxford/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@oxford/scheduling':
+        specifier: workspace:*
+        version: link:../../packages/scheduling
       '@trpc/server':
         specifier: ^11.0.0
         version: 11.17.0(typescript@5.9.3)

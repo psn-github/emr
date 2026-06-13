@@ -1,7 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { asId } from "@oxford/core";
 import type { LanguagePref, Sex } from "@oxford/registry";
-import { router, protectedProcedure } from "./trpc.js";
+import { router, protectedProcedure, patientProcedure } from "./trpc.js";
+import { assertOwnData } from "./patient-access.js";
 
 // The internal tRPC surface. Domain services do the work; procedures only
 // declare the permission, validate input, and map domain errors to transport
@@ -81,6 +82,42 @@ export const appRouter = router({
   embryology: router({
     // Embryology lab data — embryology domain permission required.
     read: protectedProcedure("embryology:lab.read").query(() => ({ ok: true })),
+  }),
+
+  // Patient-portal self-service booking. The patient principal may ONLY act on
+  // their own record (assertOwnData) — no access to anyone else's data.
+  portal: router({
+    book: patientProcedure
+      .input((v: unknown) => v as { patientId: string; typeId: string; practitionerId: string; resourceIds: string[]; start: string; end: string })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const r = await ctx.services.scheduling.book(`patient:${ctx.patient.patientId}`, {
+          typeId: asId<"AppointmentType">(input.typeId),
+          patientId: input.patientId,
+          practitionerId: asId<"Resource">(input.practitionerId),
+          resourceIds: input.resourceIds.map((x) => asId<"Resource">(x)),
+          start: input.start,
+          end: input.end,
+        });
+        if (!r.ok) throw new TRPCError({ code: "CONFLICT", message: r.error.detailKey ?? "could not book" });
+        return { appointmentId: r.value.id };
+      }),
+  }),
+
+  // Front-desk check-in: advance the appointment and place the patient on the
+  // flow board (location/status only).
+  flow: router({
+    checkIn: protectedProcedure("scheduling:appointment.checkin")
+      .input((v: unknown) => v as { appointmentId: string; patientId: string; locationNodeId: string })
+      .mutation(async ({ ctx, input }) => {
+        const actor = ctx.session.subject.staffId;
+        const advanced = await ctx.services.scheduling.checkIn(actor, asId<"Appointment">(input.appointmentId));
+        if (!advanced.ok) throw new TRPCError({ code: "BAD_REQUEST", message: advanced.error.detailKey ?? "check-in failed" });
+        const placed = await ctx.services.flow.moveTo(actor, input.patientId, asId<"LocationNode">(input.locationNodeId), "waiting");
+        if (!placed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: placed.error.detailKey ?? "placement failed" });
+        return { checkedIn: true };
+      }),
   }),
 });
 
