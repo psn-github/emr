@@ -39,7 +39,7 @@ describe.skipIf(!DATABASE_URL)("intra-op + consumables→billing (e2e via the AP
     await runMigrations(pool);
   });
   beforeEach(async () => {
-    await pool.query("TRUNCATE perioperative.intraop_record, perioperative.consumable_use, perioperative.specimen_record, billing.invoice, billing.payment");
+    await pool.query("TRUNCATE perioperative.intraop_record, perioperative.consumable_use, perioperative.specimen_record, billing.invoice, billing.payment, inventory.stock_lot");
     services = buildServices(pool);
     doc = appRouter.createCaller({ session: clinician, patient: null, services });
   });
@@ -55,7 +55,11 @@ describe.skipIf(!DATABASE_URL)("intra-op + consumables→billing (e2e via the AP
     await expectCode(() => doc.perioperative.recordIntraOp({ ...intraOp, encounterId: "enc-2", drugs: [{ formularyCode: "whisky", dose: 1, unit: "mg" }] }), "BAD_REQUEST");
   });
 
-  it("consumables deduct stock + raise a real invoice with the correct total; lot is required", async () => {
+  it("consumables deduct REAL stock + raise a real invoice with the correct total; lot is required", async () => {
+    // The lots used must be in stock (real inventory deduction, ADR-0026).
+    await services.inventory.receive("stores-1", { itemId: "mesh", lotNo: "LOT-A", locationId: "theatre", quantity: 2, expiryDate: "2027-01-01", receivedAt: "2026-06-20T08:00:00Z" });
+    await services.inventory.receive("stores-1", { itemId: "suture", lotNo: "LOT-B", locationId: "theatre", quantity: 5, expiryDate: "2027-01-01", receivedAt: "2026-06-20T08:00:00Z" });
+
     const r = await doc.perioperative.recordConsumables({
       encounterId: "enc-1",
       patientId: "pat-1",
@@ -66,14 +70,18 @@ describe.skipIf(!DATABASE_URL)("intra-op + consumables→billing (e2e via the AP
       recordedAt: "2026-06-22T09:30:00Z",
     });
     expect(r.count).toBe(2);
-    // stock deducted via the stub
-    expect(services.inventoryOutbox.deductions[0]!.items).toHaveLength(2);
+    // real stock deducted: mesh 2→1, suture 5→2
+    expect(await services.inventory.onHand("mesh")).toBe(1);
+    expect(await services.inventory.onHand("suture")).toBe(2);
     // a real billing invoice exists with total 50000 + 3×2000 = 56000 fils
     const totals = await services.billing.totals(r.invoiceRef as never);
     expect(totals.ok && totals.value.totalFils).toBe(56000);
 
     // a consumable without a lot is rejected (traceability)
     await expectCode(() => doc.perioperative.recordConsumables({ encounterId: "enc-1", patientId: "pat-1", uses: [{ code: "x", description: "x", lotNo: "", quantity: 1, unitPriceFils: 1 }], recordedAt: "z" }), "BAD_REQUEST");
+
+    // a consumable whose lot is NOT in stock is rejected (real deduction)
+    await expectCode(() => doc.perioperative.recordConsumables({ encounterId: "enc-1", patientId: "pat-1", uses: [{ code: "ghost", description: "x", lotNo: "NONE", quantity: 1, unitPriceFils: 1 }], recordedAt: "z" }), "BAD_REQUEST");
   });
 
   it("RBAC: a reception role cannot record intra-op data", async () => {

@@ -38,11 +38,10 @@ import {
   PgCssdStore,
   type FacilityFlowPort,
   type SchedulingPort,
-  type InventoryPort,
   type PerioperativeBillingPort,
   type PharmacyPort,
 } from "@oxford/perioperative";
-import { CatalogueService, PgCatalogueStore } from "@oxford/inventory";
+import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore } from "@oxford/inventory";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -73,8 +72,7 @@ export interface Services {
   readonly recovery: RecoveryService;
   readonly cssd: CssdService;
   readonly catalogue: CatalogueService;
-  /** Dev/test stub inventory outbox (records deductions; real module is Phase 4). */
-  readonly inventoryOutbox: RecordingInventoryProvider;
+  readonly inventory: InventoryService;
   /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
   readonly pharmacyStub: StubPharmacyProvider;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
@@ -92,16 +90,6 @@ const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
 /** L2 inpatient bed count — the seeded topology (ADR-0023). A day's theatre list
  *  reserving more than this is flagged (not blocked). Configuration, not code. */
 const L2_BED_CAPACITY = 6;
-
-/** Dev/test inventory stub (ADR-0024) — records consumable/implant deductions
- *  until the real @oxford/inventory module lands in Phase 4. */
-export class RecordingInventoryProvider implements InventoryPort {
-  readonly deductions: { actorId: string; items: { code: string; lotNo: string; quantity: number }[] }[] = [];
-  async deduct(actorId: string, items: readonly { code: string; lotNo: string; quantity: number }[]) {
-    this.deductions.push({ actorId, items: [...items] });
-    return ok(undefined);
-  }
-}
 
 /** Dev/test pharmacy stub (ADR-0025) — discharge-prescription fulfilment until
  *  the real E8 pharmacy lands. `markFulfilled` simulates the pharmacy handover. */
@@ -213,9 +201,12 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       return r.ok ? ok(undefined) : err(r.error);
     },
   };
-  // Intra-op record + consumables. Stock deduction is a stub now (Phase 4);
-  // consumable billing reuses @oxford/billing (a multi-line invoice per case).
-  const inventoryOutbox = new RecordingInventoryProvider();
+  // Operations ERP. The real inventory now backs the Phase-3 InventoryPort:
+  // theatre consumables deduct actual stock (ADR-0026). Consumable billing reuses
+  // @oxford/billing (a multi-line invoice per case).
+  const catalogueStore = new PgCatalogueStore(pool);
+  const catalogue = new CatalogueService(catalogueStore, audit, events);
+  const inventory = new InventoryService(new PgStockStore(pool), catalogueStore, audit, events);
   const perioperativeBilling: PerioperativeBillingPort = {
     async raiseConsumableCharges(actorId, patientId, lines) {
       const r = await billing.createInvoice(actorId, patientId, lines.map((l) => ({ chargeCode: l.chargeCode, description: { ar: l.descriptionAr, en: l.descriptionEn }, unitAmountFils: l.unitAmountFils, quantity: l.quantity })));
@@ -223,9 +214,8 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       return r.value.id;
     },
   };
-  const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventoryOutbox, perioperativeBilling, audit, events);
+  const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventory, perioperativeBilling, audit, events);
   const cssd = new CssdService(new PgCssdStore(pool), audit, events);
-  const catalogue = new CatalogueService(new PgCatalogueStore(pool), audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
   // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
@@ -256,5 +246,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventoryOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, pharmacyStub, notificationOutbox, witnessProvider };
 }

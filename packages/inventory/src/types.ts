@@ -6,6 +6,28 @@ import type { Id } from "@oxford/core";
 
 export type SupplierId = Id<"Supplier">;
 export type CatalogueItemId = Id<"CatalogueItem">;
+export type StockLotId = Id<"StockLot">;
+export type ColdChainReadingId = Id<"ColdChainReading">;
+
+/** A received lot of an item at a storage location (lot/expiry tracked). */
+export interface StockLot {
+  readonly id: StockLotId;
+  readonly itemId: string;
+  readonly lotNo: string;
+  readonly locationId: string;
+  readonly quantity: number;
+  readonly expiryDate: string;
+  readonly receivedAt: string;
+}
+
+/** A cold-chain temperature reading for a location/lot (cold-chain logging). */
+export interface ColdChainReading {
+  readonly id: ColdChainReadingId;
+  readonly locationId: string;
+  readonly temperatureC: number;
+  readonly recordedAt: string;
+  readonly recordedBy: string;
+}
 
 export type ItemCategory = "consumable" | "media" | "drug" | "lab_kit" | "office";
 

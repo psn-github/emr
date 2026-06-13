@@ -37,7 +37,7 @@ describe.skipIf(!DATABASE_URL)("Phase 3 exit gate — full perioperative journey
     await runMigrations(pool);
   });
   beforeEach(async () => {
-    await pool.query("TRUNCATE facility.floor, facility.location_node, facility.bed, facility.patient_location, facility.location_movement, perioperative.surgical_encounter, perioperative.who_checklist, perioperative.observation, perioperative.follow_up, perioperative.intraop_record, perioperative.consumable_use, perioperative.specimen_record, perioperative.instrument_set, perioperative.sterilisation_cycle, perioperative.set_usage, billing.invoice, billing.payment, registry.person, audit.audit_log");
+    await pool.query("TRUNCATE facility.floor, facility.location_node, facility.bed, facility.patient_location, facility.location_movement, perioperative.surgical_encounter, perioperative.who_checklist, perioperative.observation, perioperative.follow_up, perioperative.intraop_record, perioperative.consumable_use, perioperative.specimen_record, perioperative.instrument_set, perioperative.sterilisation_cycle, perioperative.set_usage, billing.invoice, billing.payment, inventory.stock_lot, registry.person, audit.audit_log");
     services = buildServices(pool);
     await seedFacility(services.facility);
     api = appRouter.createCaller({ session: surgeon, patient: null, services });
@@ -69,7 +69,9 @@ describe.skipIf(!DATABASE_URL)("Phase 3 exit gate — full perioperative journey
     await api.perioperative.recordSterilisation({ setId, cycleType: "steam_134c", loadRef: "LOAD-1", result: "pass", completedAt: "2026-06-22T06:00:00Z" });
     await api.perioperative.useSet({ setId, encounterId, usedAt: "2026-06-22T08:50:00Z" });
     await api.perioperative.recordIntraOp({ encounterId, procedurePerformed: indication, findings: "as expected", anaestheticTechnique: "GA", drugs: [{ formularyCode: "propofol", dose: 200, unit: "mg" }], staff: ["surg-1"], startedAt: "2026-06-22T08:50:00Z", finishedAt: "2026-06-22T09:20:00Z" });
-    const cons = await api.perioperative.recordConsumables({ encounterId, patientId, uses: [{ code: "kit", description: "Procedure kit", lotNo: "LOT-1", quantity: 1, unitPriceFils: 30000 }], recordedAt: "2026-06-22T09:00:00Z" });
+    // the consumable's lot must be in stock (real inventory deduction, ADR-0026)
+    await services.inventory.receive("stores-1", { itemId: "kit", lotNo: `LOT-${civilId}`, locationId: "theatre", quantity: 1, expiryDate: "2027-01-01", receivedAt: "2026-06-20T08:00:00Z" });
+    const cons = await api.perioperative.recordConsumables({ encounterId, patientId, uses: [{ code: "kit", description: "Procedure kit", lotNo: `LOT-${civilId}`, quantity: 1, unitPriceFils: 30000 }], recordedAt: "2026-06-22T09:00:00Z" });
     await api.perioperative.recordSpecimen({ encounterId, type: "tissue", site: indication, lotRef: "SPEC-1", collectedAt: "2026-06-22T09:10:00Z" });
 
     await api.perioperative.completeChecklistPhase({ encounterId, phase: "sign_out", confirmedItems: [...WHO_REQUIRED_ITEMS.sign_out], completedAt: "2026-06-22T09:25:00Z" });

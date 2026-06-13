@@ -518,6 +518,33 @@ export const appRouter = router({
         return { itemId: r.value.id };
       }),
     listItems: protectedProcedure("admin:inventory.read").query(async ({ ctx }) => ({ items: await ctx.services.catalogue.items() })),
+
+    // Multi-location stock: receive lots, FEFO issue, alerts, cold-chain log.
+    receiveStock: protectedProcedure("admin:inventory.write")
+      .input((v: unknown) => v as { itemId: string; lotNo: string; locationId: string; quantity: number; expiryDate: string; receivedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const lot = await ctx.services.inventory.receive(ctx.session.subject.staffId, input);
+        return { lotId: lot.id, quantity: lot.quantity };
+      }),
+    issueStock: protectedProcedure("admin:inventory.write")
+      .input((v: unknown) => v as { itemId: string; locationId: string; quantity: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.inventory.issue(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "issue failed" });
+        return { lines: r.value.length };
+      }),
+    onHand: protectedProcedure("admin:inventory.read")
+      .input((v: unknown) => v as { itemId: string })
+      .query(async ({ ctx, input }) => ({ onHand: await ctx.services.inventory.onHand(input.itemId) })),
+    alerts: protectedProcedure("admin:inventory.read")
+      .input((v: unknown) => v as { asOf: string; withinDays: number })
+      .query(async ({ ctx, input }) => ctx.services.inventory.alerts(new Date(input.asOf), input.withinDays)),
+    recordColdChain: protectedProcedure("admin:inventory.write")
+      .input((v: unknown) => v as { locationId: string; temperatureC: number; recordedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.inventory.recordColdChain(ctx.session.subject.staffId, input.locationId, input.temperatureC, input.recordedAt);
+        return { readingId: r.id };
+      }),
   }),
 
   // Billing (MFA-gated financial domain).
