@@ -876,6 +876,19 @@ export const appRouter = router({
       .input((v: unknown) => v as { theatreResourceId: string; date: string; availableMinutes: number })
       .query(async ({ ctx, input }) => ctx.services.theatreScheduling.utilisation(input.theatreResourceId, input.date, input.availableMinutes)),
   }),
+
+  // Compliance / accreditation (docs/01 §E12; document 03). One-click audit-trail
+  // export per entity, reusing the immutable hash-chained audit log; the export is
+  // independently verifiable. MOH/accreditation report FORMATS are config (ADR-0039).
+  compliance: router({
+    auditTrail: protectedProcedure("admin:audit.read")
+      .input((v: unknown) => v as { entityType: string; entityId: string })
+      .query(async ({ ctx, input }) => {
+        const records = await ctx.services.audit.entriesForEntity(input.entityType, input.entityId);
+        const integrity = await ctx.services.audit.verifyIntegrity();
+        return { entityType: input.entityType, entityId: input.entityId, count: records.length, chainIntact: integrity.ok, records };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

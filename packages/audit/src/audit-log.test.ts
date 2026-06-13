@@ -53,6 +53,20 @@ describe("AuditLog", () => {
     expect((await audit.verifyIntegrity()).ok).toBe(true);
   });
 
+  it("exports the ordered audit trail for one entity (one-click compliance export)", async () => {
+    const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock());
+    await audit.record({ actorId: "a", entityType: "Invoice", entityId: "inv-1", action: "CREATE", after: { total: 100 } });
+    await audit.record({ actorId: "a", entityType: "Payment", entityId: "pay-1", action: "CREATE", after: { amount: 50 } });
+    await audit.record({ actorId: "a", entityType: "Invoice", entityId: "inv-1", action: "UPDATE", before: { total: 100 }, after: { total: 120 } });
+
+    const trail = await audit.entriesForEntity("Invoice", "inv-1");
+    expect(trail.map((r) => r.seq)).toEqual([1, 3]); // only inv-1's records, in order
+    expect(trail.every((r) => r.payload.entityType === "Invoice" && r.payload.entityId === "inv-1")).toBe(true);
+    // the export keeps chain fields, so it verifies against the full chain
+    expect((await audit.verifyIntegrity()).ok).toBe(true);
+    expect(await audit.entriesForEntity("Invoice", "nope")).toEqual([]);
+  });
+
   it("verifyIntegrity catches tampering with a recorded before/after", async () => {
     const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock());
     await audit.record({ actorId: "a", entityType: "Invoice", entityId: "1", action: "CREATE", after: { total: 100 } });
