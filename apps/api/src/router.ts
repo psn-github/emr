@@ -30,6 +30,14 @@ async function ownedCycle(services: Services, patient: PatientPrincipal, patient
   return c;
 }
 
+/** Portal READ access: the principal is the patient, OR holds an active
+ *  consent-gated partner grant for them (ADR-0042). Throws FORBIDDEN otherwise. */
+async function assertPortalRead(services: Services, patient: PatientPrincipal, patientId: string): Promise<void> {
+  if (patient.patientId === patientId) return;
+  if (await services.consent.mayAccess(patientId, patient.patientId)) return;
+  throw new TRPCError({ code: "FORBIDDEN", message: "no access to this patient's data" });
+}
+
 // The internal tRPC surface. Domain services do the work; procedures only
 // declare the permission, validate input, and map domain errors to transport
 // codes. A thin REST/FHIR surface (ADR-0009) wraps the same services for
@@ -462,8 +470,7 @@ export const appRouter = router({
     appointments: patientProcedure
       .input((v: unknown) => v as { patientId: string })
       .query(async ({ ctx, input }) => {
-        const own = assertOwnData(ctx.patient, input.patientId);
-        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        await assertPortalRead(ctx.services, ctx.patient, input.patientId);
         return { appointments: await ctx.services.scheduling.appointmentsForPatient(input.patientId) };
       }),
 
@@ -471,8 +478,7 @@ export const appRouter = router({
     balances: patientProcedure
       .input((v: unknown) => v as { patientId: string })
       .query(async ({ ctx, input }) => {
-        const own = assertOwnData(ctx.patient, input.patientId);
-        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        await assertPortalRead(ctx.services, ctx.patient, input.patientId);
         return { invoices: await ctx.services.billing.patientBalances(input.patientId) };
       }),
 
@@ -490,6 +496,34 @@ export const appRouter = router({
         const r = await ctx.services.gatewayPayments.payInvoice(`patient:${input.patientId}`, asId<"Invoice">(input.invoiceId), input.amountFils, input.method);
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "payment failed" });
         return { balanceFils: r.value.totals.balanceFils, gatewayRef: r.value.payment.gatewayRef };
+      }),
+
+    // Consent-gated partner access — the patient grants/revokes a partner's READ
+    // access to their data (own-data: only the patient manages their own grants).
+    grantPartnerAccess: patientProcedure
+      .input((v: unknown) => v as { patientId: string; partnerId: string })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const r = await ctx.services.consent.grantPartnerAccess(`patient:${input.patientId}`, input.patientId, input.partnerId);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "grant failed" });
+        return { grantId: r.value.id };
+      }),
+    revokePartnerAccess: patientProcedure
+      .input((v: unknown) => v as { patientId: string; partnerId: string })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const r = await ctx.services.consent.revokePartnerAccess(`patient:${input.patientId}`, input.patientId, input.partnerId);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "revoke failed" });
+        return { revoked: true };
+      }),
+    partnerGrants: patientProcedure
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        return { grants: await ctx.services.consent.grantsForPatient(input.patientId) };
       }),
 
     // Secure messaging — the patient's own threads (content behind auth, never in
@@ -535,8 +569,7 @@ export const appRouter = router({
     results: patientProcedure
       .input((v: unknown) => v as { patientId: string })
       .query(async ({ ctx, input }) => {
-        const own = assertOwnData(ctx.patient, input.patientId);
-        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        await assertPortalRead(ctx.services, ctx.patient, input.patientId);
         return { results: await ctx.services.clinical.releasedResultsForPatient(input.patientId) };
       }),
 
