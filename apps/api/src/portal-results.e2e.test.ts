@@ -37,7 +37,7 @@ describe.skipIf(!DATABASE_URL)("portal released results (e2e via the API + real 
 
   it("a filed result is invisible until released; then the patient sees it; cross-patient forbidden", async () => {
     const doc = appRouter.createCaller({ session: clinician, patient: null, services });
-    const enc = await doc.clinical.openEncounter({ patientId: "pat-1", type: "consultation", practitionerId: "doc-1" });
+    const enc = await doc.clinical.openEncounter({ patientId: "pat-1", type: "new_fertility", practitionerId: "doc-1" });
     const order = await doc.clinical.placeOrder({ encounterId: enc.encounterId, patientId: "pat-1", kind: "lab", code: "AMH" });
     const filed = await doc.clinical.fileResult({ orderId: order.orderId, summary: "AMH 1.2 ng/mL", abnormal: false });
 
