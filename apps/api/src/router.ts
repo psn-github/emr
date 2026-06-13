@@ -476,6 +476,22 @@ export const appRouter = router({
         return { invoices: await ctx.services.billing.patientBalances(input.patientId) };
       }),
 
+    // The patient pays one of their OWN invoices via the gateway (KNET/card only;
+    // no cash). The invoice must belong to the patient (own-data).
+    payInvoice: patientProcedure
+      .input((v: unknown) => v as { patientId: string; invoiceId: string; amountFils: number; method: PaymentMethod })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const mine = await ctx.services.billing.patientBalances(input.patientId);
+        if (!mine.some((b) => b.invoiceId === input.invoiceId)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "not your invoice" });
+        }
+        const r = await ctx.services.gatewayPayments.payInvoice(`patient:${input.patientId}`, asId<"Invoice">(input.invoiceId), input.amountFils, input.method);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "payment failed" });
+        return { balanceFils: r.value.totals.balanceFils, gatewayRef: r.value.payment.gatewayRef };
+      }),
+
     // The patient's released results only — unreleased results are invisible (ADR-0042).
     results: patientProcedure
       .input((v: unknown) => v as { patientId: string })
