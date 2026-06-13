@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** **Phase 3 — Theatres, perioperative journey & beds (in progress).** Phases 0–2 complete on `main` (Phase 2 signed off; PRs 2.0→2.12 incl. cryostore go-live wiring, marital-status disposition, PGT capture). Phase 3 approved "as proposed" (PR plan 3.0→3.8); ADR-0023/0024/0025 set the facility-reuse + InventoryPort + PharmacyPort decisions. Building on the Phase 1 `facility`/`flow` + `scheduling` models.
-- **Last updated:** 2026-06-13 — Phase 3 PR 3.7 (CSSD / instrument-set tracking: set composition → sterilisation cycle → which set on which patient; sterile-only use gate; 100%; sterility-gate + traceability + RBAC adversarial review passed on real Postgres). PR 3.6 (recovery/discharge) merged. **Next: PR 3.8 — Phase 3 closeout e2e (oocyte retrieval + hysteroscopy full journeys) + exit-gate report + HOLD.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
+- **Phase:** **Phase 3 — Theatres, perioperative journey & beds — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 3.0→3.8 on `main`. Phases 0–2 complete (Phase 2 signed off). An oocyte retrieval + a hysteroscopy each run the full admit→theatre→discharge journey end-to-end (closeout e2e, PR 3.8): WHO checklist enforced, consumables deducted+billed, CSSD sterile-gated, discharge pharmacy-gated, every floor transfer audited, audit chain intact. ADR-0023/0024/0025 in force. **Do not start Phase 4 until the Medical Director signs off the Phase 3 exit gate.**
+- **Last updated:** 2026-06-13 — Phase 3 PR 3.8 (closeout e2e — full perioperative journey ×2 on real Postgres). All Phase 3 PRs merged; exit-gate report delivered; **HOLD for sign-off**. **Still open:** **bed turnaround (cleaning→free) workflow + theatre-utilisation/turnaround analytics are P1 (deferred)** — the closeout simulates housekeeping via the existing audited bed-status machine; implant/device registry reporting P2. **Cutover-gating (not the build):** marital-status disposition rule + permitted PGT indications (counsel); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,17 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Phase 3 closeout: full perioperative journey e2e + exit gate (PR 3.8)
+**Shipped:** a cross-cutting **end-to-end e2e** (`apps/api/src/phase3-perioperative-journey.e2e.test.ts`) running an **oocyte retrieval AND a hysteroscopy** each through the **complete perioperative journey** on a real Postgres — proving the Phase 3 exit-gate invariants in one flow:
+- **admit L3 → L2 bed → L1 recovery → theatre → recovery → L2 → discharge**, every floor transfer an **audited** movement; bed occupancy correct on the board throughout; the **audit hash-chain verifies intact**;
+- **WHO checklist enforced** (no incision without sign-in+time-out; no leaving theatre without sign-out);
+- **CSSD** sterile set used + traced to the patient;
+- **consumables deducted + billed** to a real invoice (correct fils total);
+- **discharge pharmacy-gated** (script fulfilled + follow-up booked).
+Bed **turnaround (cleaning→free)** between cases is simulated via the existing audited bed-status machine — the dedicated turnaround workflow/view is **P1 (deferred)**.
+**Phase 3 exit-gate report delivered; HOLD for Medical Director sign-off before Phase 4.**
+**Next:** await sign-off, then propose Phase 4 (Operations ERP — procurement, inventory, assets), which also lands the real `@oxford/inventory` behind the InventoryPort seam.
 
 ## 2026-06-13 — CSSD / instrument-set tracking (PR 3.7)
 **Shipped:** CSSD instrument-set tracking in `@oxford/perioperative` (docs/01 §E7) — **set composition**, **sterilisation cycles** (steam etc; pass→sterile, fail→dirty), and **which set was used on which patient** (the traceability link: usage → set → the sterilisation cycle that made it sterile). **A set may only be used when sterile**; using it marks it `used` (must be reprocessed before reuse). Pure `cssd.ts` (100%); `CssdService`; store + Postgres + schema + forward-only additive migration 0007. App: `CssdService` wired; router `registerSet`/`recordSterilisation`/`useSet` (MFA-gated). **100% coverage** (perioperative 49 tests; +2 API e2e).
