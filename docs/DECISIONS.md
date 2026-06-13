@@ -136,4 +136,12 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** adopt the canonical palette as the source of truth: **Satoshi** (display), **Plus Jakarta Sans** (body/UI), **Geist** (data/tables, tabular numerals), **Noto Sans Arabic**; warm-neutral canvas (`#F5F5F0`) + single teal-green accent (`#2A7C6F`); fixed semantic / clinical-status / drug-class colours; 8px spacing scale; clinical LTR exception (drug names, lab values, embryo grades stay LTR in RTL). `@oxford/ui` token **names are stable**; docs/02 §2 updated; the Cormorant/DM Sans reference is superseded.
 - **Consequences:** visual coherence with the sister product; one design source of truth. Values may be tuned in the brand file without renaming tokens.
 
-_(Claude Code: continue numbering from ADR-0017.)_
+## ADR-0017 — Cliniko migration: cutover + archive (Option B)
+- **Date:** 2026-06-13
+- **Status:** accepted (product owner chose Option B)
+- **Context:** moving off Cliniko at Phase 1 cutover. Two approaches: (A) full historical migration of all Cliniko data into Oxford HIS; (B) migrate only the "active" slice needed to operate forward and keep Cliniko read-only as the historical archive.
+- **Options considered:** A — one system, fully searchable history, but high effort/risk and years of unstructured notes imported with low value; B — lower effort/risk, clean cutover, Cliniko retained as the trusted archive, at the cost of historical records not being searchable inside Oxford HIS.
+- **Decision:** **Option B — cutover + archive.** Migrate the active slice (active patients + demographics, upcoming appointments, open balances) into Oxford HIS via a dedicated, audited, **re-runnable** import job with a **reconciliation report**; keep Cliniko (read-only) as the historical archive. A later, bounded backfill of high-value structured items (active meds, problem lists, current consent status) is possible without a big-bang import.
+- **Consequences:** faster, lower-risk go-live; reconciliation scope is the active slice (fits the parallel-run discipline). Trade-off: staff consult Cliniko for old history; a Cliniko export/subscription is retained. **Residency caveat:** Cliniko's own hosting region must pass a residency check before it is relied upon as the archive (docs/03 §4) — logged in STATE.
+
+_(Claude Code: continue numbering from ADR-0018.)_
