@@ -705,6 +705,22 @@ export const appRouter = router({
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "payment failed" });
         return { balanceFils: r.value.totals.balanceFils };
       }),
+    // Gateway-backed KNET/card payment (ADR-0036): charge via the processor, then
+    // record on the ledger with the gateway reference. A decline records nothing.
+    gatewayPay: protectedProcedure("financial:payment.post")
+      .input((v: unknown) => v as { invoiceId: string; amountFils: number; method: PaymentMethod })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.gatewayPayments.payInvoice(ctx.session.subject.staffId, asId<"Invoice">(input.invoiceId), input.amountFils, input.method);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "payment failed" });
+        return { balanceFils: r.value.totals.balanceFils, gatewayRef: r.value.payment.gatewayRef };
+      }),
+    gatewayRefund: protectedProcedure("financial:payment.refund")
+      .input((v: unknown) => v as { invoiceId: string; amountFils: number; method: PaymentMethod; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.gatewayPayments.refundInvoice(ctx.session.subject.staffId, asId<"Invoice">(input.invoiceId), input.amountFils, input.method, input.reason);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "refund failed" });
+        return { balanceFils: r.value.totals.balanceFils, gatewayRef: r.value.refund.gatewayRef };
+      }),
     // Refund (KNET/card only; append-only ledger entry). Reopens a paid invoice.
     refund: protectedProcedure("financial:payment.refund")
       .input((v: unknown) => v as { invoiceId: string; amountFils: number; method: PaymentMethod; reason: string })
