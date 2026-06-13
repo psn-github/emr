@@ -53,6 +53,8 @@ Oxford Medical Kuwait currently runs on Cliniko plus a constellation of spreadsh
 
 Each module lists: purpose, the best-of-breed pattern it draws from, P0/P1/P2 requirements, and key acceptance criteria. Phasing is in document 05.
 
+> **Replacing om-software (ADR-0020):** the EMR **supersedes** the first-generation om-software point tools — semen-analysis → andrology (E5), embryo follow-up → embryology (E4), Document Ledger/patient timeline + HTML clinical tools → clinical core (E2) + document store (E0), Cliniko-backed patient context → scheduling/registry (E1). Each tool is replaced **individually, behind a parallel-run gate, with proven data migration before decommission** — never big-bang. Full mapping in `docs/07_OM_SOFTWARE_REPLACEMENT_MAP.md`; per-tool migrations are sequenced in document 05.
+
 ### E0. Platform foundation (Phase 0)
 
 **Purpose:** the spine every other module hangs on.

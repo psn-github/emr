@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.2 (stimulation charting + controlled formulary; follitropin-delta dropped, om-software dosing-calculator port pending access).
+- **Last updated:** 2026-06-13 — om-software replacement strategy (ADR-0020) + replacement map (docs/07); Phase 2 PR 2.2 merged.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -31,6 +31,8 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[legal]** Medical-record retention period (docs/03 §3). Blocks retention job.
 - **[integration, in progress — ADR-0018]** RI Witness integration path with CooperSurgical (sync-tool version, EMR-integration licence, pull-back mechanism, image transfer, RI-server residency review). **PO initiating scoping;** Phase 2 builds the reconciliation/blocking behind a stub meanwhile. Gates real witnessing wiring + lab cutover.
 - **[clinical — ADR-0019]** No time-lapse incubator today; vendor-neutral morphokinetic import seam built. Pick a platform if/when one is acquired.
+- **[decision, assigned: PO/MD — ADR-0020]** om-software tool **retirement order** and **archive-vs-migrate per tool** (semen-analysis, embryo follow-up, Document Ledger/timeline, HTML clinical tools). See docs/07 replacement map.
+- **[access, assigned: PO — ADR-0020/0016]** Grant **om-software read access** to this build (or supply the relevant logic/specs): needed for field-level data-model mapping per tool migration **and** the stimulation dosing-calculator port (PR 2.2 follow-on). Currently out of session scope.
 - **[ops]** KNET integration: direct bank vs gateway aggregator (docs/01 §G). Affects billing + residency review.
 - **[DECIDED — ADR-0017]** Cliniko migration: **Option B (cutover + archive)** chosen. Residency check still needed on Cliniko's hosting region before relying on it as the archive (docs/03 §4).
 - **[ops]** L2 bed reservation coupling (auto-reserve on theatre booking vs assign-on-day) and pre-op holding location modelling (docs/01 §E7). Confirm against real clinic flow.
@@ -38,6 +40,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — om-software replacement strategy + map (ADR-0020, docs/07)
+**Shipped (docs):** **ADR-0020** — the EMR **replaces** the om-software first-gen tools **tool-by-tool, never big-bang**: (1) parallel-run gate per tool, (2) no decommission without proven data migration (+ reconciliation report; "history never lost" holds), (3) map-don't-fork (reimplement on the EMR foundation, don't copy HTML/Flask/SQLite). New **docs/07** replacement map (each tool → target module → data to migrate → phase → parallel-run/decommission gate). docs/01 §E note; docs/05 Phase 2 gains per-tool migration sequencing (embryo follow-up→E4, semen-analysis→E5, Document Ledger/HTML tools→E2/E0; Cliniko patient-context→E1 already Phase 1). Phase 0/1 plan unchanged.
+**Open / needs product owner:** om-software **retirement order** + **archive-vs-migrate per tool**; **om-software read access** for field-level mapping (and the stim dosing-calculator port).
+**Next:** PR 2.3 — monitoring-visit workflow + trigger calculator + procedure scheduling.
 
 ## 2026-06-13 — Stimulation charting + controlled formulary (PR 2.2)
 **Shipped:** `@oxford/fertility` stimulation charting — controlled **formulary** of stim drugs (no free-text prescribing; bilingual; fixed unit per item), `StimulationDay` (day-by-day grid: formulary drug doses, per-ovary follicle measurements, endometrium, endocrine E2/LH/P4/FSH), `StimulationService.recordDay` (validates every drug against the formulary + positive dose + matching unit; audited; upserts per day) and `chart` (ordered, for trend). Drizzle schema + migration; Postgres store, integration-tested. **100% coverage** (the dose-affecting validation logic) (26 tests total).

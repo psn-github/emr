@@ -48,6 +48,14 @@ Deliver (in this internal order):
 
 **Parallel run:** run the lab in parallel with existing records for an agreed number of real cycles; reconcile every RI Witness witnessing record against Oxford HIS handling events and every specimen location before cutover. **Lab cutover requires explicit Medical Director sign-off.**
 
+**om-software tool replacement (ADR-0020, docs/07) — sequenced here, tool-by-tool:**
+- **Embryo follow-up → embryology (E4):** when E4 is built, add a re-runnable, audited **migration + reconciliation report** for the embryo records; parallel-run E4 alongside the live tool; decommission only after migration is proven (+ RI Witness reconciled) and **MD sign-off**.
+- **Semen-analysis tool → andrology (E5):** migration + reconciliation of semen analyses/prep/freeze records; parallel run; decommission on proof + MD sign-off.
+- **Document Ledger / patient timeline → documents (E0) + clinical (E2):** migrate (or archive with guaranteed read access) **every document + history entry** — the "history never lost" promise must hold across the move; per-document reconciliation report; decommission only when complete.
+- **HTML clinical tools → clinical core (E2):** migrate clinical entries; parallel run; decommission on proof.
+- (Cliniko-backed patient context → registry/scheduling E1 was handled in Phase 1, ADR-0017.)
+- Each migration reuses the `@oxford/migration` pattern (ledger + reconciliation). **Field-level mapping requires om-software read access** (STATE open item). **Retirement order and archive-vs-migrate per tool are product-owner decisions** (STATE).
+
 ## Phase 3 — Theatres, perioperative journey & beds
 **Goal:** both theatres and all nine beds run on the system; the full surgical pathway (admit→bed→recovery→theatre→recovery→bed→discharge) is tracked, audited, and capacity-aware, with enforced WHO checklist and consumable→billing flow.
 
