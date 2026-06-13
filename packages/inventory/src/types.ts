@@ -1,4 +1,5 @@
 import type { Id } from "@oxford/core";
+import type { CdMovementType } from "./controlled.js";
 
 // Operations ERP types (docs/01 §E9). The catalogue is the foundation: suppliers
 // and items (consumables, media, drugs, lab kit, office) with units, pack sizes,
@@ -87,6 +88,26 @@ export interface ColdChainReading {
   readonly temperatureC: number;
   readonly recordedAt: string;
   readonly recordedBy: string;
+}
+
+export type CdMovementId = Id<"CdMovement">;
+
+/** A single entry in the controlled-drugs register (docs/01 §E8 P0): append-only,
+ *  witnessed (two-person), carrying the running book balance after the movement.
+ *  The schedule classification (Kuwaiti law) is config metadata, optional here. */
+export interface CdMovement {
+  readonly id: CdMovementId;
+  readonly itemId: string;
+  readonly lotNo: string;
+  readonly type: CdMovementType;
+  readonly quantity: number;
+  readonly balanceAfter: number;
+  readonly reason: string;
+  /** The patient/encounter an issue was administered to (null otherwise). */
+  readonly patientRef: string | null;
+  readonly actorId: string;
+  readonly witnessedBy: string;
+  readonly occurredAt: string;
 }
 
 export type ItemCategory = "consumable" | "media" | "drug" | "lab_kit" | "office";

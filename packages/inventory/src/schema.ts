@@ -1,5 +1,5 @@
 // Drizzle schema for the `inventory` domain (docs/01 §E9).
-import { pgSchema, text, integer, boolean, doublePrecision, date, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgSchema, text, integer, bigserial, boolean, doublePrecision, date, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 
 export const inventorySchema = pgSchema("inventory");
 
@@ -57,6 +57,25 @@ export const supplierInvoice = inventorySchema.table(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
   },
   (t) => ({ byPo: index("supplier_invoice_po_idx").on(t.poId) }),
+);
+
+export const cdMovement = inventorySchema.table(
+  "cd_movement",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    itemId: text("item_id").notNull(),
+    lotNo: text("lot_no").notNull(),
+    type: text("type").notNull(),
+    quantity: integer("quantity").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    reason: text("reason").notNull(),
+    patientRef: text("patient_ref"),
+    actorId: text("actor_id").notNull(),
+    witnessedBy: text("witnessed_by").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ byItem: index("cd_movement_item_idx").on(t.itemId) }),
 );
 
 export const coldChainReading = inventorySchema.table(

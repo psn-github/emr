@@ -41,7 +41,7 @@ import {
   type PerioperativeBillingPort,
   type PharmacyPort,
 } from "@oxford/perioperative";
-import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, ProcurementService, PgProcurementStore } from "@oxford/inventory";
+import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, ProcurementService, PgProcurementStore, ControlledDrugsService, PgControlledRegisterStore } from "@oxford/inventory";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -74,6 +74,7 @@ export interface Services {
   readonly catalogue: CatalogueService;
   readonly inventory: InventoryService;
   readonly procurement: ProcurementService;
+  readonly controlledDrugs: ControlledDrugsService;
   /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
   readonly pharmacyStub: StubPharmacyProvider;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
@@ -212,6 +213,10 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // supplier invoice → 3-way match. Shares the real inventory so a GRN receives
   // actual stock; AP money is integer fils, kept apart from patient billing.
   const procurement = new ProcurementService(new PgProcurementStore(pool), inventory, audit, events);
+  // Controlled-drugs register (docs/01 §E8): a legal-grade, two-person-witnessed,
+  // reconcilable ledger for items flagged `controlled` in the catalogue. Its own
+  // append-only book balance; a physical count reconciles against it.
+  const controlledDrugs = new ControlledDrugsService(new PgControlledRegisterStore(pool), catalogueStore, audit, events);
   const perioperativeBilling: PerioperativeBillingPort = {
     async raiseConsumableCharges(actorId, patientId, lines) {
       const r = await billing.createInvoice(actorId, patientId, lines.map((l) => ({ chargeCode: l.chargeCode, description: { ar: l.descriptionAr, en: l.descriptionEn }, unitAmountFils: l.unitAmountFils, quantity: l.quantity })));
@@ -251,5 +256,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, pharmacyStub, notificationOutbox, witnessProvider };
 }

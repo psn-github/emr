@@ -66,5 +66,17 @@
 - **Status:** **resolved** — items 1 & 2 actioned in PR 2.10 (ADR-0021/0022); item 3 tracked as a PO/MD action.
 - **Product-owner decision:** confirmed by the Medical Director, 2026-06-13.
 
+## AMD-0005 — Kuwaiti controlled-drugs schedule + MOH reporting format (register built; specifics are config)
+- **Date:** 2026-06-13
+- **Raised by:** Phase 4 session (claude), building PR 4.5 (controlled-drugs register)
+- **Type:** clarification-needed (Kuwaiti law / drugs — do not build the permissive path)
+- **Documents involved:** docs/01 §E8 P0 (controlled drugs register: legal-grade, witnessed, reconcilable)
+- **Built (unambiguous mechanism, PR 4.5):** an append-only, **two-person-witnessed**, **reconcilable** controlled-drugs register in `@oxford/inventory` — every movement (receipt/issue/wastage/destruction/return) of a catalogue item flagged `controlled` carries the running **book balance** (never negative); a **physical count** reconciles against the book and any discrepancy posts a **witnessed adjustment** (audited, never silently absorbed); a **period report** gives opening/closing balance + movements (the MOH-reporting hook). The safety gate is the **explicit per-item `controlled` flag** (not a derived schedule), so nothing slips through on an empty schedule.
+- **Open (needs clinic/MD + Kuwaiti regulatory confirmation), kept as config — NOT hardcoded:**
+  1. The **Kuwaiti MOH controlled-substances schedule/classes** (which drugs are scheduled, and at what class). Captured today only by the per-item `controlled` flag; the schedule-class metadata + which classes carry extra controls is config to be confirmed.
+  2. The **MOH controlled-drugs reporting FORMAT / submission channel** (periodicity, fields, file/portal). `periodReport` produces the structured data; the regulatory output format/transmission is deferred until confirmed.
+- **Conservative stance:** the register works fully and safely now; only the regulatory *classification contents* and *report format* are pending. No permissive default introduced.
+- **Status:** **open** — mechanism shipped; the two specifics tracked here for MD/regulatory confirmation (cutover-gating, like the other Kuwaiti-law items).
+
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.

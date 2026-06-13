@@ -613,6 +613,32 @@ export const appRouter = router({
       }),
   }),
 
+  // Controlled-drugs register (docs/01 §E8 P0) — legal-grade, two-person-witnessed,
+  // reconcilable. Clinical-safety domain (MFA-gated). The second-person witness is
+  // enforced in the service, not by permissions.
+  controlledDrugs: router({
+    record: protectedProcedure("clinical:controlled_drugs.write")
+      .input((v: unknown) => v as { itemId: string; lotNo: string; type: "receipt" | "issue" | "wastage" | "destruction" | "return"; quantity: number; reason: string; patientRef?: string; witnessedBy: string; occurredAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.controlledDrugs.record(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "movement rejected" });
+        return { movementId: r.value.id, balanceAfter: r.value.balanceAfter };
+      }),
+    reconcile: protectedProcedure("clinical:controlled_drugs.write")
+      .input((v: unknown) => v as { itemId: string; lotNo: string; physicalCount: number; witnessedBy: string; reason: string; occurredAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.controlledDrugs.reconcileCount(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "reconcile rejected" });
+        return r.value;
+      }),
+    balance: protectedProcedure("clinical:controlled_drugs.read")
+      .input((v: unknown) => v as { itemId: string })
+      .query(async ({ ctx, input }) => ({ balance: await ctx.services.controlledDrugs.balance(input.itemId) })),
+    periodReport: protectedProcedure("clinical:controlled_drugs.read")
+      .input((v: unknown) => v as { itemId: string; from: string; to: string })
+      .query(async ({ ctx, input }) => ctx.services.controlledDrugs.periodReport(input.itemId, input.from, input.to)),
+  }),
+
   // Billing (MFA-gated financial domain).
   billing: router({
     createInvoice: protectedProcedure("financial:invoice.write")

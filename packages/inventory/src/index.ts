@@ -24,4 +24,9 @@ export type { RequisitionId, Requisition, RequisitionLine, PurchaseOrderId, Purc
 export { type ProcurementStore, InMemoryProcurementStore } from "./procurement-store.js";
 export { PgProcurementStore } from "./procurement-pg-store.js";
 export { ProcurementService, type CreatePoInput, type ReceiveGoodsInput, type RecordInvoiceInput } from "./procurement-service.js";
-export { inventorySchema, supplier, catalogueItem, stockLot, coldChainReading, requisition, purchaseOrder, goodsReceipt, supplierInvoice } from "./schema.js";
+export { newBalance, validateWitness, reconcile, movementDirection, type CdMovementType, type Reconciliation } from "./controlled.js";
+export type { CdMovementId, CdMovement } from "./types.js";
+export { type ControlledRegisterStore, InMemoryControlledRegisterStore } from "./controlled-store.js";
+export { PgControlledRegisterStore } from "./controlled-pg-store.js";
+export { ControlledDrugsService, type RecordMovementInput, type ReconcileInput, type PeriodReportRow } from "./controlled-service.js";
+export { inventorySchema, supplier, catalogueItem, stockLot, coldChainReading, requisition, purchaseOrder, goodsReceipt, supplierInvoice, cdMovement } from "./schema.js";
