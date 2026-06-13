@@ -840,6 +840,42 @@ export const appRouter = router({
       .input((v: unknown) => v as { oocytesRetrieved: number; maturedOocytes: number; inseminated: number; twoPn: number; blastocysts: number })
       .query(({ ctx, input }) => ({ kpis: ctx.services.analytics.labKpis(input) })),
   }),
+
+  // Operational + financial dashboards (docs/01 §E12, ADR-0039) — read models that
+  // compose existing service reads + the analytics shaping. MFA-gated.
+  dashboards: router({
+    // Receivables ageing, revenue by service line, instalment-plan arrears risk.
+    financial: protectedProcedure("financial:reports.read")
+      .input((v: unknown) => v as { asOf: string })
+      .query(async ({ ctx, input }) => {
+        const asOf = new Date(input.asOf);
+        const [ageingRows, revenueRows, arrears] = await Promise.all([
+          ctx.services.billing.openInvoiceAgeing(asOf),
+          ctx.services.charges.revenueRows(),
+          ctx.services.instalments.allArrears(asOf),
+        ]);
+        return {
+          ageing: ctx.services.analytics.ageing(ageingRows),
+          revenueByLine: ctx.services.analytics.revenue(revenueRows),
+          instalmentRisk: ctx.services.analytics.instalmentRisk([...arrears]),
+        };
+      }),
+    // Stock/expiry risk + calibration compliance (the safety-relevant signals).
+    operational: protectedProcedure("admin:reports.read")
+      .input((v: unknown) => v as { asOf: string; withinDays: number })
+      .query(async ({ ctx, input }) => {
+        const asOf = new Date(input.asOf);
+        const [stock, calibration] = await Promise.all([
+          ctx.services.inventory.alerts(asOf, input.withinDays),
+          ctx.services.assets.alerts(asOf, input.withinDays),
+        ]);
+        return { stock, calibration };
+      }),
+    // Theatre utilisation for a theatre on a day (passthrough to the Phase-3 read).
+    theatreUtilisation: protectedProcedure("admin:reports.read")
+      .input((v: unknown) => v as { theatreResourceId: string; date: string; availableMinutes: number })
+      .query(async ({ ctx, input }) => ctx.services.theatreScheduling.utilisation(input.theatreResourceId, input.date, input.availableMinutes)),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

@@ -5,6 +5,8 @@ export interface InstalmentStore {
   getPlan(id: InstalmentPlanId): Promise<InstalmentPlan | null>;
   /** Active plans for a patient (drives the progression gate). */
   activePlansForPatient(patientId: string): Promise<readonly InstalmentPlan[]>;
+  /** All active plans (drives the instalment-risk dashboard). */
+  allActivePlans(): Promise<readonly InstalmentPlan[]>;
 }
 
 export class InMemoryInstalmentStore implements InstalmentStore {
@@ -18,5 +20,8 @@ export class InMemoryInstalmentStore implements InstalmentStore {
   }
   async activePlansForPatient(patientId: string): Promise<readonly InstalmentPlan[]> {
     return [...this.plans.values()].filter((p) => p.patientId === patientId && p.status === "active");
+  }
+  async allActivePlans(): Promise<readonly InstalmentPlan[]> {
+    return [...this.plans.values()].filter((p) => p.status === "active");
   }
 }

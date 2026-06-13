@@ -23,6 +23,10 @@ export class PgInstalmentStore implements InstalmentStore {
     const r = await this.pool.query<PlanRow>("SELECT * FROM billing.instalment_plan WHERE patient_id = $1 AND status = 'active'", [patientId]);
     return r.rows.map(planFrom);
   }
+  async allActivePlans(): Promise<readonly InstalmentPlan[]> {
+    const r = await this.pool.query<PlanRow>("SELECT * FROM billing.instalment_plan WHERE status = 'active'", []);
+    return r.rows.map(planFrom);
+  }
 }
 
 interface PlanRow { id: string; patient_id: string; invoice_id: string; total_fils: string | number; deposit_fils: string | number; instalments: Instalment[]; status: string; created_at: Date }

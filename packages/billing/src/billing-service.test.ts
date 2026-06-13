@@ -94,6 +94,18 @@ describe("BillingService payments", () => {
     if (!wire.ok) expect(wire.error.detailKey).toBe("billing.method_not_allowed");
   });
 
+  it("reports open-invoice ageing (balance + age days) for the dashboard", async () => {
+    const { svc, invoice } = await invoiced();
+    await svc.postPayment("fin-1", invoice.id, 30000, "knet"); // partial → still open, balance 25000
+    // invoice createdAt is the fixed clock (2026-06-13); age 30 days later
+    const ageing = await svc.openInvoiceAgeing(new Date("2026-07-13T08:00:00.000Z"));
+    expect(ageing).toHaveLength(1);
+    expect(ageing[0]).toEqual({ invoiceId: invoice.id, balanceFils: 25000, ageDays: 30 });
+    // a fully-paid invoice flips to paid and drops out of the ageing list
+    await svc.postPayment("fin-1", invoice.id, 25000, "card");
+    expect(await svc.openInvoiceAgeing(new Date("2026-07-13T08:00:00.000Z"))).toHaveLength(0);
+  });
+
   it("refunds (append-only) reduce the paid amount and reopen a paid invoice", async () => {
     const { svc, invoice } = await invoiced();
     await svc.postPayment("fin-1", invoice.id, 55000, "knet"); // fully paid

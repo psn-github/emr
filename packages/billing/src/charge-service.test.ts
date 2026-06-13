@@ -47,6 +47,12 @@ describe("ChargeCaptureService", () => {
     // every charge now carries the invoice id
     const charges = await svc.chargesForPatient("pat-1");
     expect(charges.every((c) => c.invoiceId !== null)).toBe(true);
+    // revenue rows (one per invoiced charge) feed the revenue-by-line dashboard
+    const rows = await svc.revenueRows();
+    expect(rows).toEqual([
+      { line: "clinical", amountFils: 25000 },
+      { line: "lab", amountFils: 16000 },
+    ]);
   });
 
   it("recognises a charge against a package inclusion; bills only the excess", async () => {

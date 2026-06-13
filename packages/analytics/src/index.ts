@@ -11,4 +11,13 @@ export {
   type OutcomeCounts,
   type KpiResult,
 } from "./kpi.js";
+export {
+  ageingBuckets,
+  revenueByLine,
+  instalmentRisk,
+  type AgeingItem,
+  type AgeingBuckets,
+  type RevenueRow,
+  type InstalmentRisk,
+} from "./dashboards.js";
 export { AnalyticsService, type OutcomeReport } from "./analytics-service.js";
