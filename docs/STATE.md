@@ -39,6 +39,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-06-13 — Scheduling: resources, appointment types, conflict detection (PR 1.2)
+**Shipped:** `@oxford/scheduling` — bookable `Resource`s across all 4 levels (practitioner/room/scanner/theatre/equipment; rooms carry a logical `locationRef` into facility, no cross-module import); `AppointmentType` as config (duration, required resource kinds); multi-resource **conflict detection** (half-open interval overlap on shared resources); appointment lifecycle (booked→checked_in→in_progress→completed, plus cancel + **no-show capture**); `SchedulingService.book/checkIn/start/complete/cancel/markNoShow` — all audited + emit events; instants normalised to canonical ISO so conflict math is identical in-memory and in Postgres. Drizzle schema + migration; Postgres-backed store (jsonb `resource_ids` conflict query, integration-tested). **100% coverage** (20 tests).
+**Adversarial self-review (PHI access):** appointments carry `patientId` (PHI). `[attack] clinical-only role → scheduling:appointment.read: DENIED`; reception (`scheduling:*`) allowed. Deny-by-default holds for the new domain; route-level enforcement wired when the scheduling routes are added.
+**Open / needs product owner:** none new.
+**Next:** PR 1.3 — live patient-flow & bed board (PatientLocation/LocationMovement/BedAllocation; reception sees location/status only); adversarial review (PHI location).
+
 ## 2026-06-13 — Phase 1 kickoff: facility/building model (PR 1.1)
 **Shipped:** `@oxford/facility` — the four-level building as addressable locations (`Floor`/`LocationNode`/`Bed`) with bilingual config names; bed-status state machine (free/occupied/cleaning/blocked with legal transitions); `FacilityService.setBedStatus` (audited + emits `BedStatusChanged` for the flow board); `seedFacility` builds the real layout (Ground pharmacy; L1 2 theatres + 3 recovery beds; L2 6 inpatient beds; L3 4 consult + 2 scan rooms + IVF lab = **9 beds, 19 locations**); Drizzle schema + forward-only migration; Postgres-backed store (integration-tested). **100% coverage** on domain logic.
 **Decisions:** **ADR-0017** Cliniko migration = Option B (cutover + archive). Phase 1 approved by product owner.
