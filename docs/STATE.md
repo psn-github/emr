@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — om-software replacement strategy (ADR-0020) + replacement map (docs/07); Phase 2 PR 2.2 merged.
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.4 (witnessing seam + RI reconciliation + blocking sign-off, `@oxford/witnessing`, 100%, adversarial review passed). PR 2.3 (monitoring) merged.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,17 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Witnessing seam + RI reconciliation + blocking sign-off (PR 2.4)
+**Shipped:** new **`@oxford/witnessing`** platform package (the RI-Witness reconciliation seam, CLAUDE.md hard rule + ADR-0018). RI Witness (RFID) stays **authoritative**; Oxford never witnesses. The package: records the **handling events** Oxford observed and **pushes demographics out** (Oxford = demographic master); ingests RI records **back** behind a `WitnessingProvider`/`RiWitnessStubProvider` adapter (no real device, no PHI); maintains an **append-only reconciliation ledger** (`matched` / `pending_sync` / `divergent`, with non-PHI reasons `no_ri_record`/`ri_flagged_mismatch`/`patient_mismatch`/`sample_mismatch`/`orphan_ri_record`); and **blocks cycle-step sign-off on ANY non-matched event** via `assertCycleStepSignOff`. Pure core (`reconcile.ts`) + service + in-memory & Postgres stores + Drizzle schema/migration. **No competing witness UI; structurally no override path** (`assertSignOffAllowed` takes only the ledger — no force flag/branch can flip a divergent event to matched). **100% coverage** (26 tests). Sign-off enforcement is wired into the cycle-step flow in PR 2.5 (embryology).
+**Adversarial review (witnessing) — run against real Postgres, all pass:**
+- **A1 pending:** RI not yet confirmed → sign-off **BLOCKED** (`witnessing.sign_off.blocked`).
+- **A2 wrong patient:** RI reports a different patient → `patient_mismatch` divergent → **BLOCKED**.
+- **A3 RI mismatch flag:** RI electronically flagged mismatch → divergent → **BLOCKED**.
+- **A4 orphan:** RI witnessed a handling Oxford never recorded → `orphan_ri_record` divergent → **BLOCKED**.
+- **A5 override attempt:** no API path forces "matched"; only a genuine RI confirmation flips a step to matched → then **ALLOWED**.
+**Open / needs product owner:** none new (real `RiWitnessProvider` wiring still gated on CooperSurgical scoping per ADR-0018, already tracked above).
+**Next:** PR 2.5 — embryology (development tracking + grading), wiring `assertCycleStepSignOff` into lab-step sign-off; adversarial review (embryology RBAC).
 
 ## 2026-06-13 — Monitoring-visit workflow + trigger calculator + procedures (PR 2.3)
 **Shipped:** `@oxford/fertility` monitoring — `MonitoringService.recordVisit` (clinician decision continue/adjust/**trigger**/cancel; audited + event), the **trigger-timing calculator** (`computeRetrievalTime` = trigger + 36h default, configurable; `countdownHours`) — a `trigger` decision **auto-creates the retrieval `Procedure`** at the computed time; `scheduleProcedure` + `linkTheatreBooking` (the theatre slot itself is booked in the app layer via scheduling — logical `theatreBookingRef`). Drizzle schema + migration; Postgres store, integration-tested. **100% coverage** (35 tests).

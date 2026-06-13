@@ -323,6 +323,25 @@ importers:
         specifier: workspace:*
         version: link:../i18n
 
+  packages/witnessing:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+
 packages:
 
   '@ampproject/remapping@2.3.0':
