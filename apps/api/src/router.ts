@@ -749,6 +749,32 @@ export const appRouter = router({
         return { components: r.value };
       }),
   }),
+
+  // Deposits & instalment plans + the cycle-progression gate (docs/01 §E11,
+  // ADR-0038). A plan pays down an invoice; arrears block progression.
+  instalments: router({
+    createPlan: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { patientId: string; invoiceId: string; depositFils: number; instalments: { dueDate: string; amountFils: number }[] })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.instalments.createPlan(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid plan" });
+        return { planId: r.value.id };
+      }),
+    assess: protectedProcedure("financial:invoice.read")
+      .input((v: unknown) => v as { planId: string; asOf: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.instalments.assessProgression(input.planId, new Date(input.asOf));
+        if (!r.ok) throw new TRPCError({ code: "NOT_FOUND", message: r.error.detailKey ?? "plan not found" });
+        return r.value;
+      }),
+    // The cycle-progression gate, queried by patient (the FinanceGate seam).
+    progressionAllowed: protectedProcedure("financial:invoice.read")
+      .input((v: unknown) => v as { patientId: string; asOf: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.instalments.assertProgressionAllowed(input.patientId, new Date(input.asOf));
+        return { allowed: r.ok, reason: r.ok ? null : r.error.detailKey };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
