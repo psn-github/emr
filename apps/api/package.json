@@ -32,6 +32,7 @@
     "@oxford/analytics": "workspace:*",
     "@oxford/hr": "workspace:*",
     "@oxford/messaging": "workspace:*",
+    "@oxford/consent": "workspace:*",
     "@oxford/fertility": "workspace:*",
     "@oxford/migration": "workspace:*",
     "@trpc/server": "^11.0.0",

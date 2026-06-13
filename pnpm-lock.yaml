@@ -53,6 +53,9 @@ importers:
       '@oxford/clinical':
         specifier: workspace:*
         version: link:../../packages/clinical
+      '@oxford/consent':
+        specifier: workspace:*
+        version: link:../../packages/consent
       '@oxford/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -233,6 +236,25 @@ importers:
       '@oxford/identity':
         specifier: workspace:*
         version: link:../identity
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+
+  packages/consent:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
