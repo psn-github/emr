@@ -16,6 +16,9 @@
     "@oxford/registry": "workspace:*",
     "@oxford/crypto": "workspace:*",
     "@oxford/i18n": "workspace:*",
+    "@oxford/scheduling": "workspace:*",
+    "@oxford/facility": "workspace:*",
+    "@oxford/notifications": "workspace:*",
     "@trpc/server": "^11.0.0",
     "pg": "^8.13.1"
   },

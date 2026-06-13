@@ -10,17 +10,33 @@ import {
 import { Authorizer } from "@oxford/identity";
 import { LocalKeyProvider } from "@oxford/crypto";
 import { RegistryService, PgRegistryStore } from "@oxford/registry";
-import { I18n, coreMessages } from "@oxford/i18n";
+import { I18n, coreMessages, type Catalog } from "@oxford/i18n";
+import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
+import { FacilityService, FlowService, PgFacilityStore, PgFlowStore } from "@oxford/facility";
+import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
-// choices (pool, key provider) are config so the in-region OCI target (ADR-0014)
-// is a config swap. `isProduction` guards the dev-only providers.
+// choices (pool, key provider, notification provider) are config so the in-region
+// OCI target (ADR-0014) is a config swap. Dev/stub providers are guarded.
 export interface Services {
   readonly audit: AuditLog;
   readonly events: DomainEventLog;
   readonly registry: RegistryService;
   readonly authorizer: Authorizer;
   readonly i18n: I18n;
+  readonly scheduling: SchedulingService;
+  readonly facility: FacilityService;
+  readonly flow: FlowService;
+  readonly notifications: NotificationService;
+  /** Dev/test stub outbox (records messages; no real provider wired yet). */
+  readonly notificationOutbox: RecordingNotificationProvider;
+}
+
+function mergedCatalog(): Catalog {
+  return {
+    en: { ...coreMessages.en, ...notificationMessages.en },
+    ar: { ...coreMessages.ar, ...notificationMessages.ar },
+  };
 }
 
 export function buildServices(pool: pg.Pool, isProduction = false): Services {
@@ -30,6 +46,11 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const keys = new LocalKeyProvider(isProduction); // in production: OCI Vault provider (ADR-0014)
   const registry = new RegistryService(new PgRegistryStore(pool), keys, audit, events, clock);
   const authorizer = new Authorizer(audit);
-  const i18n = new I18n(coreMessages);
-  return { audit, events, registry, authorizer, i18n };
+  const i18n = new I18n(mergedCatalog());
+  const scheduling = new SchedulingService(new PgSchedulingStore(pool), audit, events);
+  const facility = new FacilityService(new PgFacilityStore(pool), audit, events);
+  const flow = new FlowService(new PgFlowStore(pool), facility, audit, events, clock);
+  const notificationOutbox = new RecordingNotificationProvider(); // residency review gates a real provider (ADR-0006)
+  const notifications = new NotificationService(i18n, notificationOutbox, audit, events);
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, notificationOutbox };
 }
