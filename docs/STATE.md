@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** Phase 0 — Foundation **COMPLETE** (pending merge of the closeout PR). All six modules + integration wiring (Postgres-backed stores, forward-only migrations + runner, tRPC API behind the deny-by-default auth middleware, chain-integrity scheduler seam, destructive-migration guard) on `main`. Exit gate met and proven by a cross-cutting e2e through the API against real Postgres. **Awaiting product-owner go-ahead before Phase 1.**
-- **Last updated:** 2026-06-12 — Phase 0 closeout: API wiring + scheduler + migration-safety guard + cross-cutting e2e.
+- **Phase:** **Phase 1 — Cliniko parity (in progress).** Phase 0 complete on `main`. Phase 1 approved; Cliniko migration = Option B (ADR-0017). Building the stacked PRs: facility (1.1) → scheduling → flow-board → clinical EMR → invoicing → portal+reminders → Cliniko migration → closeout e2e.
+- **Last updated:** 2026-06-13 — Phase 1 PR 1.1 (facility/building model).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -32,12 +32,18 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[integration]** RI Witness integration path with CooperSurgical — sync-tool version, EMR-integration licence, programmatic pull-back of witnessing/traceability vs report-only (docs/02 §4, docs/01 §G). Prerequisite for Phase 2 embryology build.
 - **[clinical]** Time-lapse incubator platform (EmbryoScope/Geri/other) — first integration target (docs/01 §G).
 - **[ops]** KNET integration: direct bank vs gateway aggregator (docs/01 §G). Affects billing + residency review.
-- **[ops]** Cliniko migration: full history vs cutover+archive (docs/01 §G). Affects Phase 1 exit.
+- **[DECIDED — ADR-0017]** Cliniko migration: **Option B (cutover + archive)** chosen. Residency check still needed on Cliniko's hosting region before relying on it as the archive (docs/03 §4).
 - **[ops]** L2 bed reservation coupling (auto-reserve on theatre booking vs assign-on-day) and pre-op holding location modelling (docs/01 §E7). Confirm against real clinic flow.
 - **[clinical]** Whether any inpatient stay is overnight/multi-day (e.g. post-delivery) or all same-day — determines if the bed model needs a night-census concept (docs/01 §E7).
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Phase 1 kickoff: facility/building model (PR 1.1)
+**Shipped:** `@oxford/facility` — the four-level building as addressable locations (`Floor`/`LocationNode`/`Bed`) with bilingual config names; bed-status state machine (free/occupied/cleaning/blocked with legal transitions); `FacilityService.setBedStatus` (audited + emits `BedStatusChanged` for the flow board); `seedFacility` builds the real layout (Ground pharmacy; L1 2 theatres + 3 recovery beds; L2 6 inpatient beds; L3 4 consult + 2 scan rooms + IVF lab = **9 beds, 19 locations**); Drizzle schema + forward-only migration; Postgres-backed store (integration-tested). **100% coverage** on domain logic.
+**Decisions:** **ADR-0017** Cliniko migration = Option B (cutover + archive). Phase 1 approved by product owner.
+**Open / needs product owner:** Cliniko archive residency check (ADR-0017).
+**Next:** PR 1.2 — scheduling (bookable resources across all levels, appointment types as config, conflict detection, waitlist/cancellation/no-show); adversarial review (PHI access).
 
 ## 2026-06-12 — Phase 0 closeout: integration wiring + cross-cutting e2e (PR 0.7)
 **Shipped:** `apps/api` composition — Postgres pool + **forward-only migration runner** (`runMigrations` applies every `packages/*/migrations/*.sql` once, recorded in `_meta.migrations`) + `migrate` CLI; `buildServices` wiring the **Postgres-backed** AuditLog (`PgAuditChainStore`) + RegistryService (`PgRegistryStore` + `LocalKeyProvider`) + Authorizer + i18n; **tRPC API behind the deny-by-default auth middleware** (`protectedProcedure(permission)` runs the Authorizer, audits denials) with `registry.*`, `fertility.startIntake` (the marriage gate at the API), and `embryology.read`; **chain-integrity scheduler** (`IntervalScheduler` + `chainIntegrityJob` — the seam; BullMQ/Redis is the production transport, ADR-0010); **`scripts/check-migrations-safe.mjs` + `Makefile`** — the destructive-migration guard `deploy.yml` invokes (`make check-migrations-safe`), now also a CI step.
