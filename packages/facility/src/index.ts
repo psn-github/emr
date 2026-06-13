@@ -18,4 +18,20 @@ export { FacilityService } from "./facility-service.js";
 export { type FacilityStore, InMemoryFacilityStore } from "./store.js";
 export { PgFacilityStore } from "./pg-store.js";
 export { seedFacility, type SeedResult } from "./seed.js";
-export { facilitySchema, floor, locationNode, bed } from "./schema.js";
+export { facilitySchema, floor, locationNode, bed, patientLocation, locationMovement } from "./schema.js";
+
+// Patient-flow & bed board (PHI: who is where).
+export type {
+  PatientFlowStatus,
+  PatientLocation,
+  LocationMovement,
+  LocationMovementId,
+  BoardPatient,
+  BoardLocation,
+  BoardBed,
+  BedCapacity,
+  FlowBoard,
+} from "./flow-types.js";
+export { FlowService, type MoveOptions } from "./flow-service.js";
+export { type FlowStore, InMemoryFlowStore } from "./flow-store.js";
+export { PgFlowStore } from "./flow-pg-store.js";

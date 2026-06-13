@@ -60,6 +60,10 @@ export class FacilityService {
     return ok(updated);
   }
 
+  getBed(id: BedId): Promise<Bed | null> {
+    return this.store.getBed(id);
+  }
+
   async beds(): Promise<readonly Bed[]> {
     return this.store.listBeds();
   }

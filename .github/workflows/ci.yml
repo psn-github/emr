@@ -95,7 +95,9 @@ jobs:
 
       - name: Unit + integration tests
         if: steps.detect.outputs.has_app == 'true'
-        run: pnpm -r test
+        # Serialize packages: integration tests share the one Postgres service,
+        # so run them one package at a time to avoid cross-package DB races.
+        run: pnpm -r --workspace-concurrency=1 test
 
       - name: Build
         if: steps.detect.outputs.has_app == 'true'
