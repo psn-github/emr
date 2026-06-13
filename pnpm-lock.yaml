@@ -90,6 +90,9 @@ importers:
         specifier: ^8.13.1
         version: 8.21.0
     devDependencies:
+      '@oxford/fertility':
+        specifier: workspace:*
+        version: link:../../packages/fertility
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0

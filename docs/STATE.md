@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.8 (outcome continuum: β-hCG → clinical pregnancy → live birth, linked back to cycle + Vienna KPI inputs, `@oxford/outcomes`, 100%, RBAC + continuum review passed). PR 2.7 (cryostore) merged. **Still open:** no vital-status/death-record source yet → cryostore person-owned thaw stays module-only (no permissive posthumous default); cryostore API wiring deferred until registry exposes couple-membership + vital-status.
+- **Phase:** **Phase 2 — Fertility EMR & IVF laboratory — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 2.0→2.9 all merged to `main`. Phases 0 + 1 also complete. A complete antagonist-ICSI cycle runs end-to-end through the stack with no spreadsheet (closeout e2e, PR 2.9). Decisions in force: RI Witness behind a stub (ADR-0018); no time-lapse device — vendor-neutral seam (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); om-software tool-by-tool replacement (ADR-0020). **Do not start Phase 3 until the Medical Director signs off the Phase 2 exit gate.**
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.9 (closeout: complete antagonist-ICSI cycle e2e — marriage gate → consent-gated lifecycle → stim → trigger/retrieval → ICSI lab → witnessing-gated transfer → live-birth outcome → traceability + audit-chain verify, real Postgres). All Phase 2 PRs merged; exit-gate report delivered; **HOLD for sign-off**. **Still open (gates cutover, not the build):** no vital-status/death-record source → cryostore person-owned thaw is module-only (no permissive posthumous default), cryostore API wiring deferred; the three legal confirms (cryo storage max period, marital-status disposition, permitted PGT indications) deferred to clinic counsel; CooperSurgical RI Witness scoping (PO); om-software read access for stim-calculator port + per-tool migrations (PO/MD).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,21 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Phase 2 closeout: complete antagonist-ICSI cycle e2e + exit gate (PR 2.9)
+**Shipped:** a cross-cutting **end-to-end e2e** (`apps/api/src/phase2-icsi-cycle.e2e.test.ts`) that runs a **complete antagonist ICSI cycle through the whole Phase 2 stack against a real Postgres**, with no external spreadsheet — proving the exit-gate invariants in one flow:
+- **identity:** ICSI cycle creation **blocked before marriage verification** (`registry.marriage.unverified`), allowed after;
+- **consent gate + lifecycle:** advancing out of `planned` blocked until ICSI consents signed; then the full status lifecycle planned→stimulating→triggered→retrieval→fertilisation→culture→transfer→luteal→outcome;
+- **stim:** formulary-validated antagonist day (rFSH + GnRH antagonist);
+- **monitoring:** trigger decision auto-schedules the retrieval procedure;
+- **embryology:** oocyte → ICSI → 2PN → embryo → Gardner grading;
+- **witnessing gate (THE exit-gate invariant):** the embryo **transfer is BLOCKED** (`witnessing.sign_off.blocked`) until RI Witness reconciles the ICSI handling event, then **flows once matched**;
+- **outcome continuum:** β-hCG positive → clinical pregnancy → live birth; **Vienna KPI inputs** all captured;
+- **traceability + integrity:** the embryo's **life history reconstructs**, and the **audit hash-chain verifies intact** after the whole cycle.
+Wiring: added `@oxford/fertility` (cycle/stim/monitoring) to the api test surface, composed with the already-wired registry/embryology/witnessing/outcomes services on one audit+event chain. **Full suite green** (api 13 e2e/integration tests; workspace 23 packages, all 100% on their domains).
+**Phase 2 exit-gate report delivered; HOLD for Medical Director sign-off before Phase 3.**
+**Open / needs product owner:** none new (vital-status source, legal confirms, CooperSurgical scoping, om-software access all tracked above — they gate cutover, not the build).
+**Next:** await sign-off, then propose Phase 3 (theatres, perioperative journey & beds).
 
 ## 2026-06-13 — Outcome tracking: the fertility → pregnancy → live-birth continuum (PR 2.8)
 **Shipped:** new **`@oxford/outcomes`** domain module (docs/01 §E3 outcome stage; reporting line 229). Captures the continuum **linked back to the originating cycle**: **β-hCG pregnancy test** (positive/negative against a configurable threshold, default 25 mIU/mL; value validated), **clinical-pregnancy assessment** (gestational sacs / fetal heartbeats; clinical pregnancy = ≥1 sac vs biochemical-only), and the **terminal pregnancy outcome** (live_birth / miscarriage / ectopic / stillbirth / termination / ongoing; a live birth requires a count ≥ 1). `outcomeForCycle` reconstructs the continuum; `kpiInputs` derives the **Vienna-consensus KPI inputs** (biochemical / clinical pregnancy / live birth / ongoing) — KPI *computation* is Phase 5, the *inputs are captured now*. App wiring: `OutcomesService` in the composition root; MFA-gated `outcomes` router (`recordTest`/`recordAssessment`/`recordOutcome`/`summary`) under the **clinical** permission domain. **100% coverage** (outcomes 12 tests; +3 API e2e).
