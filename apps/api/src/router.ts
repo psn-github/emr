@@ -3,6 +3,7 @@ import { asId } from "@oxford/core";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
+import type { SemenParameters } from "@oxford/andrology";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -116,6 +117,24 @@ export const appRouter = router({
           throw new TRPCError({ code: blocked ? "PRECONDITION_FAILED" : "BAD_REQUEST", message: r.error.detailKey ?? "disposition failed" });
         }
         return { dispositionId: r.value.id };
+      }),
+  }),
+
+  // Andrology lab (WHO 6th-ed semen analysis; sperm prep/freeze/retrieval).
+  // Lab data → the embryology permission domain (MFA-gated).
+  andrology: router({
+    recordSemenAnalysis: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { patientId: string; collectedAt: string; parameters: SemenParameters })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.andrology.recordSemenAnalysis(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid analysis" });
+        return { analysisId: r.value.id, allWithinReference: r.value.allWithinReference, flags: r.value.flags };
+      }),
+    recordFreeze: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { cycleId: string; patientId: string; cryoSpecimenRef: string; straws: number; frozenAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const f = await ctx.services.andrology.recordFreeze(ctx.session.subject.staffId, input);
+        return { freezeId: f.id, witnessKey: f.witnessKey };
       }),
   }),
 
