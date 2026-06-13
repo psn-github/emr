@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** **Phase 1 — Cliniko parity COMPLETE** (pending merge of the closeout PR). All eight PRs (1.1 facility → 1.2 scheduling → 1.3 flow board → 1.4 clinical EMR → 1.5 invoicing → 1.6 portal+reminders → 1.7 Cliniko migration → 1.8 closeout) built, CI-gated, with adversarial self-reviews on every PHI/money/identity surface. Exit gate met: a full simulated outpatient day (book → remind → check-in → consult/note → order → letter → invoice → pay) runs end-to-end through the API against real Postgres. **232 tests.** Awaiting product-owner go-ahead before Phase 2.
-- **Last updated:** 2026-06-13 — Phase 1 closeout: full outpatient-day e2e (PR 1.8).
+- **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.0 (spec/data-model alignment + decisions).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -29,8 +29,8 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[CLOSED — Medical Director, 2026-06-13]** Single-person fertility preservation is **legal in Kuwait and standard clinic practice** (ADR-0015, AMD-0002). No longer a legal gate. The medical-vs-elective indication is retained as a **configurable coded field captured for clinical governance**, not a restriction — to be built with the Phase 2 cryostore/cycle.
 - **[ops, assigned: PO]** Clinic review of all 7 notification templates before go-live, **particular attention to the Khaleeji Arabic wording** (current wording is placeholder; templates are bilingual + discreet by test).
 - **[legal]** Medical-record retention period (docs/03 §3). Blocks retention job.
-- **[integration]** RI Witness integration path with CooperSurgical — sync-tool version, EMR-integration licence, programmatic pull-back of witnessing/traceability vs report-only (docs/02 §4, docs/01 §G). Prerequisite for Phase 2 embryology build.
-- **[clinical]** Time-lapse incubator platform (EmbryoScope/Geri/other) — first integration target (docs/01 §G).
+- **[integration, in progress — ADR-0018]** RI Witness integration path with CooperSurgical (sync-tool version, EMR-integration licence, pull-back mechanism, image transfer, RI-server residency review). **PO initiating scoping;** Phase 2 builds the reconciliation/blocking behind a stub meanwhile. Gates real witnessing wiring + lab cutover.
+- **[clinical — ADR-0019]** No time-lapse incubator today; vendor-neutral morphokinetic import seam built. Pick a platform if/when one is acquired.
 - **[ops]** KNET integration: direct bank vs gateway aggregator (docs/01 §G). Affects billing + residency review.
 - **[DECIDED — ADR-0017]** Cliniko migration: **Option B (cutover + archive)** chosen. Residency check still needed on Cliniko's hosting region before relying on it as the archive (docs/03 §4).
 - **[ops]** L2 bed reservation coupling (auto-reserve on theatre booking vs assign-on-day) and pre-op holding location modelling (docs/01 §E7). Confirm against real clinic flow.
@@ -38,6 +38,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Phase 2 kickoff: spec/data-model alignment + decisions (PR 2.0)
+**Shipped (docs):** folded AMD-0002 into docs/01 §E3 (fertility-preservation = the only person-scoped cycle type; treatment cycles couple-gated), §E6 (`CryoSpecimen.owner` = person_id OR couple_id; thaw-for-treatment invariant; no posthumous use; **annual storage billing + non-engagement pathway elevated to Phase 2 P0**), and docs/04 (Cycle/CryoSpecimen glossary).
+**Decisions:** **ADR-0018** RI Witness — build reconciliation + blocking-on-divergence behind a `WitnessingProvider` stub now; real `RiWitnessProvider` wired after CooperSurgical scoping + RI-server residency review (PO initiating scoping). **ADR-0019** time-lapse — none deployed; vendor-neutral morphokinetic import seam only. **AMD-0003** annual cryostorage billing + graduated non-engagement/non-payment pathway (reminders → overdue → clinical/legal review; never auto-destroy), build in PR 2.7.
+**Open / needs product owner (BLOCK cryostore/PGT cutover, not the build — all built configurable):** [legal] cryo storage max period + consent-renewal cadence; [legal] marital-status-change specimen disposition; [legal] permitted PGT indications — all **deferred to clinic legal counsel**. [integration] CooperSurgical RI Witness scoping (PO). [clinical] time-lapse platform if/when acquired.
+**Next:** PR 2.1 — cycle engine + protocol library + per-cycle consent gating (marriage gate at treatment-cycle creation; preservation person-scoped); adversarial review (identity).
 
 ## 2026-06-13 — Phase 1 closeout: full outpatient-day e2e (PR 1.8)
 **Shipped:** the remaining tRPC surface — staff `scheduling.book`, `clinical.*` (encounter / note / order / e-signed letter, MFA-gated) and `billing.*` (invoice / payment, MFA-gated) — all behind the deny-by-default auth middleware; clinical service wired into the composition root. **The Phase 1 exit-gate e2e**: a full simulated outpatient day through the API against real Postgres — register → **book → remind → check-in → consult/note → order → letter → invoice → pay** — ending paid, on the flow board, audit-chain verified; plus a deny-by-default check (reception cannot write clinical notes or post payments). **232 tests, all gates green.**

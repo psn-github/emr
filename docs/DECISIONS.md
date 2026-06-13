@@ -144,4 +144,18 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** **Option B — cutover + archive.** Migrate the active slice (active patients + demographics, upcoming appointments, open balances) into Oxford HIS via a dedicated, audited, **re-runnable** import job with a **reconciliation report**; keep Cliniko (read-only) as the historical archive. A later, bounded backfill of high-value structured items (active meds, problem lists, current consent status) is possible without a big-bang import.
 - **Consequences:** faster, lower-risk go-live; reconciliation scope is the active slice (fits the parallel-run discipline). Trade-off: staff consult Cliniko for old history; a Cliniko export/subscription is retained. **Residency caveat:** Cliniko's own hosting region must pass a residency check before it is relied upon as the archive (docs/03 §4) — logged in STATE.
 
-_(Claude Code: continue numbering from ADR-0018.)_
+## ADR-0018 — RI Witness: build reconciliation/blocking behind the stub now; scope CooperSurgical in parallel
+- **Date:** 2026-06-13
+- **Status:** accepted (product owner)
+- **Context:** RI Witness is the witnessing system of record (ADR-0002). The exact integration path — sync-tool version, EMR-integration licence, whether witnessing/traceability can be pulled back via DB view/export/API, image transfer — must be scoped with CooperSurgical and gates the *real* wiring. Waiting would block the whole Phase 2 lab build.
+- **Decision:** build the full reconciliation ledger + **blocking-on-divergence** logic against a **`WitnessingProvider` stub** (a simulated RI provider) now, so the safety behaviour is built and tested immediately. The real `RiWitnessProvider` is wired behind the same seam once CooperSurgical scoping completes (and the RI server passes the docs/03 residency review). Product owner initiates CooperSurgical scoping in parallel.
+- **Consequences:** Phase 2 lab modules proceed now; no real witnessing data flows until the adapter is wired and reviewed. Mirrors the Phase 0 seam pattern (KMS/OIDC). Refines ADR-0002.
+
+## ADR-0019 — Time-lapse incubator: vendor-neutral import seam only (no device today)
+- **Date:** 2026-06-13
+- **Status:** accepted (product owner — no time-lapse incubator deployed at present; may acquire later)
+- **Context:** embryology grading can import morphokinetic annotations from a time-lapse incubator (EmbryoScope/Geri/etc.). The clinic has none today.
+- **Decision:** build a **vendor-neutral morphokinetic import hook** (a seam on `EmbryoAssessment`) — no platform-specific code. When a device is acquired, a concrete adapter is added behind the seam.
+- **Consequences:** no wasted platform-specific work; the embryology model is ready to receive time-lapse data later without rework.
+
+_(Claude Code: continue numbering from ADR-0020.)_

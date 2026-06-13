@@ -8,8 +8,9 @@
 - Keep the glossary alphabetised. If a term is ambiguous across UK/Gulf practice, note both.
 
 ## Glossary (seed — extend as needed)
-- **Couple** — the fertility clinical unit: husband + wife with a verified marriage record. First-class entity. No fertility workflow without one.
-- **Cycle** — one assisted-reproduction treatment episode (IUI/IVF/ICSI/FET/IVM/fertility-preservation/ovulation-induction) for a couple, with a status lifecycle.
+- **Couple** — the fertility clinical unit: husband + wife with a verified marriage record. First-class entity. No **treatment/embryo-creation** workflow without one.
+- **Cycle** — one assisted-reproduction episode (IUI/IVF/ICSI/FET/IVM/fertility-preservation/ovulation-induction) with a status lifecycle. Treatment cycles link to a **`Couple`** (marriage hard-gate); **fertility-preservation** cycles link to a **`Person`** — the only person-scoped cycle type (ADR-0015/AMD-0002).
+- **CryoSpecimen** — cryopreserved gamete/embryo/tissue. `owner` is a **`person_id` OR a `couple_id`** (person-owned for preservation; couple-owned for treatment/embryos). A person-owned specimen may only enter treatment via the use-time re-gate (verified couple incl. that person + own-gametes). No posthumous-use pathway.
 - **Witness / Witnessing** — confirmation that a gamete/embryo handling step involves only the correct couple's material. Performed by **RI Witness** (RFID) in Oxford Medical's lab — the authoritative system. Oxford HIS reflects and reconciles RI Witness records; it does not author witness decisions.
 - **RI Witness** — CooperSurgical's RFID-based electronic witnessing and ART lab management system, deployed in the Oxford Medical IVF lab. System of record for witnessing and specimen traceability. Oxford HIS is its demographic master (identity flows in) and consumes its witnessing/traceability output. Integration via RI's supported sync tools / EMR-integration licence — confirm exact path with CooperSurgical.
 - **Witness reconciliation** — the ledger matching Oxford HIS handling events to RI Witness witnessing events; status matched / pending-sync / divergent. A `divergent` record blocks cycle-step sign-off.
