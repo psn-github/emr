@@ -39,6 +39,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-06-13 — Clinical EMR core (PR 1.4)
+**Shipped:** `@oxford/clinical` — `Encounter` (O&G types), **append-only versioned `ClinicalNote`** (amendments add a version, never overwrite; full history retained), ordering (`Order` lab/imaging/referral, status-tracked) + **results inbox** (`Result` with abnormal flag, acknowledge/action loop), and **bilingual letters** (draft → e-sign). `ClinicalService` ties it together; every mutation audited + emits events. Drizzle schema + migration `0001_clinical.sql`; Postgres-backed `PgClinicalStore` (note version history persisted as jsonb), integration-tested. **100% coverage** (11 tests). Problem list / coded allergies / meds / obstetric history are captured as structured note-body fields for now; dedicated coded entities are a documented Phase-1 follow-on.
+**Adversarial self-review (clinical PHI):** `[attack] reception → clinical:note.read: DENIED`; clinical reads also require **MFA** (`auth.mfa_required`) even with the permission; and an amendment **cannot erase the original** — `[attack] amend keeps original v1` proven (v1 body intact, amendment attributed to its author). Deny-by-default + append-only both hold.
+**Open / needs product owner:** none new.
+**Next:** PR 1.5 — basic invoicing & payments (charge capture → invoice → payment/receipt); adversarial review (money), 100% on money logic.
+
 ## 2026-06-13 — Live patient-flow & bed board (PR 1.3)
 **Shipped:** extended `@oxford/facility` with the flow board (docs/02 §2: facility owns patient-flow/location). `PatientLocation` (current whereabouts) + append-only `LocationMovement` history; `FlowService.moveTo` (admit/transfer, **capacity-safe** bed allocation via the audited bed-status machine — a bed must be FREE before allocation, so no double-occupancy), `discharge` (frees the bed), `currentLocation`, `movements` (the patient's journey), and `board()` (per-location patients + bed occupancy + per-level capacity — **location/status only, no clinical content**). Drizzle schema + migration `0002_facility_flow.sql`; Postgres-backed `PgFlowStore` (integration-tested). **100% coverage** (20 tests).
 **Adversarial self-review (PHI location):** `[attack] no-permission user → flow board: DENIED`; reception (`scheduling:*`) allowed. The board is structurally clinical-free (asserted: serialized board has no note/result/diagnosis/cycle/embryo/medication vocabulary; entries carry only `{patientId, status, bedId}`).
