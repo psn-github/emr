@@ -8,6 +8,21 @@ import type { CareLocationKind } from "./journey.js";
 // discharge/cancel. Capacity is enforced HERE (a placement fails if no bed/
 // theatre is free), so the journey is capacity-aware without cross-module access.
 
+/** Scheduling seam — books the theatre + staff on the SHARED resource calendar
+ *  (conflict-aware) so theatre cases don't double-book a shared resource. Wired
+ *  to @oxford/scheduling in the app. */
+export interface BookTheatreSlotInput {
+  readonly typeId: string;
+  readonly patientId: string;
+  readonly surgeonResourceId: string;
+  readonly resourceIds: readonly string[];
+  readonly start: string;
+  readonly end: string;
+}
+export interface SchedulingPort {
+  bookTheatreSlot(actorId: string, input: BookTheatreSlotInput): Promise<Result<{ appointmentId: string }, AppError>>;
+}
+
 export interface FacilityFlowPort {
   /** Place the patient into a free location of `kind` with the given flow status.
    *  Returns the node used, or a capacity error if none is free. */
