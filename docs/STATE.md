@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.5 (embryology IVF lab + witnessing gate on terminal acts, `@oxford/embryology`, 100%, RBAC + witnessing adversarial review passed through the API). PR 2.4 (witnessing seam) merged.
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.6 (andrology: WHO 6th-ed semen analysis + witnessed sperm freeze, `@oxford/andrology`, 100%, WHO-boundary + freeze-provenance + RBAC adversarial review passed). PR 2.5 (embryology) merged.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,15 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Andrology (WHO 6th-ed semen analysis + witnessed sperm freeze) (PR 2.6)
+**Shipped:** new **`@oxford/andrology`** domain module (docs/01 §E5). **Semen analysis flagged to WHO 6th-edition (2021) lower reference limits** — volume 1.4 mL, concentration 16 M/mL, total count 39 M, progressive motility 30%, total motility 42%, normal morphology 4%, vitality 54% — limits are **configuration** (the WHO 6th constant is the default; a clinic may pass its own), inclusive lower bounds, with per-parameter `normal`/`below_reference` flags + `allWithinReference`; inputs validated (no negatives, percentages 0–100). **Sperm preparation** record (method/output), **witnessed sperm freeze** with a cryostore link (`cryoSpecimenRef`, registered as a handling event via the `WitnessPort` seam for RI reconciliation), and **surgical retrieval** (TESA/TESE/PESA, theatre-linked). App wiring: `AndrologyService` in the composition root (shares the witnessing seam); andrology router `recordSemenAnalysis`/`recordFreeze` (MFA-gated, embryology permission domain). **100% coverage** (andrology 14 tests; +3 API e2e).
+**Adversarial review (WHO flag integrity + witnessed-freeze provenance) — all pass:**
+- **WHO boundary (pure):** every parameter exactly **at** its limit flags `normal`; **one step below** flags `below_reference` — no off-by-one that could mask an oligo/astheno/terato diagnosis.
+- **Freeze provenance (real Postgres + real WitnessingService):** an RI-confirmed freeze reconciles **matched**; a divergent RI record (different patient) reconciles **divergent / patient_mismatch** (never silently "witnessed") and **blocks sign-off**.
+- **RBAC (API):** a clinical-domain role recording andrology lab data → **FORBIDDEN** (lab data is the embryology permission domain).
+**Open / needs product owner:** none new. (DNA-fragmentation / advanced sperm tests are P1 — deferred; om-software semen-analysis migration (E5) still gated on om-software access, tracked above.)
+**Next:** PR 2.7 — cryostore (tank topology + witnessed chain-of-custody + consent/storage-expiry alerts + **AMD-0003** annual storage billing & non-engagement pathway + thaw-for-treatment re-gate invariant); adversarial review (identity/ownership + money).
 
 ## 2026-06-13 — Embryology (IVF lab) + witnessing gate wired into terminal acts (PR 2.5)
 **Shipped:** new **`@oxford/embryology`** domain module (docs/01 §E4). Records the lab chain — **oocyte** (count/maturity MII·MI·GV·degenerate/dish/position, linked to retrieval), **insemination/ICSI** (method/operator/sperm-source, a witnessed handling event), **fertilisation check** (0PN/1PN/2PN/3PN — only **2PN** creates a culture embryo; abnormal PN never silently becomes a transferable embryo), **culture grading** (day-by-day morphology + **Gardner** blastocyst grade, validated 1–6 / A–C), **disposition** (freeze/discard/PGT-biopsy) and **embryo transfer** (count/catheter/difficulty/US-guidance) — each audited + event-emitting, and **embryo life-history reconstruction** (oocyte → checks → gradings → dispositions). Integrates witnessing through a **`WitnessPort` seam** (dependency-inverted; wired to `@oxford/witnessing` in the app — embryology never witnesses). **The terminal acts (transfer, disposition) are BLOCKED unless the cycle's handling chain reconciles `matched` with RI Witness** — the E4 acceptance invariant, enforced at the domain level (no override). App wiring: `WitnessingService`+`EmbryologyService` in the composition root (RI stub provider per ADR-0018); embryology router gains MFA-gated `recordInsemination`/`recordTransfer`/`recordDisposition`. **100% coverage** (embryology 18 tests; +4 API e2e).
