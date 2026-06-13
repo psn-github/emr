@@ -30,8 +30,12 @@ import {
   PgPreOpStore,
   WhoChecklistService,
   PgWhoChecklistStore,
+  IntraOpService,
+  PgIntraOpStore,
   type FacilityFlowPort,
   type SchedulingPort,
+  type InventoryPort,
+  type PerioperativeBillingPort,
 } from "@oxford/perioperative";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
@@ -59,6 +63,9 @@ export interface Services {
   readonly theatreScheduling: TheatreSchedulingService;
   readonly preOp: PreOpService;
   readonly whoChecklist: WhoChecklistService;
+  readonly intraOp: IntraOpService;
+  /** Dev/test stub inventory outbox (records deductions; real module is Phase 4). */
+  readonly inventoryOutbox: RecordingInventoryProvider;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -74,6 +81,16 @@ const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
 /** L2 inpatient bed count — the seeded topology (ADR-0023). A day's theatre list
  *  reserving more than this is flagged (not blocked). Configuration, not code. */
 const L2_BED_CAPACITY = 6;
+
+/** Dev/test inventory stub (ADR-0024) — records consumable/implant deductions
+ *  until the real @oxford/inventory module lands in Phase 4. */
+export class RecordingInventoryProvider implements InventoryPort {
+  readonly deductions: { actorId: string; items: { code: string; lotNo: string; quantity: number }[] }[] = [];
+  async deduct(actorId: string, items: readonly { code: string; lotNo: string; quantity: number }[]) {
+    this.deductions.push({ actorId, items: [...items] });
+    return ok(undefined);
+  }
+}
 
 function mergedCatalog(): Catalog {
   return {
@@ -173,6 +190,18 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       return r.ok ? ok(undefined) : err(r.error);
     },
   };
+  // Intra-op record + consumables. Stock deduction is a stub now (Phase 4);
+  // consumable billing reuses @oxford/billing (a multi-line invoice per case).
+  const inventoryOutbox = new RecordingInventoryProvider();
+  const perioperativeBilling: PerioperativeBillingPort = {
+    async raiseConsumableCharges(actorId, patientId, lines) {
+      const r = await billing.createInvoice(actorId, patientId, lines.map((l) => ({ chargeCode: l.chargeCode, description: { ar: l.descriptionAr, en: l.descriptionEn }, unitAmountFils: l.unitAmountFils, quantity: l.quantity })));
+      if (!r.ok) throw new Error(r.error.detailKey ?? "consumable charge failed");
+      return r.value.id;
+    },
+  };
+  const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventoryOutbox, perioperativeBilling, audit, events);
+
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
   const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, whoChecklist, audit, events);
 
@@ -199,5 +228,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, inventoryOutbox, notificationOutbox, witnessProvider };
 }

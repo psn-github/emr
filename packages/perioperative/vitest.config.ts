@@ -9,7 +9,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/index.ts", "src/schema.ts", "src/types.ts", "src/ports.ts", "src/pg-store.ts", "src/theatre-pg-store.ts", "src/preop-pg-store.ts", "src/who-pg-store.ts", "src/**/*.test.ts"],
+      exclude: ["src/index.ts", "src/schema.ts", "src/types.ts", "src/ports.ts", "src/pg-store.ts", "src/theatre-pg-store.ts", "src/preop-pg-store.ts", "src/who-pg-store.ts", "src/intraop-pg-store.ts", "src/**/*.test.ts"],
       thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
     },
   },
