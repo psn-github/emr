@@ -45,6 +45,7 @@ import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, Pro
 import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
+import { CycleService, PgCycleStore } from "@oxford/fertility";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -87,6 +88,7 @@ export interface Services {
   readonly assets: AssetService;
   readonly analytics: AnalyticsService;
   readonly hr: HrService;
+  readonly cycle: CycleService;
   /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
   readonly pharmacyStub: StubPharmacyProvider;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
@@ -252,6 +254,11 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // Light HR (ADR-0040): staff registry, licence/competency expiry alerts, and
   // rota shifts feeding scheduling availability. Full payroll stays external.
   const hr = new HrService(new PgHrStore(pool), audit, events);
+  // Cycle engine (read surface used by the patient portal timeline). The marriage
+  // hard-gate is wired to the registry (fertility never imports registry directly).
+  const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
+    assertMayTreat: (coupleId) => registry.canStartFertility(asId<"Couple">(coupleId)),
+  });
   const perioperativeBilling: PerioperativeBillingPort = {
     async raiseConsumableCharges(actorId, patientId, lines) {
       const r = await billing.createInvoice(actorId, patientId, lines.map((l) => ({ chargeCode: l.chargeCode, description: { ar: l.descriptionAr, en: l.descriptionEn }, unitAmountFils: l.unitAmountFils, quantity: l.quantity })));
@@ -291,5 +298,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, pharmacyStub, notificationOutbox, witnessProvider };
 }
