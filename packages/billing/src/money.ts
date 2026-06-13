@@ -27,15 +27,8 @@ export function subtotal(lineTotals: readonly Fils[]): Fils {
   return lineTotals.reduce((sum, n) => sum + n, 0);
 }
 
-/** Tax in fils from a rate in basis points (e.g. 0 = no VAT in Kuwait today),
- *  floored to whole fils. */
-export function taxAmount(subtotalFils: Fils, rateBps: number): Fils {
-  return Math.floor((subtotalFils * rateBps) / 10000);
-}
-
-export function invoiceTotal(subtotalFils: Fils, taxFils: Fils): Fils {
-  return subtotalFils + taxFils;
-}
+// No tax in Kuwait (ADR-0035): an invoice total equals its subtotal — there is no
+// tax field, line, or calculation anywhere in the money model.
 
 export function balance(totalFils: Fils, paidFils: Fils): Fils {
   return totalFils - paidFils;

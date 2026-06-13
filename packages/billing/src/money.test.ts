@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertAmount, balance, formatKwd, invoiceTotal, isValidAmount, lineTotal, subtotal, taxAmount } from "./money.js";
+import { assertAmount, balance, formatKwd, isValidAmount, lineTotal, subtotal } from "./money.js";
 
 describe("money (integer fils, no float drift)", () => {
   it("validates amounts", () => {
@@ -13,13 +13,9 @@ describe("money (integer fils, no float drift)", () => {
     if (!bad.ok) expect(bad.error.detailKey).toBe("billing.bad_amount");
   });
 
-  it("computes line totals, subtotal, tax, total, balance", () => {
+  it("computes line totals, subtotal, balance (no tax — total = subtotal)", () => {
     expect(lineTotal(1500, 3)).toBe(4500);
     expect(subtotal([4500, 1000, 250])).toBe(5750);
-    expect(taxAmount(5750, 0)).toBe(0); // Kuwait: no VAT today
-    expect(taxAmount(10000, 500)).toBe(500); // 5% of 10.000 KWD = 0.500
-    expect(taxAmount(333, 500)).toBe(16); // floor(16.65) — no fractional fils
-    expect(invoiceTotal(5750, 0)).toBe(5750);
     expect(balance(5750, 5000)).toBe(750);
   });
 

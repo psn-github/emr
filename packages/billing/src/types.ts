@@ -1,14 +1,27 @@
 import type { Id } from "@oxford/core";
 import type { Fils } from "./money.js";
 
-// Basic invoicing & payments for the outpatient day. Packages, instalments, and
-// KNET/card gateways are Phase 5. Amounts are integer fils.
+// Invoicing & payments. Amounts are integer fils. NO CASH (ADR-0034): payments
+// are KNET or credit card only — cash is structurally absent. NO TAX (ADR-0035):
+// there is no tax field, line, or calculation; an invoice total equals subtotal.
 
 export type InvoiceId = Id<"Invoice">;
 export type PaymentId = Id<"Payment">;
 
 export type InvoiceStatus = "open" | "paid";
-export type PaymentMethod = "cash" | "card" | "knet";
+
+/** The ONLY payment methods the clinic accepts — cash is structurally absent. */
+export const PAYMENT_METHODS = ["knet", "card"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/** Runtime guard — the server's structural rejection of any non-allowed method
+ *  (e.g. a "cash" string arriving at the untyped API boundary). */
+export function isPaymentMethod(value: unknown): value is PaymentMethod {
+  return typeof value === "string" && (PAYMENT_METHODS as readonly string[]).includes(value);
+}
+
+/** A ledger entry against an invoice: a payment in, or a refund out. */
+export type PaymentKind = "payment" | "refund";
 
 export interface BilingualText {
   readonly ar: string;
@@ -27,8 +40,6 @@ export interface Invoice {
   readonly patientId: string;
   readonly currency: "KWD";
   readonly lines: readonly InvoiceLine[];
-  /** Tax rate in basis points (Kuwait: 0 today; field for regulatory fitness). */
-  readonly taxRateBps: number;
   readonly status: InvoiceStatus;
   readonly createdAt: string;
 }
@@ -36,17 +47,21 @@ export interface Invoice {
 export interface Payment {
   readonly id: PaymentId;
   readonly invoiceId: InvoiceId;
+  /** payment (money in) or refund (money out) — both append-only ledger entries. */
+  readonly kind: PaymentKind;
   readonly amountFils: Fils;
   readonly method: PaymentMethod;
   readonly takenBy: string;
   readonly receiptNo: string;
+  /** Refund reason (empty for payments). */
+  readonly reason: string;
   readonly at: string;
 }
 
-/** Computed money view of an invoice (subtotal/tax/total/paid/balance). */
+/** Computed money view of an invoice. No tax (ADR-0035): total = subtotal; paid
+ *  is net of refunds. */
 export interface InvoiceTotals {
   readonly subtotalFils: Fils;
-  readonly taxFils: Fils;
   readonly totalFils: Fils;
   readonly paidFils: Fils;
   readonly balanceFils: Fils;
