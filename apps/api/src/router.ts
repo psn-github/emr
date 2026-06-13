@@ -319,6 +319,15 @@ export const appRouter = router({
     dayList: protectedProcedure("clinical:encounter.write")
       .input((v: unknown) => v as { scheduledDate: string })
       .query(async ({ ctx, input }) => ctx.services.theatreScheduling.dayList(input.scheduledDate)),
+
+    // Pre-operative assessment (anaesthetic hx, airway, ASA, fasting, consent).
+    recordPreOp: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; anaestheticHistory: string; mallampatiClass: number; asaGrade: number; investigations?: string[]; fastingConfirmed: boolean; consentRef: string; assessedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.preOp.recordPreOp(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid pre-op assessment" });
+        return { assessmentId: r.value.id, asaGrade: r.value.asaGrade };
+      }),
   }),
 
   // Patient-portal self-service booking. The patient principal may ONLY act on
