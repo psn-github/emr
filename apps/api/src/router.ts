@@ -498,6 +498,24 @@ export const appRouter = router({
         return { balanceFils: r.value.totals.balanceFils, gatewayRef: r.value.payment.gatewayRef };
       }),
 
+    // Discreet web-push registration (PWA). Own-data; dispatch sends only no-PHI
+    // prompts (the patient never receives clinical content in a push).
+    registerPush: patientProcedure
+      .input((v: unknown) => v as { patientId: string; endpoint: string; locale: "en" | "ar" })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const s = await ctx.services.push.subscribe(`patient:${input.patientId}`, input.patientId, input.endpoint, input.locale);
+        return { subscriptionId: s.id };
+      }),
+    unregisterPush: patientProcedure
+      .input((v: unknown) => v as { patientId: string; endpoint: string })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        return { removed: await ctx.services.push.unsubscribe(`patient:${input.patientId}`, input.patientId, input.endpoint) };
+      }),
+
     // Consent-gated partner access — the patient grants/revokes a partner's READ
     // access to their data (own-data: only the patient manages their own grants).
     grantPartnerAccess: patientProcedure
