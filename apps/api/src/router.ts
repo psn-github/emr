@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { asId } from "@oxford/core";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
-import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
+import type { InvoiceLine, PaymentMethod, PackageInput } from "@oxford/billing";
 import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
@@ -712,6 +712,41 @@ export const appRouter = router({
         const r = await ctx.services.billing.refund(ctx.session.subject.staffId, asId<"Invoice">(input.invoiceId), input.amountFils, input.method, input.reason);
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "refund failed" });
         return { balanceFils: r.value.totals.balanceFils, receiptNo: r.value.refund.receiptNo };
+      }),
+  }),
+
+  // Packages & cycle bundles (docs/01 §E11, ADR-0037). Define versioned bundles,
+  // sell them (raising the package-price invoice), and recognise delivered charges
+  // against the inclusion. Financial domain (MFA-gated).
+  packages: router({
+    define: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as PackageInput)
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.packages.definePackage(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid package" });
+        return { packageId: r.value.id, version: r.value.version };
+      }),
+    list: protectedProcedure("financial:invoice.read").query(async ({ ctx }) => ({ packages: await ctx.services.packages.listPackages() })),
+    sell: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { patientId: string; packageId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.packages.sellPackage(ctx.session.subject.staffId, input.patientId, input.packageId);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "sale failed" });
+        return { patientPackageId: r.value.patientPackage.id, invoiceId: r.value.invoiceId };
+      }),
+    captureCharge: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { patientPackageId: string; chargeCode: string; quantity: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.packages.captureCharge(ctx.session.subject.staffId, input.patientPackageId, input.chargeCode, input.quantity);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "capture failed" });
+        return r.value;
+      }),
+    recognition: protectedProcedure("financial:invoice.read")
+      .input((v: unknown) => v as { patientPackageId: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.packages.recognitionReport(input.patientPackageId);
+        if (!r.ok) throw new TRPCError({ code: "NOT_FOUND", message: r.error.detailKey ?? "not found" });
+        return { components: r.value };
       }),
   }),
 });

@@ -7,6 +7,8 @@ import type { Fils } from "./money.js";
 
 export type InvoiceId = Id<"Invoice">;
 export type PaymentId = Id<"Payment">;
+export type PackageId = Id<"Package">;
+export type PatientPackageId = Id<"PatientPackage">;
 
 export type InvoiceStatus = "open" | "paid";
 
@@ -65,4 +67,40 @@ export interface InvoiceTotals {
   readonly totalFils: Fils;
   readonly paidFils: Fils;
   readonly balanceFils: Fils;
+}
+
+// Packages & cycle bundles (ADR-0037). A Package is the versioned config; a
+// PatientPackage is a sold instance carrying the per-component recognition ledger.
+
+export interface PackageComponent {
+  readonly chargeCode: string;
+  readonly description: BilingualText;
+  readonly includedQuantity: number;
+  readonly unitAmountFils: Fils;
+}
+export interface Package {
+  readonly id: PackageId;
+  readonly code: string;
+  readonly name: BilingualText;
+  readonly version: number;
+  readonly components: readonly PackageComponent[];
+  readonly priceFils: Fils;
+  readonly active: boolean;
+}
+
+/** A sold package component with how much of its inclusion has been consumed. */
+export interface PatientPackageComponent extends PackageComponent {
+  readonly consumedQuantity: number;
+}
+export interface PatientPackage {
+  readonly id: PatientPackageId;
+  readonly packageId: string;
+  readonly packageVersion: number;
+  readonly patientId: string;
+  readonly priceFils: Fils;
+  /** The invoice raised for the package price at point of sale. */
+  readonly invoiceId: string;
+  readonly components: readonly PatientPackageComponent[];
+  readonly status: "active" | "cancelled";
+  readonly soldAt: string;
 }
