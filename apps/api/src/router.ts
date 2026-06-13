@@ -7,6 +7,7 @@ import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
+import type { JourneyStage } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -269,6 +270,35 @@ export const appRouter = router({
         const summary = await ctx.services.outcomes.outcomeForCycle(input.cycleId);
         const kpi = await ctx.services.outcomes.kpiInputs(input.cycleId);
         return { summary, kpi };
+      }),
+  }),
+
+  // Perioperative journey (admit → bed → recovery → theatre → recovery → bed →
+  // discharge). Each stage drives an audited, capacity-aware bed/floor movement.
+  perioperative: router({
+    admit: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { patientId: string; indication: string; admittedAt: string; theatreCaseRef?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.perioperative.admit(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "CONFLICT", message: r.error.detailKey ?? "admission failed" });
+        return { encounterId: r.value.id, stage: r.value.stage };
+      }),
+    advance: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; toStage: JourneyStage })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.perioperative.advanceJourney(ctx.session.subject.staffId, asId<"SurgicalEncounter">(input.encounterId), input.toStage);
+        if (!r.ok) {
+          const capacity = r.error.code === "CONFLICT";
+          throw new TRPCError({ code: capacity ? "CONFLICT" : "BAD_REQUEST", message: r.error.detailKey ?? "advance failed" });
+        }
+        return { stage: r.value.stage };
+      }),
+    cancel: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.perioperative.cancel(ctx.session.subject.staffId, asId<"SurgicalEncounter">(input.encounterId), input.reason);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "cancel failed" });
+        return { stage: r.value.stage };
       }),
   }),
 

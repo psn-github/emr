@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 3 — Theatres, perioperative journey & beds (in progress).** Phases 0–2 complete on `main` (Phase 2 signed off; PRs 2.0→2.12 incl. cryostore go-live wiring, marital-status disposition, PGT capture). Phase 3 approved "as proposed" (PR plan 3.0→3.8); ADR-0023/0024/0025 set the facility-reuse + InventoryPort + PharmacyPort decisions. Building on the Phase 1 `facility`/`flow` + `scheduling` models.
-- **Last updated:** 2026-06-13 — **Phase 3 started** (approved as proposed). PR 3.0 (kickoff ADRs 0023/0024/0025) done; **PR 3.1 (SurgicalEncounter + journey state machine) next**. **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
+- **Last updated:** 2026-06-13 — Phase 3 PR 3.1 (`@oxford/perioperative`: SurgicalEncounter + journey state machine + audited capacity-aware bed/floor movements via the facility/flow seam, 100%, full-journey + bed-capacity + RBAC adversarial review passed on real Postgres). PR 3.0 (kickoff ADRs) merged. **Next: PR 3.2 — two-theatre scheduling.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,15 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — SurgicalEncounter + perioperative journey state machine (PR 3.1)
+**Shipped:** new **`@oxford/perioperative`** domain module (docs/01 §E7). A `SurgicalEncounter` + a linear **journey state machine** — admitted (L3) → ward_bed (L2) → pre_theatre (L1 recovery) → in_theatre → recovery (L1) → post_op_ward (L2) → discharged; cancellable from any non-terminal stage. Each transition **drives an audited bed/floor movement through the facility/flow seam** (ADR-0023 `FacilityFlowPort`) and is **capacity-aware** — a stage that needs a bed/theatre fails if none is free. Pure `journey.ts` (transitions + stage→placement map, 100%); store + Postgres + schema + forward-only additive migration. App: a `FacilityFlowPort` adapter resolves each care-location KIND to a concrete node/bed via `FacilityService`/`FlowService` (free-bed allocation; theatre occupancy ≤ 2); `PerioperativeService` wired in the composition root; perioperative router `admit`/`advance`/`cancel` (MFA-gated, clinical domain). **100% coverage** (perioperative 11 tests; +3 API e2e).
+**Adversarial review (through the API on real Postgres + seeded facility) — all pass:**
+- **Full journey** runs end-to-end; every floor transfer is an **audited** `PatientLocation` movement; the bed board shows correct L2 occupancy throughout; the bed is **freed on discharge**; the audit chain verifies intact.
+- **Capacity:** filling all **6 L2 beds**, the **7th ward admission is blocked** (`CONFLICT`) — the "list exceeds beds" flag.
+- **RBAC:** a reception role cannot admit a surgical patient (**FORBIDDEN**).
+**Open / needs product owner:** none new.
+**Next:** PR 3.2 — two-theatre scheduling on the shared resource calendar (provisional L2 bed reservation; list-exceeds-beds flag at scheduling time).
 
 ## 2026-06-13 — Phase 3 kickoff: alignment + decision ADRs (PR 3.0)
 **Shipped (docs only).** Phase 2 signed off; Phase 3 (theatres, perioperative journey & beds — docs/01 §E7) approved "as proposed" (PR plan 3.0→3.8). Decisions recorded:

@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { systemClock, asId } from "@oxford/core";
+import { systemClock, asId, ok, err, conflict, notFound } from "@oxford/core";
 import {
   AuditLog,
   DomainEventLog,
@@ -12,7 +12,7 @@ import { LocalKeyProvider } from "@oxford/crypto";
 import { RegistryService, PgRegistryStore } from "@oxford/registry";
 import { I18n, coreMessages, type Catalog } from "@oxford/i18n";
 import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
-import { FacilityService, FlowService, PgFacilityStore, PgFlowStore } from "@oxford/facility";
+import { FacilityService, FlowService, PgFacilityStore, PgFlowStore, type PatientFlowStatus } from "@oxford/facility";
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
 import { BillingService, PgBillingStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
@@ -21,6 +21,7 @@ import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, type Witn
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
+import { PerioperativeService, PgPerioperativeStore, type FacilityFlowPort } from "@oxford/perioperative";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -43,6 +44,7 @@ export interface Services {
   readonly andrology: AndrologyService;
   readonly outcomes: OutcomesService;
   readonly cryostore: CryostoreService;
+  readonly perioperative: PerioperativeService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -121,5 +123,39 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   };
   const cryostore = new CryostoreService(new PgCryostoreStore(pool), witnessPort, cryoUseGate, cryoBilling, audit, events, clock);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, notificationOutbox, witnessProvider };
+  // Perioperative journey drives bed/floor movement through the facility/flow
+  // model (ADR-0023). The seam resolves a care-location KIND to a concrete node/
+  // bed and enforces capacity (a placement fails if no bed/theatre is free).
+  const perioperativeFlow: FacilityFlowPort = {
+    async place(actorId, patientId, kind, status) {
+      const [nodes, beds] = await Promise.all([facility.locations(), facility.beds()]);
+      if (kind === "l3_admit") {
+        const node = nodes.find((n) => n.level === "L3" && n.type === "consult_room");
+        if (node === undefined) return err(notFound("no L3 admission location", "perioperative.no_l3"));
+        const r = await flow.moveTo(actorId, patientId, node.id, status as PatientFlowStatus);
+        return r.ok ? ok({ locationNodeId: node.id }) : err(r.error);
+      }
+      if (kind === "theatre") {
+        const board = await flow.board();
+        const inTheatre = new Set(board.locations.filter((l) => l.patients.some((p) => p.status === "in_theatre")).map((l) => l.locationNodeId));
+        const free = nodes.find((n) => n.level === "L1" && n.type === "theatre" && !inTheatre.has(n.id));
+        if (free === undefined) return err(conflict("no free theatre", "perioperative.no_theatre"));
+        const r = await flow.moveTo(actorId, patientId, free.id, status as PatientFlowStatus);
+        return r.ok ? ok({ locationNodeId: free.id }) : err(r.error);
+      }
+      const [level, type] = kind === "ward_bed" ? (["L2", "inpatient_bed"] as const) : (["L1", "recovery_bed"] as const);
+      const nodeIds = new Set(nodes.filter((n) => n.level === level && n.type === type).map((n) => n.id));
+      const freeBed = beds.find((b) => nodeIds.has(b.locationNodeId) && b.status === "free");
+      if (freeBed === undefined) return err(conflict("no free bed of the required kind", "facility.bed.occupied"));
+      const r = await flow.moveTo(actorId, patientId, freeBed.locationNodeId, status as PatientFlowStatus, { bedId: freeBed.id });
+      return r.ok ? ok({ locationNodeId: freeBed.locationNodeId }) : err(r.error);
+    },
+    async release(actorId, patientId, reason) {
+      const r = await flow.discharge(actorId, patientId, reason);
+      return r.ok ? ok(undefined) : err(r.error);
+    },
+  };
+  const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, audit, events);
+
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, notificationOutbox, witnessProvider };
 }

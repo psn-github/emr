@@ -77,6 +77,9 @@ importers:
       '@oxford/outcomes':
         specifier: workspace:*
         version: link:../../packages/outcomes
+      '@oxford/perioperative':
+        specifier: workspace:*
+        version: link:../../packages/perioperative
       '@oxford/registry':
         specifier: workspace:*
         version: link:../../packages/registry
@@ -352,6 +355,25 @@ importers:
         version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
 
   packages/outcomes:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+
+  packages/perioperative:
     dependencies:
       '@oxford/audit':
         specifier: workspace:*
