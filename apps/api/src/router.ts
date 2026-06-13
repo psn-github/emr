@@ -4,6 +4,7 @@ import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
 import type { SemenParameters } from "@oxford/andrology";
+import type { OutcomeType } from "@oxford/outcomes";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -135,6 +136,38 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const f = await ctx.services.andrology.recordFreeze(ctx.session.subject.staffId, input);
         return { freezeId: f.id, witnessKey: f.witnessKey };
+      }),
+  }),
+
+  // Outcome continuum (β-hCG → clinical pregnancy → live birth), linked back to
+  // the originating cycle. Clinical permission domain (MFA-gated).
+  outcomes: router({
+    recordTest: protectedProcedure("clinical:outcome.write")
+      .input((v: unknown) => v as { cycleId: string; betaHcgMiuMl: number; testedAt: string; threshold?: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.outcomes.recordPregnancyTest(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid test" });
+        return { testId: r.value.id, result: r.value.result };
+      }),
+    recordAssessment: protectedProcedure("clinical:outcome.write")
+      .input((v: unknown) => v as { cycleId: string; gestationalSacs: number; fetalHeartbeats: number; assessedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const a = await ctx.services.outcomes.recordClinicalAssessment(ctx.session.subject.staffId, input);
+        return { assessmentId: a.id, clinicalPregnancy: a.clinicalPregnancy };
+      }),
+    recordOutcome: protectedProcedure("clinical:outcome.write")
+      .input((v: unknown) => v as { cycleId: string; type: OutcomeType; liveBirthCount?: number; gestationalAgeWeeks?: number; occurredAt: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.outcomes.recordPregnancyOutcome(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid outcome" });
+        return { outcomeId: r.value.id, type: r.value.type };
+      }),
+    summary: protectedProcedure("clinical:outcome.read")
+      .input((v: unknown) => v as { cycleId: string })
+      .query(async ({ ctx, input }) => {
+        const summary = await ctx.services.outcomes.outcomeForCycle(input.cycleId);
+        const kpi = await ctx.services.outcomes.kpiInputs(input.cycleId);
+        return { summary, kpi };
       }),
   }),
 

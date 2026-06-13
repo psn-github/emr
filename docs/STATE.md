@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.7 (cryostore: topology + witnessed custody + thaw-for-treatment re-gate + AMD-0003 annual billing & never-auto-destroy pathway, `@oxford/cryostore`, 100%, identity+money adversarial review passed on real Postgres). PR 2.6 (andrology) merged. **New open item:** no vital-status/death-record source yet → person-owned thaw stays module-only (no permissive posthumous default); cryostore API wiring deferred until registry exposes couple-membership + vital-status.
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.8 (outcome continuum: β-hCG → clinical pregnancy → live birth, linked back to cycle + Vienna KPI inputs, `@oxford/outcomes`, 100%, RBAC + continuum review passed). PR 2.7 (cryostore) merged. **Still open:** no vital-status/death-record source yet → cryostore person-owned thaw stays module-only (no permissive posthumous default); cryostore API wiring deferred until registry exposes couple-membership + vital-status.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,15 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Outcome tracking: the fertility → pregnancy → live-birth continuum (PR 2.8)
+**Shipped:** new **`@oxford/outcomes`** domain module (docs/01 §E3 outcome stage; reporting line 229). Captures the continuum **linked back to the originating cycle**: **β-hCG pregnancy test** (positive/negative against a configurable threshold, default 25 mIU/mL; value validated), **clinical-pregnancy assessment** (gestational sacs / fetal heartbeats; clinical pregnancy = ≥1 sac vs biochemical-only), and the **terminal pregnancy outcome** (live_birth / miscarriage / ectopic / stillbirth / termination / ongoing; a live birth requires a count ≥ 1). `outcomeForCycle` reconstructs the continuum; `kpiInputs` derives the **Vienna-consensus KPI inputs** (biochemical / clinical pregnancy / live birth / ongoing) — KPI *computation* is Phase 5, the *inputs are captured now*. App wiring: `OutcomesService` in the composition root; MFA-gated `outcomes` router (`recordTest`/`recordAssessment`/`recordOutcome`/`summary`) under the **clinical** permission domain. **100% coverage** (outcomes 12 tests; +3 API e2e).
+**Review (RBAC + continuum integrity) — through the API on real Postgres, all pass:**
+- **RBAC:** a reception (scheduling) role recording a clinical outcome → **FORBIDDEN**.
+- **Continuum:** test → clinical assessment → live birth records and **reconstructs linked to the cycle**, with correct KPI inputs.
+- **Validation:** a live birth recorded without a count → **rejected**.
+**Open / needs product owner:** none new.
+**Next:** PR 2.9 — Phase 2 closeout: a full **antagonist ICSI cycle end-to-end** e2e (cycle → stim → trigger → retrieval → fertilisation → embryo → witnessed transfer → outcome) proving the exit gate, then the Phase 2 exit-gate report + HOLD.
 
 ## 2026-06-13 — Cryostore (topology + custody + thaw re-gate + AMD-0003 billing) (PR 2.7)
 **Shipped:** new **`@oxford/cryostore`** domain module (docs/01 §E6; ADR-0015/AMD-0002 ownership; AMD-0003 billing). Addressable **tank → canister → cane → position** topology with occupancy enforcement; **`CryoSpecimen.owner` = person OR couple**; **witnessed, audited chain-of-custody** (freeze/move/thaw/discard each register a handling event via the WitnessPort seam); "**locate any specimen**" + "**list everything for an owner**"; **consent-to-store + storage-expiry/renewal alerts** (legal max period is configuration, not hardcoded). Two hard invariants enforced as pure, 100%-tested logic:
