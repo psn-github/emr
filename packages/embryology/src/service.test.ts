@@ -125,4 +125,19 @@ describe("EmbryologyService — life-history reconstruction", () => {
     expect(missing.ok).toBe(false);
     if (!missing.ok) expect(missing.error.detailKey).toBe("embryology.embryo.not_found");
   });
+
+  it("aggregates lab counts for a cycle (KPI inputs)", async () => {
+    const { svc } = build();
+    const C = "cycle-counts";
+    const o1 = await svc.recordOocyte("emb-1", { cycleId: C, retrievalProcedureId: "p", maturity: "MII", dish: "D", position: "1" });
+    await svc.recordOocyte("emb-1", { cycleId: C, retrievalProcedureId: "p", maturity: "GV", dish: "D", position: "2" }); // immature
+    await svc.recordInsemination("emb-1", { cycleId: C, oocyteId: o1.id, method: "ICSI", spermSourceId: "s", operator: "emb-1", inseminatedAt: "2026-06-22T08:00:00Z", patientId: "pat-1" });
+    const chk = await svc.recordFertilisationCheck("emb-1", { cycleId: C, oocyteId: o1.id, pn: "2PN", checkedAt: "2026-06-23T08:00:00Z" });
+    await svc.recordFertilisationCheck("emb-1", { cycleId: C, oocyteId: o1.id, pn: "1PN", checkedAt: "2026-06-23T08:00:00Z" }); // not 2PN
+    // grade the 2PN embryo to a blastocyst (Gardner present)
+    await svc.recordGrading("emb-1", { embryoId: chk.embryo!.id, day: 5, morphology: "blast", gardner: { expansion: 4, icm: "A", te: "B" }, assessedAt: "2026-06-27T08:00:00Z" });
+
+    const counts = await svc.labCounts(C);
+    expect(counts).toEqual({ oocytesRetrieved: 2, maturedOocytes: 1, inseminated: 1, twoPn: 1, blastocysts: 1 });
+  });
 });
