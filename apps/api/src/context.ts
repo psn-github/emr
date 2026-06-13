@@ -19,6 +19,7 @@ import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
 import { EmbryologyService, PgEmbryologyStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
+import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -38,6 +39,7 @@ export interface Services {
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
   readonly andrology: AndrologyService;
+  readonly outcomes: OutcomesService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -80,6 +82,8 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const embryology = new EmbryologyService(new PgEmbryologyStore(pool), witnessPort, audit, events);
   // Andrology shares the witnessing seam (its sperm freeze is a witnessed event).
   const andrology = new AndrologyService(new PgAndrologyStore(pool), witnessPort, audit, events);
+  // Outcome continuum (fertility → pregnancy → live birth), linked back to the cycle.
+  const outcomes = new OutcomesService(new PgOutcomesStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, andrology, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, andrology, outcomes, notificationOutbox, witnessProvider };
 }
