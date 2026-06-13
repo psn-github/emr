@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 2.0→2.9 all merged to `main`. Phases 0 + 1 also complete. A complete antagonist-ICSI cycle runs end-to-end through the stack with no spreadsheet (closeout e2e, PR 2.9). Decisions in force: RI Witness behind a stub (ADR-0018); no time-lapse device — vendor-neutral seam (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); om-software tool-by-tool replacement (ADR-0020). **Do not start Phase 3 until the Medical Director signs off the Phase 2 exit gate.**
-- **Last updated:** 2026-06-13 — PR 2.10 (cryostore go-live wiring: clinician-attested death record → real thaw re-gate at the API; ADR-0021/0022, AMD-0004). MD answered the open items. Phase 2 still **HOLD for exit-gate sign-off** before Phase 3. **Still open (gates cutover, not the build):** marital-status-change disposition + permitted PGT indications (clinic counsel); numeric MOH storage ceiling (config when confirmed); CooperSurgical RI Witness scoping (MD emailing); om-software read access (stim-calculator port + per-tool migrations).
+- **Last updated:** 2026-06-13 — **Phase 2 SIGNED OFF** by the Medical Director, conditional on completing two configurable items then proceeding to Phase 3. PR 2.11 (marital-status-change disposition pathway) done; **PR 2.12 (PGT capture) next**, then propose the Phase 3 plan. **Still open (gates cutover, not the build):** specific legal disposition rule (marital-status change) + permitted PGT indications (clinic counsel — mechanisms built configurable); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,15 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Marital-status-change disposition pathway (PR 2.11)
+**Shipped (MD: "build both, then Phase 3").** A configurable, never-permissive mechanism for specimen disposition on a marital-status change (AMD-0004; counsel-bounded — the legal *decision* stays a human/config matter, this is only the *mechanism*).
+- **Registry:** `dissolveCouple` (sets `dissolved`, idempotent, audited, emits `CoupleDissolved`). **100%**.
+- **Cryostore:** a **disposition-review** concern — `openDispositionReview(owner, reason)` opens an OPEN review over every **stored** specimen of the owner (idempotent; never changes status); `resolveDispositionReview(specimenId, outcome, rationale, …)` is an **explicit human decision** (`retain` keeps it stored; `discard` routes through the **witnessed, audited** discard) and **requires a recorded rationale**. There is no automatic resolution and no auto-destroy. Pure `disposition-review.ts` (100%); schema + forward-only additive migration 0002.
+- **App:** `registry.dissolveCouple` route **orchestrates** dissolution → opens the cryostore review; `cryostore.resolveDispositionReview` route (MFA-gated). 
+**Adversarial review (through the API, real Postgres) — all pass:** dissolving a couple **opens a review but leaves the specimen STORED** (never auto-disposed); `retain` keeps it stored; `discard` routes through the witnessed discard; a reception role can neither dissolve nor resolve (**FORBIDDEN**). **100% coverage** (cryostore 38 tests, registry 30; api 15 e2e/integration tests).
+**Open / needs product owner:** the specific legal disposition rule on marital-status change + permitted PGT indications remain with clinic counsel (mechanism built configurable; values/decisions awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software access.
+**Next:** PR 2.12 — PGT order/consent/result capture (embryology E4 P1; permitted indications as a config list), then propose the Phase 3 plan for sign-off.
 
 ## 2026-06-13 — Cryostore go-live wiring: clinician-attested death record + thaw re-gate at the API (PR 2.10)
 **Shipped (closes the deferred cryostore API-wiring open item from PR 2.7).** Medical Director answered the three exit-gate open items (AMD-0004); actioned the two buildable ones:

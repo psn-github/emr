@@ -200,6 +200,23 @@ export class RegistryService {
     return couple !== null && (couple.husbandPersonId === personId || couple.wifePersonId === personId);
   }
 
+  /**
+   * Dissolve a couple on a marital-status change (divorce/annulment). Sets the
+   * couple `dissolved` and emits `CoupleDissolved` so the cryostore can open a
+   * disposition review of the couple's specimens. Disposition itself is NEVER
+   * automatic — it is a reviewed human decision (AMD-0004; counsel-bounded).
+   */
+  async dissolveCouple(actorId: string, coupleId: CoupleId, reason: string): Promise<Result<Couple, AppError>> {
+    const couple = await this.store.getCouple(coupleId);
+    if (couple === null) return err(notFound("couple not found", "registry.couple.not_found"));
+    if (couple.status === "dissolved") return ok(couple); // idempotent
+    const updated: Couple = { ...couple, status: "dissolved" };
+    await this.store.saveCouple(updated);
+    await this.audit.record({ actorId, entityType: "Couple", entityId: coupleId, action: "UPDATE", before: { status: couple.status }, after: { status: "dissolved", reason } });
+    await this.events.emit({ type: "CoupleDissolved", aggregateType: "Couple", aggregateId: coupleId, data: { reason } });
+    return ok(updated);
+  }
+
   /** Reveal a Civil ID (restricted, audited as a sensitive export). The value is
    *  returned to the caller but never logged or audited in clear. */
   async revealCivilId(actorId: string, personId: PersonId): Promise<Result<string, AppError>> {

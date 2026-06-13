@@ -20,10 +20,15 @@ export type {
   StorageConsent,
   TankReading,
   EngagementState,
+  DispositionReviewId,
+  DispositionReview,
+  ReviewReason,
+  ReviewOutcome,
 } from "./types.js";
 export { assertThawForTreatmentAllowed, type ThawFacts } from "./ownership.js";
 export { computeExpiry, isExpired, expiresWithin } from "./storage-period.js";
 export { nextEngagementState, type EngagementAction } from "./engagement.js";
+export { assertResolveAllowed, outcomeRequiresDiscard } from "./disposition-review.js";
 export type { WitnessPort, UseGate, BillingPort, HandlingEventInput, StorageChargeLine } from "./ports.js";
 export { type CryostoreStore, InMemoryCryostoreStore, positionKey } from "./store.js";
 export { PgCryostoreStore } from "./pg-store.js";

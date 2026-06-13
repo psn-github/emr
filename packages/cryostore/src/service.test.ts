@@ -169,3 +169,58 @@ describe("CryostoreService — AMD-0003 billing + non-engagement", () => {
     if (!bad.ok) expect(bad.error.detailKey).toBe("cryostore.engagement.bad_transition");
   });
 });
+
+describe("CryostoreService — AMD-0004 marital-status disposition review", () => {
+  it("opens a review over an owner's stored specimens (idempotent; skips non-stored)", async () => {
+    const { svc } = build();
+    const s1 = await freeze(svc, coupleOwner, POS, "embryo");
+    const s2 = await freeze(svc, coupleOwner, POS2, "embryo");
+    await svc.discard("emb-1", s2.id, "qa", "pat-1", "z"); // non-stored → skipped
+    const opened = await svc.openDispositionReview("md-1", coupleOwner, "marital_status_change");
+    expect(opened).toHaveLength(1);
+    expect(opened[0]!.specimenId).toBe(s1.id);
+    // idempotent — re-opening does not create a second review
+    const again = await svc.openDispositionReview("md-1", coupleOwner, "marital_status_change");
+    expect(again).toHaveLength(0);
+    expect((await svc.openReview(s1.id))!.state).toBe("open");
+  });
+
+  it("resolve as RETAIN keeps the specimen stored; resolve as DISCARD routes through witnessed discard", async () => {
+    const { svc } = build();
+    const retainSpec = await freeze(svc, coupleOwner, POS, "embryo");
+    const discardSpec = await freeze(svc, coupleOwner, POS2, "embryo");
+    await svc.openDispositionReview("md-1", coupleOwner, "marital_status_change");
+
+    const retained = await svc.resolveDispositionReview("md-1", retainSpec.id, "retain", "partner elects to retain", "pat-1", "z");
+    expect(retained.ok && retained.value.outcome).toBe("retain");
+    expect((await svc.locate(retainSpec.id)).ok && (await svc.locate(retainSpec.id)).ok).toBe(true);
+    const retLoc = await svc.locate(retainSpec.id);
+    expect(retLoc.ok && retLoc.value.specimen.status).toBe("stored");
+
+    const discarded = await svc.resolveDispositionReview("md-1", discardSpec.id, "discard", "court order", "pat-1", "z");
+    expect(discarded.ok).toBe(true);
+    const discLoc = await svc.locate(discardSpec.id);
+    expect(discLoc.ok && discLoc.value.specimen.status).toBe("discarded");
+
+    expect(await svc.reviewHistory(retainSpec.id)).toHaveLength(1);
+  });
+
+  it("rejects resolving without an open review and without a rationale", async () => {
+    const { svc } = build();
+    const s = await freeze(svc, coupleOwner, POS, "embryo");
+    const noReview = await svc.resolveDispositionReview("md-1", s.id, "retain", "x", "pat-1", "z");
+    expect(noReview.ok).toBe(false);
+    if (!noReview.ok) expect(noReview.error.detailKey).toBe("cryostore.review.not_open");
+
+    await svc.openDispositionReview("md-1", coupleOwner, "marital_status_change");
+    const noRationale = await svc.resolveDispositionReview("md-1", s.id, "retain", "  ", "pat-1", "z");
+    expect(noRationale.ok).toBe(false);
+    if (!noRationale.ok) expect(noRationale.error.detailKey).toBe("cryostore.review.rationale_required");
+
+    // resolve-as-discard when the specimen is no longer stored → discard fails through
+    await svc.discard("emb-1", s.id, "qa", "pat-1", "z");
+    const cantDiscard = await svc.resolveDispositionReview("md-1", s.id, "discard", "court order", "pat-1", "z");
+    expect(cantDiscard.ok).toBe(false);
+    if (!cantDiscard.ok) expect(cantDiscard.error.detailKey).toBe("cryostore.not_stored");
+  });
+});
