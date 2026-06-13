@@ -32,10 +32,13 @@ import {
   PgWhoChecklistStore,
   IntraOpService,
   PgIntraOpStore,
+  RecoveryService,
+  PgRecoveryStore,
   type FacilityFlowPort,
   type SchedulingPort,
   type InventoryPort,
   type PerioperativeBillingPort,
+  type PharmacyPort,
 } from "@oxford/perioperative";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
@@ -64,8 +67,11 @@ export interface Services {
   readonly preOp: PreOpService;
   readonly whoChecklist: WhoChecklistService;
   readonly intraOp: IntraOpService;
+  readonly recovery: RecoveryService;
   /** Dev/test stub inventory outbox (records deductions; real module is Phase 4). */
   readonly inventoryOutbox: RecordingInventoryProvider;
+  /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
+  readonly pharmacyStub: StubPharmacyProvider;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -89,6 +95,18 @@ export class RecordingInventoryProvider implements InventoryPort {
   async deduct(actorId: string, items: readonly { code: string; lotNo: string; quantity: number }[]) {
     this.deductions.push({ actorId, items: [...items] });
     return ok(undefined);
+  }
+}
+
+/** Dev/test pharmacy stub (ADR-0025) — discharge-prescription fulfilment until
+ *  the real E8 pharmacy lands. `markFulfilled` simulates the pharmacy handover. */
+export class StubPharmacyProvider implements PharmacyPort {
+  private readonly fulfilled = new Set<string>();
+  markFulfilled(encounterId: string): void {
+    this.fulfilled.add(encounterId);
+  }
+  async isPrescriptionFulfilled(encounterId: string): Promise<boolean> {
+    return this.fulfilled.has(encounterId);
   }
 }
 
@@ -203,7 +221,10 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventoryOutbox, perioperativeBilling, audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
-  const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, whoChecklist, audit, events);
+  // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
+  const pharmacyStub = new StubPharmacyProvider();
+  const recovery = new RecoveryService(new PgRecoveryStore(pool), pharmacyStub, audit, events);
+  const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, whoChecklist, recovery, audit, events);
 
   // Two-theatre case scheduling on the SHARED scheduling calendar (conflict-aware),
   // provisionally reserving an L2 bed per case-day (capacity 6 → ADR-0023).
@@ -228,5 +249,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, inventoryOutbox, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, inventoryOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

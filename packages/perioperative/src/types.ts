@@ -17,6 +17,31 @@ export type JourneyStage =
   | "discharged"
   | "cancelled";
 
+export type ObservationId = Id<"Observation">;
+export type FollowUpId = Id<"FollowUp">;
+
+/** A recovery (L1) or post-op ward (L2) observation set. */
+export interface Observation {
+  readonly id: ObservationId;
+  readonly encounterId: string;
+  readonly phase: "recovery" | "post_op_ward";
+  readonly aldreteScore: number | null;
+  readonly systolicBp: number;
+  readonly heartRate: number;
+  readonly spo2: number;
+  readonly notes: string;
+  readonly recordedAt: string;
+  readonly recordedBy: string;
+}
+
+export interface FollowUp {
+  readonly id: FollowUpId;
+  readonly encounterId: string;
+  readonly scheduledFor: string;
+  readonly bookedBy: string;
+  readonly bookedAt: string;
+}
+
 export type IntraOpRecordId = Id<"IntraOpRecord">;
 export type ConsumableUseId = Id<"ConsumableUse">;
 export type SpecimenRecordId = Id<"SpecimenRecord">;

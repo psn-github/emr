@@ -76,6 +76,9 @@ describe.skipIf(!DATABASE_URL)("perioperative journey (e2e via the API + real Po
     // on the post-op ward, exactly one L2 bed is occupied
     expect(L2((await services.flow.board()).capacity)).toBe(1);
 
+    // discharge is gated on pharmacy fulfilment + a follow-up (proven in discharge.e2e)
+    services.pharmacyStub.markFulfilled(encounterId);
+    await doc.perioperative.bookFollowUp({ encounterId, scheduledFor: "2026-07-05T09:00:00Z", bookedAt: "2026-06-22T11:00:00Z" });
     await doc.perioperative.advance({ encounterId, toStage: "discharged" });
     expect(L2((await services.flow.board()).capacity)).toBe(0); // bed freed on discharge
 

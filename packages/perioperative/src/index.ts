@@ -8,6 +8,7 @@ export { canAdvance, assertAdvance, stagePlacement, type CareLocationKind, type 
 export { validatePreOp, type PreOpInput } from "./preop.js";
 export { ANAESTHESIA_FORMULARY, validateDrugAdministration, type FormularyDrug, type AnaesthesiaUnit, type DrugAdministrationInput } from "./anaesthesia.js";
 export { validateConsumableUse, lineTotalFils, type ConsumableUseInput } from "./consumables.js";
+export { validateAldrete, assertDischargeReady } from "./recovery.js";
 export { bedReservationStatus, type BedReservationStatus } from "./bed-reservation.js";
 export {
   WHO_REQUIRED_ITEMS,
@@ -27,7 +28,13 @@ export type {
   InventoryDeductItem,
   PerioperativeBillingPort,
   ConsumableChargeLine,
+  PharmacyPort,
+  DischargeGate,
 } from "./ports.js";
+export type { ObservationId, Observation, FollowUpId, FollowUp } from "./types.js";
+export { type RecoveryStore, InMemoryRecoveryStore } from "./recovery-store.js";
+export { PgRecoveryStore } from "./recovery-pg-store.js";
+export { RecoveryService, type RecordObservationInput, type BookFollowUpInput } from "./recovery-service.js";
 export type { IntraOpRecordId, IntraOpRecord, ConsumableUseId, ConsumableUse, SpecimenRecordId, SpecimenRecord, DrugAdministration } from "./types.js";
 export { type IntraOpStore, InMemoryIntraOpStore } from "./intraop-store.js";
 export { PgIntraOpStore } from "./intraop-pg-store.js";
@@ -44,4 +51,4 @@ export { TheatreSchedulingService, type ScheduleCaseInput, type ScheduleCaseResu
 export { type PreOpStore, InMemoryPreOpStore } from "./preop-store.js";
 export { PgPreOpStore } from "./preop-pg-store.js";
 export { PreOpService, type RecordPreOpInput } from "./preop-service.js";
-export { perioperativeSchema, surgicalEncounter, theatreCase, preOpAssessment, whoChecklist, intraOpRecord, consumableUse, specimenRecord } from "./schema.js";
+export { perioperativeSchema, surgicalEncounter, theatreCase, preOpAssessment, whoChecklist, intraOpRecord, consumableUse, specimenRecord, observation, followUp } from "./schema.js";

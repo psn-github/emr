@@ -3,7 +3,7 @@ import { ok, err, newId, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type { SurgicalEncounter, SurgicalEncounterId, JourneyStage } from "./types.js";
 import type { PerioperativeStore } from "./store.js";
-import type { FacilityFlowPort, ChecklistGate } from "./ports.js";
+import type { FacilityFlowPort, ChecklistGate, DischargeGate } from "./ports.js";
 import { assertAdvance, stagePlacement } from "./journey.js";
 
 export interface AdmitInput {
@@ -25,6 +25,7 @@ export class PerioperativeService {
     private readonly store: PerioperativeStore,
     private readonly flow: FacilityFlowPort,
     private readonly checklist: ChecklistGate,
+    private readonly discharge: DischargeGate,
     private readonly audit: AuditLog,
     private readonly events: DomainEventLog,
   ) {}
@@ -66,6 +67,12 @@ export class PerioperativeService {
     }
     if (encounter.stage === "in_theatre" && toStage === "recovery") {
       const gate = await this.checklist.assertMayLeaveTheatre(encounterId);
+      if (!gate.ok) return err(gate.error);
+    }
+    // Discharge gate (ADR-0025): no discharge from L2 without a fulfilled
+    // prescription + a booked follow-up.
+    if (toStage === "discharged") {
+      const gate = await this.discharge.assertMayDischarge(encounterId);
       if (!gate.ok) return err(gate.error);
     }
 

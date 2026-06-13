@@ -56,6 +56,18 @@ export interface PerioperativeBillingPort {
   raiseConsumableCharges(actorId: string, patientId: string, lines: readonly ConsumableChargeLine[]): Promise<string>;
 }
 
+/** Pharmacy seam (ADR-0025) — has the discharge prescription been fulfilled /
+ *  handed over by the Ground-floor pharmacy? Stub now; real with E8 pharmacy. */
+export interface PharmacyPort {
+  isPrescriptionFulfilled(encounterId: string): Promise<boolean>;
+}
+
+/** Discharge seam — the journey consults this to BLOCK discharge from L2 until
+ *  the prescription is fulfilled + a follow-up is booked. */
+export interface DischargeGate {
+  assertMayDischarge(encounterId: string): Promise<Result<void, AppError>>;
+}
+
 export interface FacilityFlowPort {
   /** Place the patient into a free location of `kind` with the given flow status.
    *  Returns the node used, or a capacity error if none is free. */
