@@ -1,6 +1,7 @@
 import type { Couple, CoupleId } from "./couple.js";
 import type { MarriageVerification } from "./marriage.js";
 import type { Person, PersonId } from "./person.js";
+import type { DeathRecord } from "./vital-status.js";
 
 /** Persistence boundary for the registry. The Postgres-backed implementation
  *  (Drizzle, schema `registry`) lands with DB wiring; the in-memory store backs
@@ -12,12 +13,15 @@ export interface RegistryStore {
   getCouple(id: CoupleId): Promise<Couple | null>;
   couplesReferencing(personId: PersonId): Promise<readonly Couple[]>;
   saveMarriage(verification: MarriageVerification): Promise<void>;
+  saveDeathRecord(record: DeathRecord): Promise<void>;
+  getDeathRecord(personId: PersonId): Promise<DeathRecord | null>;
 }
 
 export class InMemoryRegistryStore implements RegistryStore {
   private readonly persons = new Map<string, Person>();
   private readonly couples = new Map<string, Couple>();
   private readonly marriages = new Map<string, MarriageVerification>();
+  private readonly deaths = new Map<string, DeathRecord>();
 
   async savePerson(person: Person): Promise<void> {
     this.persons.set(person.id, person);
@@ -38,5 +42,11 @@ export class InMemoryRegistryStore implements RegistryStore {
   }
   async saveMarriage(verification: MarriageVerification): Promise<void> {
     this.marriages.set(verification.id, verification);
+  }
+  async saveDeathRecord(record: DeathRecord): Promise<void> {
+    this.deaths.set(record.personId, record);
+  }
+  async getDeathRecord(personId: PersonId): Promise<DeathRecord | null> {
+    return this.deaths.get(personId) ?? null;
   }
 }

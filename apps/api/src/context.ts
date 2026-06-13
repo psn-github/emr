@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { systemClock } from "@oxford/core";
+import { systemClock, asId } from "@oxford/core";
 import {
   AuditLog,
   DomainEventLog,
@@ -20,6 +20,7 @@ import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@ox
 import { EmbryologyService, PgEmbryologyStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
+import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -40,6 +41,7 @@ export interface Services {
   readonly embryology: EmbryologyService;
   readonly andrology: AndrologyService;
   readonly outcomes: OutcomesService;
+  readonly cryostore: CryostoreService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -85,5 +87,29 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // Outcome continuum (fertility → pregnancy → live birth), linked back to the cycle.
   const outcomes = new OutcomesService(new PgOutcomesStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, andrology, outcomes, notificationOutbox, witnessProvider };
+  // Cryostore. The thaw-for-treatment re-gate's facts come from the registry —
+  // couple verification + membership, and the CLINICIAN-ATTESTED vital status
+  // (no posthumous use; Medical Director decision 2026-06-13). The annual storage
+  // charge is raised through the billing service (integer fils stays in billing).
+  const cryoUseGate: UseGate = {
+    async thawFacts(owner, coupleId) {
+      const coupleVerified = await registry.isCoupleVerified(asId<"Couple">(coupleId));
+      if (owner.kind === "couple") return { coupleVerified, coupleIncludesOwner: false, ownerAlive: true };
+      const coupleIncludesOwner = await registry.coupleIncludes(asId<"Couple">(coupleId), asId<"Person">(owner.id));
+      const ownerAlive = await registry.isPersonLiving(asId<"Person">(owner.id));
+      return { coupleVerified, coupleIncludesOwner, ownerAlive };
+    },
+  };
+  const cryoBilling: BillingPort = {
+    async raiseStorageCharge(actorId, patientId, line) {
+      const r = await billing.createInvoice(actorId, patientId, [
+        { chargeCode: line.chargeCode, description: { ar: line.descriptionAr, en: line.descriptionEn }, unitAmountFils: line.amountFils, quantity: 1 },
+      ]);
+      if (!r.ok) throw new Error(r.error.detailKey ?? "storage charge failed");
+      return r.value.id;
+    },
+  };
+  const cryostore = new CryostoreService(new PgCryostoreStore(pool), witnessPort, cryoUseGate, cryoBilling, audit, events, clock);
+
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, andrology, outcomes, cryostore, notificationOutbox, witnessProvider };
 }

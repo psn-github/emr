@@ -168,4 +168,18 @@ These are recorded as accepted ADRs because the spec pack already committed to t
   3. **Map, don't fork** — read om-software to match the design system (ADR-0016) and map each tool's data model/features to the target module so the EMR is a faithful **superset** before cutover; **reimplement** functionality on the EMR's audited/RBAC'd/in-region foundation — do **not** copy om-software's vanilla-HTML/Flask/SQLite architecture.
 - **Consequences:** safe, incremental cutover with no data loss and no big-bang risk; the full replacement map lives in `docs/07_OM_SOFTWARE_REPLACEMENT_MAP.md`; per-tool migrations are sequenced into docs/05 (Phase 2 onward; Phase 0/1 unchanged). Needs: om-software **read access** for field-level mapping; product-owner decisions on **retirement order** and **archive-vs-migrate** per tool (STATE).
 
-_(Claude Code: continue numbering from ADR-0021.)_
+## ADR-0021 — Clinician-attested death record is the authoritative vital status for the no-posthumous-use gate
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director)
+- **Context:** the cryostore thaw-for-treatment re-gate (ADR-0015/AMD-0002) forbids posthumous use of a person-owned specimen. That gate needs an authoritative "is the owner living?" fact. PR 2.7 deferred the cryostore API wiring because no vital-status source existed, and a permissive `ownerAlive=true` default would have silently opened a posthumous path.
+- **Decision:** vital status is a **clinician-attested death record** in the registry (`registry.death_record`, one per person: date of death, attesting clinician, death-certificate document ref). Recording a death is a restricted, audited mutation (`clinical:vital_status.write`); re-attestation is rejected. The cryostore `UseGate` derives `ownerAlive` from the **absence** of a death record (`isPersonLiving`), alongside couple verification + membership — all sourced from the registry, never the caller. There is still no override on the pure re-gate.
+- **Consequences:** the no-posthumous-use invariant is now enforced **end-to-end through the API** (adversarial e2e: an attested death blocks thaw on real Postgres); cryostore is wired into the composition root + router. A future MOH/civil-registry death feed can replace/augment the manual attestation behind the same `isPersonLiving` accessor without touching the gate.
+
+## ADR-0022 — Cryostorage period: annual renewal while fees paid; MOH regulations otherwise
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director) — resolves the "cryo storage max period" legal-confirm item
+- **Context:** AMD-0003 built annual storage billing + a graduated non-engagement pathway, but the storage **maximum period** was a pending legal confirm.
+- **Decision:** storage is **billed annually and continues as long as fees are paid**; where fees lapse or a regulatory ceiling applies, **MOH regulations govern** disposition — handled through the existing non-engagement pathway (reminders → overdue → clinical/legal review; **never auto-destroy**). The specific MOH numeric ceiling, when confirmed, is entered as **configuration** (storage-period config), not code.
+- **Consequences:** the storage-period model is settled and already implemented (annual consent expiry is configurable; the never-auto-destroy pathway routes lapses to human review). The only remaining detail is the numeric MOH ceiling value, captured in config when the clinic confirms it. The marital-status-change disposition + permitted-PGT-indications confirms remain open with counsel.
+
+_(Claude Code: continue numbering from ADR-0023.)_

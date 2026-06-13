@@ -5,6 +5,7 @@ import type { MarriageVerification } from "./marriage.js";
 import type { Person, PersonId } from "./person.js";
 import type { EncryptedValue } from "@oxford/crypto";
 import type { RegistryStore } from "./store.js";
+import type { DeathRecord } from "./vital-status.js";
 
 /**
  * Postgres-backed RegistryStore. The Civil ID is persisted ONLY as its encrypted
@@ -79,6 +80,38 @@ export class PgRegistryStore implements RegistryStore {
       [v.id, v.coupleId, v.documentRef, v.verifiedBy, v.verifiedAt, v.method],
     );
   }
+
+  async saveDeathRecord(d: DeathRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO registry.death_record (person_id, id, date_of_death, attested_by, document_ref, recorded_at)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (person_id) DO NOTHING`,
+      [d.personId, d.id, d.dateOfDeath, d.attestedBy, d.documentRef, d.recordedAt],
+    );
+  }
+
+  async getDeathRecord(personId: PersonId): Promise<DeathRecord | null> {
+    const res = await this.pool.query<DeathRow>(
+      `SELECT person_id, id, date_of_death::text AS date_of_death, attested_by, document_ref, recorded_at
+       FROM registry.death_record WHERE person_id = $1`,
+      [personId],
+    );
+    const row = res.rows[0];
+    return row ? rowToDeath(row) : null;
+  }
+}
+
+interface DeathRow {
+  person_id: string; id: string; date_of_death: string; attested_by: string; document_ref: string; recorded_at: Date;
+}
+function rowToDeath(r: DeathRow): DeathRecord {
+  return {
+    id: asId<"DeathRecord">(r.id),
+    personId: asId<"Person">(r.person_id),
+    dateOfDeath: r.date_of_death,
+    attestedBy: r.attested_by,
+    documentRef: r.document_ref,
+    recordedAt: new Date(r.recorded_at).toISOString(),
+  };
 }
 
 interface PersonRow {

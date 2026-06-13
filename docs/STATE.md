@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 2.0→2.9 all merged to `main`. Phases 0 + 1 also complete. A complete antagonist-ICSI cycle runs end-to-end through the stack with no spreadsheet (closeout e2e, PR 2.9). Decisions in force: RI Witness behind a stub (ADR-0018); no time-lapse device — vendor-neutral seam (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); om-software tool-by-tool replacement (ADR-0020). **Do not start Phase 3 until the Medical Director signs off the Phase 2 exit gate.**
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.9 (closeout: complete antagonist-ICSI cycle e2e — marriage gate → consent-gated lifecycle → stim → trigger/retrieval → ICSI lab → witnessing-gated transfer → live-birth outcome → traceability + audit-chain verify, real Postgres). All Phase 2 PRs merged; exit-gate report delivered; **HOLD for sign-off**. **Still open (gates cutover, not the build):** no vital-status/death-record source → cryostore person-owned thaw is module-only (no permissive posthumous default), cryostore API wiring deferred; the three legal confirms (cryo storage max period, marital-status disposition, permitted PGT indications) deferred to clinic counsel; CooperSurgical RI Witness scoping (PO); om-software read access for stim-calculator port + per-tool migrations (PO/MD).
+- **Last updated:** 2026-06-13 — PR 2.10 (cryostore go-live wiring: clinician-attested death record → real thaw re-gate at the API; ADR-0021/0022, AMD-0004). MD answered the open items. Phase 2 still **HOLD for exit-gate sign-off** before Phase 3. **Still open (gates cutover, not the build):** marital-status-change disposition + permitted PGT indications (clinic counsel); numeric MOH storage ceiling (config when confirmed); CooperSurgical RI Witness scoping (MD emailing); om-software read access (stim-calculator port + per-tool migrations).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,20 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Cryostore go-live wiring: clinician-attested death record + thaw re-gate at the API (PR 2.10)
+**Shipped (closes the deferred cryostore API-wiring open item from PR 2.7).** Medical Director answered the three exit-gate open items (AMD-0004); actioned the two buildable ones:
+- **Vital status = clinician-attested death record (ADR-0021).** New `registry.death_record` (one per person: date of death, attesting clinician, certificate ref). `RegistryService.recordDeath` (restricted `clinical:vital_status.write`, audited, re-attestation rejected), `isPersonLiving`, plus `isCoupleVerified` / `coupleIncludes` accessors. Registry **100%** (forward-only additive migration 0002).
+- **Cryostore wired to the app.** Composition root now builds the cryostore `UseGate` from the registry (couple verified + membership + `ownerAlive` from the death record — facts never trusted from the caller) and a `BillingPort` onto `@oxford/billing`. New **cryostore router**: `freeze` / `thaw` / `recordConsent` / `locate` (embryology domain) and `raiseAnnualCharge` / `advanceEngagement` (financial domain), all MFA-gated.
+- **Storage period (ADR-0022):** annual while fees paid; MOH regulations otherwise — already implemented via configurable consent expiry + the never-auto-destroy non-engagement pathway. "Cryo storage max period" legal-confirm **resolved in principle** (only the numeric MOH ceiling remains, as config).
+**Adversarial review (no-posthumous-use, end-to-end through the API on real Postgres) — all pass:**
+- **A1:** owner with an **attested death record** → thaw **BLOCKED** (`posthumous_blocked`); specimen stays stored. *(The gate is now driven by the real registry death record, not a stub.)*
+- **A2:** person-owned specimen thawed into a couple that **excludes the owner** → **BLOCKED** (`owner_not_in_couple`).
+- **A3 (RBAC):** a reception role can neither **attest a death** nor **thaw** → **FORBIDDEN**.
+- **A4:** the legitimate thaw (living owner, verified couple incl. them) → **flows**.
+**Full suite green** (registry 100%; api 14 e2e/integration tests; 23 packages).
+**Open / needs product owner:** specimen disposition on **marital-status change** and permitted **PGT indications** (clinic counsel); the numeric **MOH storage ceiling** (config when confirmed); CooperSurgical RI Witness scoping (MD emailing); om-software read access (stim calculator port + per-tool migrations).
+**Next:** still HOLD on Phase 3 pending the Phase 2 exit-gate sign-off.
 
 ## 2026-06-13 — Phase 2 closeout: complete antagonist-ICSI cycle e2e + exit gate (PR 2.9)
 **Shipped:** a cross-cutting **end-to-end e2e** (`apps/api/src/phase2-icsi-cycle.e2e.test.ts`) that runs a **complete antagonist ICSI cycle through the whole Phase 2 stack against a real Postgres**, with no external spreadsheet — proving the exit-gate invariants in one flow:
