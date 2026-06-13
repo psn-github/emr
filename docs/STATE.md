@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.6 (andrology: WHO 6th-ed semen analysis + witnessed sperm freeze, `@oxford/andrology`, 100%, WHO-boundary + freeze-provenance + RBAC adversarial review passed). PR 2.5 (embryology) merged.
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.7 (cryostore: topology + witnessed custody + thaw-for-treatment re-gate + AMD-0003 annual billing & never-auto-destroy pathway, `@oxford/cryostore`, 100%, identity+money adversarial review passed on real Postgres). PR 2.6 (andrology) merged. **New open item:** no vital-status/death-record source yet → person-owned thaw stays module-only (no permissive posthumous default); cryostore API wiring deferred until registry exposes couple-membership + vital-status.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,23 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Cryostore (topology + custody + thaw re-gate + AMD-0003 billing) (PR 2.7)
+**Shipped:** new **`@oxford/cryostore`** domain module (docs/01 §E6; ADR-0015/AMD-0002 ownership; AMD-0003 billing). Addressable **tank → canister → cane → position** topology with occupancy enforcement; **`CryoSpecimen.owner` = person OR couple**; **witnessed, audited chain-of-custody** (freeze/move/thaw/discard each register a handling event via the WitnessPort seam); "**locate any specimen**" + "**list everything for an owner**"; **consent-to-store + storage-expiry/renewal alerts** (legal max period is configuration, not hardcoded). Two hard invariants enforced as pure, 100%-tested logic:
+- **Thaw-for-treatment re-gate** (`assertThawForTreatmentAllowed`): a person-owned specimen may be thawed for treatment only into a **verified couple that includes the living owner**, using **own gametes**; **no posthumous-use pathway**; a couple-owned specimen cannot be used by another couple. Single chokepoint, no override.
+- **Non-engagement pathway (AMD-0003)**: a graduated state machine `current → reminded → overdue → in_legal_review` (+ `renew_paid` → current from any state). There is **no state or action that destroys** a specimen — terminal disposition is a reviewed human step, bounded by the pending legal confirms. Annual storage charge raised via the **BillingPort** seam (money math stays in `@oxford/billing`).
+Tank monitoring log + threshold alerts. **100% coverage** (31 tests).
+**Adversarial review (identity + money + gametes/embryos) — real Postgres + real WitnessingService, all pass:**
+- **A1** person-owned → couple excluding owner: **BLOCKED** (`owner_not_in_couple`); specimen stays stored.
+- **A2** posthumous use: **BLOCKED** (`posthumous_blocked`).
+- **A3** couple-owned used by another couple: **BLOCKED** (`couple_mismatch`).
+- **A4** non-engagement escalates to legal review with the specimen **STILL stored** — never auto-destroyed.
+- **A5** legitimate thaw flows once the re-gate passes, and the thaw is a witnessed custody event.
+**Open / needs product owner (NEW — gates person-owned thaw at the API, not the build):**
+- **[identity/law] No vital-status (death-record) source exists** in the registry yet. The no-posthumous-use gate requires an authoritative `ownerAlive` fact; until a death-record source is added I will **not** wire a permissive `ownerAlive=true` default. Person-owned thaw therefore stays **module-only** (invariant proven at the service level) and is **not exposed via the API** in this PR.
+- **[wiring] Registry must expose couple-membership + vital-status accessors** for the app `UseGate` adapter; cryostore composition-root + router wiring deferred until then (mirrors how `@oxford/witnessing` shipped as a seam before its consumers wired it).
+- Still bounded by the pending legal confirms: storage max period, marital-status-change disposition (built configurable; cutover blocked).
+**Next:** PR 2.8 — outcome tracking (cycle → pregnancy → live birth, linked back to the originating cycle — the continuum).
 
 ## 2026-06-13 — Andrology (WHO 6th-ed semen analysis + witnessed sperm freeze) (PR 2.6)
 **Shipped:** new **`@oxford/andrology`** domain module (docs/01 §E5). **Semen analysis flagged to WHO 6th-edition (2021) lower reference limits** — volume 1.4 mL, concentration 16 M/mL, total count 39 M, progressive motility 30%, total motility 42%, normal morphology 4%, vitality 54% — limits are **configuration** (the WHO 6th constant is the default; a clinic may pass its own), inclusive lower bounds, with per-parameter `normal`/`below_reference` flags + `allWithinReference`; inputs validated (no negatives, percentages 0–100). **Sperm preparation** record (method/output), **witnessed sperm freeze** with a cryostore link (`cryoSpecimenRef`, registered as a handling event via the `WitnessPort` seam for RI reconciliation), and **surgical retrieval** (TESA/TESE/PESA, theatre-linked). App wiring: `AndrologyService` in the composition root (shares the witnessing seam); andrology router `recordSemenAnalysis`/`recordFreeze` (MFA-gated, embryology permission domain). **100% coverage** (andrology 14 tests; +3 API e2e).
