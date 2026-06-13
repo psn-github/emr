@@ -5,22 +5,23 @@ export {
   assertAmount,
   lineTotal,
   subtotal,
-  taxAmount,
-  invoiceTotal,
   balance,
   formatKwd,
   type Fils,
 } from "./money.js";
-export type {
-  Invoice,
-  InvoiceId,
-  InvoiceLine,
-  InvoiceStatus,
-  InvoiceTotals,
-  Payment,
-  PaymentId,
-  PaymentMethod,
-  BilingualText,
+export {
+  PAYMENT_METHODS,
+  isPaymentMethod,
+  type Invoice,
+  type InvoiceId,
+  type InvoiceLine,
+  type InvoiceStatus,
+  type InvoiceTotals,
+  type Payment,
+  type PaymentId,
+  type PaymentMethod,
+  type PaymentKind,
+  type BilingualText,
 } from "./types.js";
 export { BillingService } from "./billing-service.js";
 export { type BillingStore, InMemoryBillingStore } from "./store.js";

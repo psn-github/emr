@@ -8,11 +8,13 @@ export class PgBillingStore implements BillingStore {
   constructor(private readonly pool: Pool) {}
 
   async saveInvoice(i: Invoice): Promise<void> {
+    // tax_rate_bps is omitted — the column keeps its DB default (0) and is unused
+    // (no tax in Kuwait, ADR-0035).
     await this.pool.query(
-      `INSERT INTO billing.invoice (id, patient_id, currency, lines, tax_rate_bps, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO billing.invoice (id, patient_id, currency, lines, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, lines=EXCLUDED.lines`,
-      [i.id, i.patientId, i.currency, JSON.stringify(i.lines), i.taxRateBps, i.status, i.createdAt],
+      [i.id, i.patientId, i.currency, JSON.stringify(i.lines), i.status, i.createdAt],
     );
   }
 
@@ -23,9 +25,9 @@ export class PgBillingStore implements BillingStore {
 
   async savePayment(p: Payment): Promise<void> {
     await this.pool.query(
-      `INSERT INTO billing.payment (id, invoice_id, amount_fils, method, taken_by, receipt_no, at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [p.id, p.invoiceId, p.amountFils, p.method, p.takenBy, p.receiptNo, p.at],
+      `INSERT INTO billing.payment (id, invoice_id, kind, amount_fils, method, taken_by, receipt_no, reason, at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [p.id, p.invoiceId, p.kind, p.amountFils, p.method, p.takenBy, p.receiptNo, p.reason, p.at],
     );
   }
 
@@ -40,17 +42,18 @@ interface InvoiceRow {
   patient_id: string;
   currency: string;
   lines: InvoiceLine[];
-  tax_rate_bps: number;
   status: string;
   created_at: Date;
 }
 interface PaymentRow {
   id: string;
   invoice_id: string;
+  kind: string;
   amount_fils: string | number;
   method: string;
   taken_by: string;
   receipt_no: string;
+  reason: string;
   at: Date;
 }
 
@@ -60,7 +63,6 @@ function invoiceFrom(r: InvoiceRow): Invoice {
     patientId: r.patient_id,
     currency: "KWD",
     lines: r.lines,
-    taxRateBps: r.tax_rate_bps,
     status: r.status as Invoice["status"],
     createdAt: new Date(r.created_at).toISOString(),
   };
@@ -69,10 +71,12 @@ function paymentFrom(r: PaymentRow): Payment {
   return {
     id: asId<"Payment">(r.id),
     invoiceId: asId<"Invoice">(r.invoice_id),
+    kind: r.kind as Payment["kind"],
     amountFils: Number(r.amount_fils),
     method: r.method as Payment["method"],
     takenBy: r.taken_by,
     receiptNo: r.receipt_no,
+    reason: r.reason,
     at: new Date(r.at).toISOString(),
   };
 }

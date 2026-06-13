@@ -40,7 +40,7 @@ describe("ADVERSARIAL: money is gated and exact", () => {
     );
     const inv = await svc.createInvoice("fin-1", "pat-1", [{ chargeCode: "C", description: { ar: "C", en: "C" }, unitAmountFils: 10000, quantity: 1 }]);
     if (!inv.ok) throw new Error("setup");
-    const attack = await svc.postPayment("fin-1", inv.value.id, 10001, "cash"); // 1 fil over
+    const attack = await svc.postPayment("fin-1", inv.value.id, 10001, "knet"); // 1 fil over
     console.log("[attack] pay 10001 against 10000 balance:", attack.ok ? "ACCEPTED (FAIL)" : "REJECTED");
     expect(attack.ok).toBe(false);
   });

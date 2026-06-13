@@ -83,6 +83,6 @@ describe.skipIf(!DATABASE_URL)("Phase 1 exit gate — full outpatient day (e2e)"
   it("enforces deny-by-default across the day (reception cannot write clinical notes or post payments)", async () => {
     const receptionApi = appRouter.createCaller({ session: reception, patient: null, services });
     await expect(receptionApi.clinical.writeNote({ encounterId: "e", patientId: "p", body: {} })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(receptionApi.billing.postPayment({ invoiceId: "i", amountFils: 100, method: "cash" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(receptionApi.billing.postPayment({ invoiceId: "i", amountFils: 100, method: "knet" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

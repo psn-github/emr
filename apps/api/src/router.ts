@@ -705,6 +705,14 @@ export const appRouter = router({
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "payment failed" });
         return { balanceFils: r.value.totals.balanceFils };
       }),
+    // Refund (KNET/card only; append-only ledger entry). Reopens a paid invoice.
+    refund: protectedProcedure("financial:payment.refund")
+      .input((v: unknown) => v as { invoiceId: string; amountFils: number; method: PaymentMethod; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.billing.refund(ctx.session.subject.staffId, asId<"Invoice">(input.invoiceId), input.amountFils, input.method, input.reason);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "refund failed" });
+        return { balanceFils: r.value.totals.balanceFils, receiptNo: r.value.refund.receiptNo };
+      }),
   }),
 });
 
