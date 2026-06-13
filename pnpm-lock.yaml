@@ -41,6 +41,9 @@ importers:
       '@oxford/billing':
         specifier: workspace:*
         version: link:../../packages/billing
+      '@oxford/clinical':
+        specifier: workspace:*
+        version: link:../../packages/clinical
       '@oxford/core':
         specifier: workspace:*
         version: link:../../packages/core

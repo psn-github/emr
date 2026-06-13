@@ -18,6 +18,7 @@
     "@oxford/i18n": "workspace:*",
     "@oxford/scheduling": "workspace:*",
     "@oxford/facility": "workspace:*",
+    "@oxford/clinical": "workspace:*",
     "@oxford/notifications": "workspace:*",
     "@oxford/billing": "workspace:*",
     "@oxford/migration": "workspace:*",

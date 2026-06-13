@@ -15,6 +15,7 @@ import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
 import { FacilityService, FlowService, PgFacilityStore, PgFlowStore } from "@oxford/facility";
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
 import { BillingService, PgBillingStore } from "@oxford/billing";
+import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -30,6 +31,7 @@ export interface Services {
   readonly flow: FlowService;
   readonly notifications: NotificationService;
   readonly billing: BillingService;
+  readonly clinical: ClinicalService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
 }
@@ -55,5 +57,6 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const notificationOutbox = new RecordingNotificationProvider(); // residency review gates a real provider (ADR-0006)
   const notifications = new NotificationService(i18n, notificationOutbox, audit, events);
   const billing = new BillingService(new PgBillingStore(pool), audit, events, clock);
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, notificationOutbox };
+  const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock);
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, notificationOutbox };
 }

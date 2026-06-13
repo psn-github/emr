@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { asId } from "@oxford/core";
 import type { LanguagePref, Sex } from "@oxford/registry";
+import type { EncounterType, OrderKind } from "@oxford/clinical";
+import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -117,6 +119,73 @@ export const appRouter = router({
         const placed = await ctx.services.flow.moveTo(actor, input.patientId, asId<"LocationNode">(input.locationNodeId), "waiting");
         if (!placed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: placed.error.detailKey ?? "placement failed" });
         return { checkedIn: true };
+      }),
+  }),
+
+  // Staff scheduling (books on a patient's behalf at reception).
+  scheduling: router({
+    book: protectedProcedure("scheduling:appointment.book")
+      .input((v: unknown) => v as { patientId: string; typeId: string; practitionerId: string; resourceIds: string[]; start: string; end: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.scheduling.book(ctx.session.subject.staffId, {
+          typeId: asId<"AppointmentType">(input.typeId),
+          patientId: input.patientId,
+          practitionerId: asId<"Resource">(input.practitionerId),
+          resourceIds: input.resourceIds.map((x) => asId<"Resource">(x)),
+          start: input.start,
+          end: input.end,
+        });
+        if (!r.ok) throw new TRPCError({ code: "CONFLICT", message: r.error.detailKey ?? "could not book" });
+        return { appointmentId: r.value.id };
+      }),
+  }),
+
+  // Clinical EMR (MFA-gated clinical domain).
+  clinical: router({
+    openEncounter: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { patientId: string; type: EncounterType; practitionerId: string })
+      .mutation(async ({ ctx, input }) => {
+        const enc = await ctx.services.clinical.openEncounter(ctx.session.subject.staffId, input.patientId, input.type, input.practitionerId);
+        return { encounterId: enc.id };
+      }),
+    writeNote: protectedProcedure("clinical:note.write")
+      .input((v: unknown) => v as { encounterId: string; patientId: string; body: Record<string, unknown> })
+      .mutation(async ({ ctx, input }) => {
+        const note = await ctx.services.clinical.writeNote(ctx.session.subject.staffId, asId<"Encounter">(input.encounterId), input.patientId, input.body);
+        return { noteId: note.id };
+      }),
+    placeOrder: protectedProcedure("clinical:order.write")
+      .input((v: unknown) => v as { encounterId: string; patientId: string; kind: OrderKind; code: string })
+      .mutation(async ({ ctx, input }) => {
+        const order = await ctx.services.clinical.placeOrder(ctx.session.subject.staffId, asId<"Encounter">(input.encounterId), input.patientId, input.kind, input.code);
+        return { orderId: order.id };
+      }),
+    issueLetter: protectedProcedure("clinical:letter.write")
+      .input((v: unknown) => v as { patientId: string; templateKey: string; locale: "en" | "ar"; body: string })
+      .mutation(async ({ ctx, input }) => {
+        const actor = ctx.session.subject.staffId;
+        const draft = await ctx.services.clinical.draftLetter(actor, input.patientId, input.templateKey, input.locale, input.body);
+        const signed = await ctx.services.clinical.signLetter(actor, draft.id);
+        if (!signed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: signed.error.detailKey ?? "sign failed" });
+        return { letterId: draft.id, status: signed.value.status };
+      }),
+  }),
+
+  // Billing (MFA-gated financial domain).
+  billing: router({
+    createInvoice: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { patientId: string; lines: InvoiceLine[] })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.billing.createInvoice(ctx.session.subject.staffId, input.patientId, input.lines);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid invoice" });
+        return { invoiceId: r.value.id };
+      }),
+    postPayment: protectedProcedure("financial:payment.post")
+      .input((v: unknown) => v as { invoiceId: string; amountFils: number; method: PaymentMethod })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.billing.postPayment(ctx.session.subject.staffId, asId<"Invoice">(input.invoiceId), input.amountFils, input.method);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "payment failed" });
+        return { balanceFils: r.value.totals.balanceFils };
       }),
   }),
 });
