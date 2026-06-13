@@ -8,6 +8,7 @@ import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
 import type { ItemCategory } from "@oxford/inventory";
+import type { AssetCategory } from "@oxford/assets";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
@@ -637,6 +638,55 @@ export const appRouter = router({
     periodReport: protectedProcedure("clinical:controlled_drugs.read")
       .input((v: unknown) => v as { itemId: string; from: string; to: string })
       .query(async ({ ctx, input }) => ctx.services.controlledDrugs.periodReport(input.itemId, input.from, input.to)),
+  }),
+
+  // Asset & biomedical-equipment management (docs/01 §E10) — operations domain
+  // (MFA-gated). A critical asset with overdue/missing calibration is blocked
+  // from use (server-side gate, ADR-0029); overdue non-critical is alert-only.
+  assets: router({
+    register: protectedProcedure("admin:assets.write")
+      .input((v: unknown) => v as { name: string; category: AssetCategory; locationId: string; serialNumber: string; supplierId?: string; warrantyExpiry?: string; critical: boolean })
+      .mutation(async ({ ctx, input }) => {
+        const a = await ctx.services.assets.registerAsset(ctx.session.subject.staffId, input);
+        return { assetId: a.id };
+      }),
+    recordMaintenance: protectedProcedure("admin:assets.write")
+      .input((v: unknown) => v as { assetId: string; type: "ppm" | "calibration" | "service"; performedAt: string; nextDueDate?: string; notes?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.assets.recordMaintenance(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "maintenance rejected" });
+        return { maintenanceId: r.value.id, nextDueDate: r.value.nextDueDate };
+      }),
+    reportFault: protectedProcedure("admin:assets.write")
+      .input((v: unknown) => v as { assetId: string; reportedAt: string; description: string; severity: "minor" | "major" | "critical" })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.assets.reportFault(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "fault rejected" });
+        return { faultId: r.value.id };
+      }),
+    resolveFault: protectedProcedure("admin:assets.write")
+      .input((v: unknown) => v as { faultId: string; resolvedAt: string; downtimeMinutes: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.assets.resolveFault(ctx.session.subject.staffId, asId<"Fault">(input.faultId), input.resolvedAt, input.downtimeMinutes);
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "resolve rejected" });
+        return { downtimeMinutes: r.value.downtimeMinutes };
+      }),
+    status: protectedProcedure("admin:assets.read")
+      .input((v: unknown) => v as { assetId: string; asOf: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.assets.assetStatus(input.assetId, new Date(input.asOf));
+        if (!r.ok) throw new TRPCError({ code: "NOT_FOUND", message: r.error.detailKey ?? "asset not found" });
+        return r.value;
+      }),
+    assertUsable: protectedProcedure("admin:assets.read")
+      .input((v: unknown) => v as { assetId: string; asOf: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.assets.assertUsable(input.assetId, new Date(input.asOf));
+        return { usable: r.ok, reason: r.ok ? null : r.error.detailKey };
+      }),
+    alerts: protectedProcedure("admin:assets.read")
+      .input((v: unknown) => v as { asOf: string; withinDays: number })
+      .query(async ({ ctx, input }) => ctx.services.assets.alerts(new Date(input.asOf), input.withinDays)),
   }),
 
   // Billing (MFA-gated financial domain).

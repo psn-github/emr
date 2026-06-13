@@ -38,6 +38,9 @@ importers:
       '@oxford/andrology':
         specifier: workspace:*
         version: link:../../packages/andrology
+      '@oxford/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
       '@oxford/audit':
         specifier: workspace:*
         version: link:../../packages/audit
@@ -136,6 +139,25 @@ importers:
       '@oxford/witnessing':
         specifier: workspace:*
         version: link:../witnessing
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+
+  packages/assets:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
