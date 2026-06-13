@@ -19,6 +19,8 @@
     "@oxford/scheduling": "workspace:*",
     "@oxford/facility": "workspace:*",
     "@oxford/notifications": "workspace:*",
+    "@oxford/billing": "workspace:*",
+    "@oxford/migration": "workspace:*",
     "@trpc/server": "^11.0.0",
     "pg": "^8.13.1"
   },
