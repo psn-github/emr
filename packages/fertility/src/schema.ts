@@ -28,6 +28,32 @@ export const protocol = fertilitySchema.table("protocol", {
   appliesTo: jsonb("applies_to").$type<string[]>().notNull().default([]),
 });
 
+export const monitoringVisit = fertilitySchema.table(
+  "monitoring_visit",
+  {
+    id: text("id").primaryKey(),
+    cycleId: text("cycle_id").notNull(),
+    visitAt: timestamp("visit_at", { withTimezone: true }).notNull(),
+    decision: text("decision").notNull(),
+    note: text("note"),
+    nextVisitAt: timestamp("next_visit_at", { withTimezone: true }),
+    recordedBy: text("recorded_by").notNull(),
+  },
+  (t) => ({ byCycle: index("monitoring_visit_cycle_idx").on(t.cycleId) }),
+);
+
+export const procedure = fertilitySchema.table(
+  "procedure",
+  {
+    id: text("id").primaryKey(),
+    cycleId: text("cycle_id").notNull(),
+    type: text("type").notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    theatreBookingRef: text("theatre_booking_ref"),
+  },
+  (t) => ({ byCycle: index("procedure_cycle_idx").on(t.cycleId) }),
+);
+
 export const stimDay = fertilitySchema.table(
   "stim_day",
   {
