@@ -9,10 +9,26 @@ import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, Revie
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
 import type { ItemCategory } from "@oxford/inventory";
 import type { AssetCategory } from "@oxford/assets";
-import { cycleTimeline, buildMedicationSchedule } from "@oxford/fertility";
+import { cycleTimeline, buildMedicationSchedule, requiredConsents } from "@oxford/fertility";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
-import { assertOwnData } from "./patient-access.js";
+import { assertOwnData, type PatientPrincipal } from "./patient-access.js";
+import type { Services } from "./context.js";
+import type { Cycle } from "@oxford/fertility";
+
+/** Load a cycle the patient owns (own-data + own-cycle), or throw a tRPC error.
+ *  Own-cycle = person-scoped to the patient, or a couple that includes them. */
+async function ownedCycle(services: Services, patient: PatientPrincipal, patientId: string, cycleId: string): Promise<Cycle> {
+  const own = assertOwnData(patient, patientId);
+  if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+  const c = await services.cycle.get(asId<"Cycle">(cycleId));
+  if (c === null) throw new TRPCError({ code: "NOT_FOUND", message: "cycle not found" });
+  const owns = c.owner.kind === "person"
+    ? c.owner.personId === patientId
+    : await services.registry.coupleIncludes(asId<"Couple">(c.owner.coupleId), asId<"Person">(patientId));
+  if (!owns) throw new TRPCError({ code: "FORBIDDEN", message: "not your cycle" });
+  return c;
+}
 
 // The internal tRPC surface. Domain services do the work; procedures only
 // declare the permission, validate input, and map domain errors to transport
@@ -498,6 +514,30 @@ export const appRouter = router({
           : await ctx.services.registry.coupleIncludes(asId<"Couple">(c.owner.coupleId), asId<"Person">(input.patientId));
         if (!ownsCycle) throw new TRPCError({ code: "FORBIDDEN", message: "not your cycle" });
         return { schedule: buildMedicationSchedule(await ctx.services.stim.chart(input.cycleId)) };
+      }),
+
+    // Outstanding consents to sign for an owned cycle (required − already signed).
+    outstandingConsents: patientProcedure
+      .input((v: unknown) => v as { patientId: string; cycleId: string })
+      .query(async ({ ctx, input }) => {
+        const c = await ownedCycle(ctx.services, ctx.patient, input.patientId, input.cycleId);
+        const signed = new Set(c.signedConsents);
+        return { outstanding: requiredConsents(c.type).filter((k) => !signed.has(k)), signed: c.signedConsents };
+      }),
+
+    // Patient e-signs a consent (own-cycle). Only a required consent may be signed;
+    // the signature is the patient principal, audited.
+    signConsent: patientProcedure
+      .input((v: unknown) => v as { patientId: string; cycleId: string; consentKey: string })
+      .mutation(async ({ ctx, input }) => {
+        const c = await ownedCycle(ctx.services, ctx.patient, input.patientId, input.cycleId);
+        if (!requiredConsents(c.type).includes(input.consentKey)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "not a required consent for this cycle" });
+        }
+        const r = await ctx.services.cycle.recordConsent(`patient:${input.patientId}`, asId<"Cycle">(input.cycleId), input.consentKey);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "sign failed" });
+        const signed = new Set(r.value.signedConsents);
+        return { outstanding: requiredConsents(c.type).filter((k) => !signed.has(k)), signed: r.value.signedConsents };
       }),
   }),
 
