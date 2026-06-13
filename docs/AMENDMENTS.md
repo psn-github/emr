@@ -43,5 +43,15 @@
 - **Status:** **approved & closed** — recorded as ADR-0015. Spec edits: docs/03 §1 updated; docs/01 §E3/§E6 + docs/04 detailed edits land with the Phase 2 cryostore/cycle build (the rule is authoritative via ADR-0015 + docs/03 §1 in the meantime).
 - **Product-owner decision:** Approved 2026-06-12; **indications confirmed legal + standard practice by the Medical Director 2026-06-13** (no legal-counsel gate remains).
 
+## AMD-0003 — Annual cryostorage billing + non-engagement/non-payment pathway
+- **Date:** 2026-06-13
+- **Raised by:** product owner
+- **Type:** proposed-change (**approved**)
+- **Documents involved:** docs/01 §E6 (cryostore), docs/03 §1/§2 (storage + disposition)
+- **Issue:** the clinic bills **annually** for cryostorage, and there must be a defined pathway when patients **fail to engage and pay** (storage cannot continue indefinitely unpaid, but specimens are gametes/embryos — disposition is legally/ethically sensitive).
+- **Resolution (approved):** elevate docs/01 §E6's annual-storage-billing + consent/payment-lapse workflow to **Phase 2 scope** (PR 2.7 cryostore). Build: a recurring **annual storage charge** (reuses `@oxford/billing`), and a **graduated non-engagement pathway** — reminders → overdue flag → escalation to a **clinical/legal review step** (never an automated destruction). Actual lapse/disposition outcomes remain bounded by the **[CONFIRM WITH CLINIC LEGAL COUNSEL]** items (storage max period, marital-status disposition). The pathway is built; the terminal disposition decision is a reviewed human step gated on legal confirmation.
+- **Status:** **approved** — build in PR 2.7; terminal disposition gated on the pending legal confirms (does not auto-destroy).
+- **Product-owner decision:** Approved 2026-06-13 (Medical Director).
+
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.

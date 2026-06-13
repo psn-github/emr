@@ -100,7 +100,7 @@ Each module lists: purpose, the best-of-breed pattern it draws from, P0/P1/P2 re
 
 **Pattern source:** IDEAS (Mellowood), Meditex/CRITEX, IVFqube — the cycle engine.
 
-- **P0** — Cycle entity: type (IUI, IVF, ICSI, FET, IVM, fertility preservation, ovulation induction), linked to couple, with status lifecycle (planned → stimulating → triggered → retrieval → fertilisation → culture → transfer → luteal → outcome).
+- **P0** — Cycle entity: type (IUI, IVF, ICSI, FET, IVM, fertility preservation, ovulation induction), with status lifecycle (planned → stimulating → triggered → retrieval → fertilisation → culture → transfer → luteal → outcome). **Treatment/embryo-creation cycles are linked to a verified `Couple` (marriage hard-gate); `fertility preservation` cycles are PERSON-scoped (linked to a `Person`) — the only person-scoped cycle type (ADR-0015/AMD-0002).**
 - **P0** — Protocol library: configurable stimulation protocols (long agonist, antagonist, mild, PPOS, etc.) with default drug regimens drawn from the formulary; protocol applied to a cycle generates the planned drug and monitoring schedule.
 - **P0** — Stimulation chart: day-by-day grid of drugs (dose/unit/route, from formulary), follicle measurements per ovary, endometrial thickness, endocrine values (E2, LH, P4, FSH), with trend visualisation. **Follitropin delta dosing** supported with its AMH/weight algorithm; **HP-hMG / LH-activity** regimens first-class (the Medical Director's research domain).
 - **P0** — Monitoring visit workflow: scan + bloods → results → clinician decision (continue/adjust/trigger/cancel) → updated plan → patient notification with next steps, all in one flow.
@@ -144,11 +144,11 @@ Each module lists: purpose, the best-of-breed pattern it draws from, P0/P1/P2 re
 **Pattern source:** IVFqube/Babysentry tank topology + chain-of-custody.
 
 - **P0** — Physical topology model: tank → canister → cane/goblet → straw/vial/device position; every storage location addressable and visualisable.
-- **P0** — Inventory of cryopreserved material (oocytes, embryos, sperm, tissue) each linked to patient/couple, cycle, freeze event, witness.
+- **P0** — Inventory of cryopreserved material (oocytes, embryos, sperm, tissue). **`CryoSpecimen.owner` is a `person_id` OR a `couple_id`** — person-owned for preservation, couple-owned for treatment/embryos (ADR-0015/AMD-0002). Each linked to cycle, freeze event, witness. **Hard invariant:** a person-owned specimen may only be used in treatment after the use-time re-gate (verified couple incl. that person + own-gametes); **no posthumous-use pathway exists.**
 - **P0** — Every move/thaw/discard is a witnessed, audited chain-of-custody event; "locate any specimen" and "list everything for this couple" in two clicks.
 - **P0** — Consent-to-store and storage-period tracking with expiry/renewal alerts and configurable Kuwaiti legal storage limits (document 03).
 - **P0** — Tank monitoring log (level/temperature/fill) with alerting hooks.
-- **P1** — Annual storage billing linkage; consent-lapse and payment-lapse workflows.
+- **P0 (Phase 2, AMD-0003)** — **Annual storage billing** (recurring charge via billing) + a **graduated non-engagement/non-payment pathway**: reminders → overdue flag → escalation to a **clinical/legal review step** (never automated destruction). Terminal disposition is a reviewed human step, bounded by the pending legal confirms (storage max period, marital-status disposition).
 - **P2** — Liquid-nitrogen consumption and tank PPM linkage to asset module.
 
 *Acceptance:* given any straw position, the system shows whose it is, the full freeze/witness history, consent and storage-expiry status; given any couple, it lists every specimen and location.
