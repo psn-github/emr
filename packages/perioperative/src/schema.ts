@@ -5,6 +5,40 @@ import { pgSchema, text, integer, boolean, date, jsonb, timestamp, index } from 
 
 export const perioperativeSchema = pgSchema("perioperative");
 
+export const instrumentSet = perioperativeSchema.table("instrument_set", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  composition: jsonb("composition").$type<string[]>().notNull().default([]),
+  status: text("status").notNull(),
+});
+
+export const sterilisationCycle = perioperativeSchema.table(
+  "sterilisation_cycle",
+  {
+    id: text("id").primaryKey(),
+    setId: text("set_id").notNull(),
+    cycleType: text("cycle_type").notNull(),
+    loadRef: text("load_ref").notNull(),
+    result: text("result").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+    operator: text("operator").notNull(),
+  },
+  (t) => ({ bySet: index("sterilisation_cycle_set_idx").on(t.setId) }),
+);
+
+export const setUsage = perioperativeSchema.table(
+  "set_usage",
+  {
+    id: text("id").primaryKey(),
+    setId: text("set_id").notNull(),
+    encounterId: text("encounter_id").notNull(),
+    sterilisationCycleId: text("sterilisation_cycle_id").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }).notNull(),
+    usedBy: text("used_by").notNull(),
+  },
+  (t) => ({ bySet: index("set_usage_set_idx").on(t.setId), byEncounter: index("set_usage_encounter_idx").on(t.encounterId) }),
+);
+
 export const observation = perioperativeSchema.table(
   "observation",
   {

@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 3 — Theatres, perioperative journey & beds (in progress).** Phases 0–2 complete on `main` (Phase 2 signed off; PRs 2.0→2.12 incl. cryostore go-live wiring, marital-status disposition, PGT capture). Phase 3 approved "as proposed" (PR plan 3.0→3.8); ADR-0023/0024/0025 set the facility-reuse + InventoryPort + PharmacyPort decisions. Building on the Phase 1 `facility`/`flow` + `scheduling` models.
-- **Last updated:** 2026-06-13 — Phase 3 PR 3.6 (recovery/post-op observations + Aldrete; **discharge from L2 gated on PharmacyPort prescription fulfilment + follow-up booking**, enforced in the journey; 100%; discharge-gate adversarial review passed on real Postgres). PR 3.5 (intra-op) merged. **Next: PR 3.7 — CSSD instrument-set tracking.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
+- **Last updated:** 2026-06-13 — Phase 3 PR 3.7 (CSSD / instrument-set tracking: set composition → sterilisation cycle → which set on which patient; sterile-only use gate; 100%; sterility-gate + traceability + RBAC adversarial review passed on real Postgres). PR 3.6 (recovery/discharge) merged. **Next: PR 3.8 — Phase 3 closeout e2e (oocyte retrieval + hysteroscopy full journeys) + exit-gate report + HOLD.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — CSSD / instrument-set tracking (PR 3.7)
+**Shipped:** CSSD instrument-set tracking in `@oxford/perioperative` (docs/01 §E7) — **set composition**, **sterilisation cycles** (steam etc; pass→sterile, fail→dirty), and **which set was used on which patient** (the traceability link: usage → set → the sterilisation cycle that made it sterile). **A set may only be used when sterile**; using it marks it `used` (must be reprocessed before reuse). Pure `cssd.ts` (100%); `CssdService`; store + Postgres + schema + forward-only additive migration 0007. App: `CssdService` wired; router `registerSet`/`recordSterilisation`/`useSet` (MFA-gated). **100% coverage** (perioperative 49 tests; +2 API e2e).
+**Adversarial review (through the API on real Postgres) — all pass:** using a **dirty/used** set is **blocked** (`not_sterile`); a **passing** sterilisation makes it usable and the use is **traced** (set→patient→cycle); reuse is blocked until reprocessed; a **failed** sterilisation leaves it unusable; a reception role is **FORBIDDEN**.
+**Next:** PR 3.8 — Phase 3 closeout: an oocyte retrieval + a hysteroscopy each run the full admit→theatre→discharge journey end-to-end; exit-gate report + HOLD.
 
 ## 2026-06-13 — Recovery/post-op records + discharge gate (PR 3.6)
 **Shipped:** recovery (L1) + post-op ward (L2) **observations** (modified **Aldrete** 0–10 validated, BP/HR/SpO2/notes) and the **discharge gate** in `@oxford/perioperative`. **Discharge from L2 is BLOCKED until the discharge prescription is fulfilled by pharmacy (PharmacyPort) AND a follow-up is booked** (ADR-0025) — enforced in the journey state machine via a `DischargeGate` seam (no override). Pure `recovery.ts` (100%); `RecoveryService` implements the gate + records observations + books follow-ups; store + Postgres + schema + forward-only additive migration 0006. App: `RecoveryService` wired as the journey's discharge gate; `StubPharmacyProvider` (real E8 pharmacy later); router `recordObservation`/`bookFollowUp`. **100% coverage** (perioperative 43 tests; +1 API e2e + full-journey e2e updated).

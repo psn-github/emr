@@ -17,6 +17,37 @@ export type JourneyStage =
   | "discharged"
   | "cancelled";
 
+export type InstrumentSetId = Id<"InstrumentSet">;
+export type SterilisationCycleId = Id<"SterilisationCycle">;
+export type SetUsageId = Id<"SetUsage">;
+
+export interface InstrumentSet {
+  readonly id: InstrumentSetId;
+  readonly name: string;
+  readonly composition: readonly string[];
+  readonly status: "dirty" | "sterile" | "used";
+}
+
+export interface SterilisationCycle {
+  readonly id: SterilisationCycleId;
+  readonly setId: InstrumentSetId;
+  readonly cycleType: string;
+  readonly loadRef: string;
+  readonly result: "pass" | "fail";
+  readonly completedAt: string;
+  readonly operator: string;
+}
+
+/** Which set was used on which patient/encounter — the traceability link. */
+export interface SetUsage {
+  readonly id: SetUsageId;
+  readonly setId: InstrumentSetId;
+  readonly encounterId: string;
+  readonly sterilisationCycleId: string;
+  readonly usedAt: string;
+  readonly usedBy: string;
+}
+
 export type ObservationId = Id<"Observation">;
 export type FollowUpId = Id<"FollowUp">;
 

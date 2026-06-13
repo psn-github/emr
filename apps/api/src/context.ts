@@ -34,6 +34,8 @@ import {
   PgIntraOpStore,
   RecoveryService,
   PgRecoveryStore,
+  CssdService,
+  PgCssdStore,
   type FacilityFlowPort,
   type SchedulingPort,
   type InventoryPort,
@@ -68,6 +70,7 @@ export interface Services {
   readonly whoChecklist: WhoChecklistService;
   readonly intraOp: IntraOpService;
   readonly recovery: RecoveryService;
+  readonly cssd: CssdService;
   /** Dev/test stub inventory outbox (records deductions; real module is Phase 4). */
   readonly inventoryOutbox: RecordingInventoryProvider;
   /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
@@ -219,6 +222,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     },
   };
   const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventoryOutbox, perioperativeBilling, audit, events);
+  const cssd = new CssdService(new PgCssdStore(pool), audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
   // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
@@ -249,5 +253,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, inventoryOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, inventoryOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

@@ -378,6 +378,28 @@ export const appRouter = router({
         const f = await ctx.services.recovery.bookFollowUp(ctx.session.subject.staffId, input);
         return { followUpId: f.id };
       }),
+
+    // CSSD / instrument-set tracking — a set may only be used when sterile.
+    registerSet: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { name: string; composition: string[] })
+      .mutation(async ({ ctx, input }) => {
+        const s = await ctx.services.cssd.registerSet(ctx.session.subject.staffId, input.name, input.composition);
+        return { setId: s.id, status: s.status };
+      }),
+    recordSterilisation: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { setId: string; cycleType: string; loadRef: string; result: "pass" | "fail"; completedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cssd.recordSterilisation(ctx.session.subject.staffId, asId<"InstrumentSet">(input.setId), input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "sterilisation failed" });
+        return { cycleId: r.value.id };
+      }),
+    useSet: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { setId: string; encounterId: string; usedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cssd.useSet(ctx.session.subject.staffId, asId<"InstrumentSet">(input.setId), input.encounterId, input.usedAt);
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "set not usable" });
+        return { usageId: r.value.id };
+      }),
   }),
 
   // Patient-portal self-service booking. The patient principal may ONLY act on
