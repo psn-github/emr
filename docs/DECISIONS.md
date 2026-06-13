@@ -158,4 +158,14 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** build a **vendor-neutral morphokinetic import hook** (a seam on `EmbryoAssessment`) — no platform-specific code. When a device is acquired, a concrete adapter is added behind the seam.
 - **Consequences:** no wasted platform-specific work; the embryology model is ready to receive time-lapse data later without rework.
 
-_(Claude Code: continue numbering from ADR-0020.)_
+## ADR-0020 — Oxford HIS replaces the om-software tools, tool-by-tool, never big-bang
+- **Date:** 2026-06-13
+- **Status:** accepted (product owner / Medical Director)
+- **Context:** the first-generation om-software clinical point tools (semen-analysis, embryo follow-up, Document Ledger/patient timeline, the HTML clinical tools, the Cliniko-backed patient context) are to be **replaced** by the EMR, not run permanently alongside it. Their functionality is absorbed into the corresponding EMR modules (andrology E5, embryology E4, clinical core E2, scheduling/registry E1) as those are built.
+- **Decision (binding principles):**
+  1. **Tool-by-tool replacement, never big-bang** — each tool is replaced by its EMR module individually, behind a **parallel-run gate** (EMR runs alongside the live tool; reconciliation proves they agree; only then decommission).
+  2. **No decommissioning without proven data migration** — no tool is switched off until all its data is **provably migrated** into the EMR **or archived with guaranteed read access**; the Document Ledger's "history never lost" promise extends across the replacement; each tool's migration ships a **reconciliation report** (as with ADR-0017 Cliniko).
+  3. **Map, don't fork** — read om-software to match the design system (ADR-0016) and map each tool's data model/features to the target module so the EMR is a faithful **superset** before cutover; **reimplement** functionality on the EMR's audited/RBAC'd/in-region foundation — do **not** copy om-software's vanilla-HTML/Flask/SQLite architecture.
+- **Consequences:** safe, incremental cutover with no data loss and no big-bang risk; the full replacement map lives in `docs/07_OM_SOFTWARE_REPLACEMENT_MAP.md`; per-tool migrations are sequenced into docs/05 (Phase 2 onward; Phase 0/1 unchanged). Needs: om-software **read access** for field-level mapping; product-owner decisions on **retirement order** and **archive-vs-migrate** per tool (STATE).
+
+_(Claude Code: continue numbering from ADR-0021.)_
