@@ -39,6 +39,10 @@ export class PgBillingStore implements BillingStore {
     const r = await this.pool.query<InvoiceRow>("SELECT * FROM billing.invoice WHERE status = 'open' ORDER BY created_at", []);
     return r.rows.map(invoiceFrom);
   }
+  async invoicesForPatient(patientId: string): Promise<readonly Invoice[]> {
+    const r = await this.pool.query<InvoiceRow>("SELECT * FROM billing.invoice WHERE patient_id = $1 ORDER BY created_at", [patientId]);
+    return r.rows.map(invoiceFrom);
+  }
 }
 
 interface InvoiceRow {

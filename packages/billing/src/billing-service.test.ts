@@ -94,6 +94,17 @@ describe("BillingService payments", () => {
     if (!wire.ok) expect(wire.error.detailKey).toBe("billing.method_not_allowed");
   });
 
+  it("lists a patient's invoices with balances (portal view)", async () => {
+    const { svc, invoice } = await invoiced();
+    await svc.postPayment("fin-1", invoice.id, 30000, "knet");
+    const other = await svc.createInvoice("fin-1", "pat-2", [line("X", 1000)]); // different patient
+    expect(other.ok).toBe(true);
+    const balances = await svc.patientBalances("pat-1");
+    expect(balances).toHaveLength(1); // only pat-1's invoice
+    expect(balances[0]!.invoiceId).toBe(invoice.id);
+    expect(balances[0]!.totals.balanceFils).toBe(25000);
+  });
+
   it("reports open-invoice ageing (balance + age days) for the dashboard", async () => {
     const { svc, invoice } = await invoiced();
     await svc.postPayment("fin-1", invoice.id, 30000, "knet"); // partial → still open, balance 25000

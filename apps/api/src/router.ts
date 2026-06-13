@@ -440,6 +440,24 @@ export const appRouter = router({
         if (!r.ok) throw new TRPCError({ code: "CONFLICT", message: r.error.detailKey ?? "could not book" });
         return { appointmentId: r.value.id };
       }),
+
+    // The patient's own appointments (own-data only — ADR-0042).
+    appointments: patientProcedure
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        return { appointments: await ctx.services.scheduling.appointmentsForPatient(input.patientId) };
+      }),
+
+    // The patient's own invoices + balances (own-data only; no cash/no tax).
+    balances: patientProcedure
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        return { invoices: await ctx.services.billing.patientBalances(input.patientId) };
+      }),
   }),
 
   // Front-desk check-in: advance the appointment and place the patient on the
