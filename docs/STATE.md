@@ -39,6 +39,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-06-13 — Cycle engine + protocol library + consent gating (PR 2.1)
+**Shipped:** `@oxford/fertility` — `Cycle` (IUI/IVF/ICSI/FET/IVM/preservation/ovulation-induction) with **couple-scoped treatment vs person-scoped preservation** owner; status lifecycle (planned→…→outcome, + preservation's retrieval→outcome, + cancel); protocol library (config seed); **per-cycle consent gating** (progression out of `planned` blocked until required consents signed). `CycleService` (createTreatmentCycle/createPreservationCycle/recordConsent/advanceStatus/cancel), all audited + events. The **marriage hard-gate** is enforced via an injected `FertilityGate` seam (wired to `registry.canStartFertility` in the app layer — keeps `fertility` decoupled from `registry`). Drizzle schema + migration; Postgres store, integration-tested. **100% coverage** (17 tests).
+**Adversarial self-review (identity / Kuwaiti law):** `[attack] ICSI cycle, unverified couple → REJECTED (registry.marriage.unverified)`; preservation cycle for a single person → CREATED (person-scoped). The gate holds at cycle creation; preservation is the only person-scoped path (ADR-0015/AMD-0002).
+**Open / needs product owner:** none new.
+**Next:** PR 2.2 — stimulation charting + drug-dose (formulary-driven; follitropin-delta weight/AMH algorithm; HP-hMG); adversarial review (drug-dose, 100%).
+
 ## 2026-06-13 — Phase 2 kickoff: spec/data-model alignment + decisions (PR 2.0)
 **Shipped (docs):** folded AMD-0002 into docs/01 §E3 (fertility-preservation = the only person-scoped cycle type; treatment cycles couple-gated), §E6 (`CryoSpecimen.owner` = person_id OR couple_id; thaw-for-treatment invariant; no posthumous use; **annual storage billing + non-engagement pathway elevated to Phase 2 P0**), and docs/04 (Cycle/CryoSpecimen glossary).
 **Decisions:** **ADR-0018** RI Witness — build reconciliation + blocking-on-divergence behind a `WitnessingProvider` stub now; real `RiWitnessProvider` wired after CooperSurgical scoping + RI-server residency review (PO initiating scoping). **ADR-0019** time-lapse — none deployed; vendor-neutral morphokinetic import seam only. **AMD-0003** annual cryostorage billing + graduated non-engagement/non-payment pathway (reminders → overdue → clinical/legal review; never auto-destroy), build in PR 2.7.
