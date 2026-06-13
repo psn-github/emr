@@ -31,12 +31,12 @@
     "@oxford/assets": "workspace:*",
     "@oxford/analytics": "workspace:*",
     "@oxford/hr": "workspace:*",
+    "@oxford/fertility": "workspace:*",
     "@oxford/migration": "workspace:*",
     "@trpc/server": "^11.0.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.10",
-    "@oxford/fertility": "workspace:*"
+    "@types/pg": "^8.11.10"
   }
 }
