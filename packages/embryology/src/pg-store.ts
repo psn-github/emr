@@ -10,6 +10,7 @@ import type {
   EmbryoTransfer,
   EmbryoId,
   GardnerGrade,
+  MediaApplication,
 } from "./types.js";
 import type { EmbryologyStore, PgtStore } from "./store.js";
 import type { PgtOrder, PgtOrderId, PgtResult } from "./types.js";
@@ -99,6 +100,21 @@ export class PgEmbryologyStore implements EmbryologyStore {
     const r = await this.pool.query<TransferRow>("SELECT * FROM embryology.embryo_transfer WHERE cycle_id = $1 ORDER BY transferred_at", [cycleId]);
     return r.rows.map(transferFrom);
   }
+  async saveMediaApplication(m: MediaApplication): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO embryology.media_application (id, cycle_id, embryo_id, oocyte_id, item_id, lot_no, step, quantity, applied_at, operator)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+      [m.id, m.cycleId, m.embryoId, m.oocyteId, m.itemId, m.lotNo, m.step, m.quantity, m.appliedAt, m.operator],
+    );
+  }
+  async mediaApplicationsForLot(itemId: string, lotNo: string): Promise<readonly MediaApplication[]> {
+    const r = await this.pool.query<MediaRow>("SELECT * FROM embryology.media_application WHERE item_id = $1 AND lot_no = $2 ORDER BY applied_at", [itemId, lotNo]);
+    return r.rows.map(mediaFrom);
+  }
+  async mediaApplicationsForCycle(cycleId: string): Promise<readonly MediaApplication[]> {
+    const r = await this.pool.query<MediaRow>("SELECT * FROM embryology.media_application WHERE cycle_id = $1 ORDER BY applied_at", [cycleId]);
+    return r.rows.map(mediaFrom);
+  }
 }
 
 interface OocyteRow { id: string; cycle_id: string; retrieval_procedure_id: string; maturity: string; dish: string; position: string; recorded_by: string }
@@ -108,6 +124,7 @@ interface EmbryoRow { id: string; cycle_id: string; oocyte_id: string; created_a
 interface GradingRow { id: string; embryo_id: string; day: number; morphology: string; gardner: GardnerGrade | null; recorded_by: string; assessed_at: Date }
 interface DispRow { id: string; embryo_id: string; cycle_id: string; type: string; occurred_at: Date; operator: string; witness_key: string }
 interface TransferRow { id: string; cycle_id: string; embryo_ids: string[]; count: number; catheter: string; difficulty: string; ultrasound_guided: boolean; procedure_ref: string | null; operator: string; transferred_at: Date; witness_key: string }
+interface MediaRow { id: string; cycle_id: string; embryo_id: string | null; oocyte_id: string | null; item_id: string; lot_no: string; step: string; quantity: number; applied_at: Date; operator: string }
 
 const iso = (d: Date): string => new Date(d).toISOString();
 
@@ -131,6 +148,9 @@ function dispFrom(r: DispRow): Disposition {
 }
 function transferFrom(r: TransferRow): EmbryoTransfer {
   return { id: asId<"EmbryoTransfer">(r.id), cycleId: r.cycle_id, embryoIds: r.embryo_ids.map((e) => asId<"Embryo">(e)), count: r.count, catheter: r.catheter, difficulty: r.difficulty as EmbryoTransfer["difficulty"], ultrasoundGuided: r.ultrasound_guided, procedureRef: r.procedure_ref, operator: r.operator, transferredAt: iso(r.transferred_at), witnessKey: r.witness_key };
+}
+function mediaFrom(r: MediaRow): MediaApplication {
+  return { id: asId<"MediaApplication">(r.id), cycleId: r.cycle_id, embryoId: r.embryo_id === null ? null : asId<"Embryo">(r.embryo_id), oocyteId: r.oocyte_id === null ? null : asId<"Oocyte">(r.oocyte_id), itemId: r.item_id, lotNo: r.lot_no, step: r.step, quantity: r.quantity, appliedAt: iso(r.applied_at), operator: r.operator };
 }
 
 /** Postgres-backed PgtStore. Append-only PGT order/result capture. */

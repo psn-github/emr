@@ -222,6 +222,20 @@ export const appRouter = router({
         const res = await ctx.services.pgt.recordPgtResult(ctx.session.subject.staffId, input);
         return { resultId: res.id, status: res.status };
       }),
+
+    // Media-lot ↔ embryo traceability (docs/01 §E4). Records which media/consumable
+    // lot (the inventory's itemId + lotNo) touched which embryo/oocyte — append-only.
+    recordMediaApplication: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { cycleId: string; embryoId?: string; oocyteId?: string; itemId: string; lotNo: string; step: string; quantity: number; appliedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.embryology.recordMediaApplication(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "media application rejected" });
+        return { applicationId: r.value.id };
+      }),
+    // Recall reachability: every embryo/oocyte/cycle exposed to a recalled lot.
+    mediaRecall: protectedProcedure("embryology:lab.read")
+      .input((v: unknown) => v as { itemId: string; lotNo: string })
+      .query(async ({ ctx, input }) => ctx.services.embryology.mediaRecall(input.itemId, input.lotNo)),
   }),
 
   // Andrology lab (WHO 6th-ed semen analysis; sperm prep/freeze/retrieval).

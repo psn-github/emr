@@ -9,6 +9,7 @@ import type {
   GradingEntry,
   Disposition,
   EmbryoTransfer,
+  MediaApplication,
   OocyteId,
   EmbryoId,
   Maturity,
@@ -21,6 +22,7 @@ import type { EmbryologyStore } from "./store.js";
 import type { WitnessPort } from "./witness-port.js";
 import { yieldsEmbryo } from "./fertilisation.js";
 import { makeGardnerGrade } from "./grading.js";
+import { validateMediaApplication, recallReachability, hasValue, type MediaApplicationInput, type RecallReach } from "./media.js";
 
 export interface RecordOocyteInput {
   readonly cycleId: string;
@@ -84,6 +86,8 @@ export interface EmbryoLifeHistory {
   readonly checks: readonly FertilisationCheck[];
   readonly gradings: readonly GradingEntry[];
   readonly dispositions: readonly Disposition[];
+  /** Media lots applied to this embryo or its originating oocyte. */
+  readonly media: readonly MediaApplication[];
 }
 
 const witnessKey = (cycleId: string, stepKey: string, sampleId: string): string => `${cycleId}:${stepKey}:${sampleId}`;
@@ -191,6 +195,38 @@ export class EmbryologyService {
     return ok(entry);
   }
 
+  /** Record a culture-media (or consumable) lot applied to an embryo/oocyte —
+   *  an append-only traceability fact (docs/01 §E4). The lot is referenced by the
+   *  inventory's own (itemId, lotNo), so a manufacturer recall maps straight to
+   *  the embryos exposed via `mediaRecall`. This records lab reality; it does not
+   *  gate on or mutate inventory stock (no cross-module dependency). */
+  async recordMediaApplication(actorId: string, input: MediaApplicationInput): Promise<Result<MediaApplication, AppError>> {
+    const v = validateMediaApplication(input);
+    if (!v.ok) return err(v.error);
+    const app: MediaApplication = {
+      id: newId<"MediaApplication">(),
+      cycleId: input.cycleId,
+      embryoId: hasValue(input.embryoId) ? (input.embryoId as EmbryoId) : null,
+      oocyteId: hasValue(input.oocyteId) ? (input.oocyteId as OocyteId) : null,
+      itemId: input.itemId,
+      lotNo: input.lotNo,
+      step: input.step,
+      quantity: input.quantity,
+      appliedAt: input.appliedAt,
+      operator: actorId,
+    };
+    await this.store.saveMediaApplication(app);
+    await this.audit.record({ actorId, entityType: "MediaApplication", entityId: app.id, action: "CREATE", after: { itemId: app.itemId, lotNo: app.lotNo, embryoId: app.embryoId, oocyteId: app.oocyteId, step: app.step } });
+    await this.events.emit({ type: "MediaApplied", aggregateType: "Cycle", aggregateId: input.cycleId, data: { itemId: app.itemId, lotNo: app.lotNo } });
+    return ok(app);
+  }
+
+  /** Media-recall reachability: every embryo/oocyte/cycle exposed to a media lot. */
+  async mediaRecall(itemId: string, lotNo: string): Promise<RecallReach> {
+    const apps = await this.store.mediaApplicationsForLot(itemId, lotNo);
+    return recallReachability(itemId, lotNo, apps);
+  }
+
   /** The witnessing gate: a cycle step may be signed off only if every handling
    *  event reconciles `matched` with RI Witness. No override. */
   assertStepSignOff(cycleId: string): Promise<Result<void, AppError>> {
@@ -279,11 +315,12 @@ export class EmbryologyService {
     if (embryo === undefined) {
       return err(notFound("embryo not found", "embryology.embryo.not_found"));
     }
-    const [oocytes, checks, gradings, dispositions] = await Promise.all([
+    const [oocytes, checks, gradings, dispositions, media] = await Promise.all([
       this.store.oocytesForCycle(embryo.cycleId),
       this.store.checksForCycle(embryo.cycleId),
       this.store.gradingsForEmbryo(embryoId),
       this.store.dispositionsForCycle(embryo.cycleId),
+      this.store.mediaApplicationsForCycle(embryo.cycleId),
     ]);
     return ok({
       embryo,
@@ -291,6 +328,7 @@ export class EmbryologyService {
       checks: checks.filter((c) => c.oocyteId === embryo.oocyteId),
       gradings,
       dispositions: dispositions.filter((d) => d.embryoId === embryoId),
+      media: media.filter((m) => m.embryoId === embryoId || (m.oocyteId !== null && m.oocyteId === embryo.oocyteId)),
     });
   }
 }
