@@ -35,7 +35,8 @@ const base: MediaApplicationInput = {
 describe("media application validation (pure)", () => {
   it("accepts a well-formed application (embryo or oocyte subject)", () => {
     expect(validateMediaApplication(base).ok).toBe(true);
-    expect(validateMediaApplication({ ...base, embryoId: undefined, oocyteId: "o1" }).ok).toBe(true);
+    // oocyte-only application (embryoId omitted entirely, not set to undefined)
+    expect(validateMediaApplication({ cycleId: base.cycleId, oocyteId: "o1", itemId: base.itemId, lotNo: base.lotNo, step: base.step, quantity: base.quantity, appliedAt: base.appliedAt }).ok).toBe(true);
   });
   it("requires a media item + lot", () => {
     expect(detail(validateMediaApplication({ ...base, itemId: "  " }))).toBe("embryology.media.lot_required");
@@ -51,7 +52,7 @@ describe("media application validation (pure)", () => {
   });
   it("requires an embryo or oocyte subject", () => {
     expect(detail(validateMediaApplication({ ...base, embryoId: null, oocyteId: null }))).toBe("embryology.media.subject_required");
-    expect(detail(validateMediaApplication({ ...base, embryoId: "", oocyteId: undefined }))).toBe("embryology.media.subject_required");
+    expect(detail(validateMediaApplication({ ...base, embryoId: "", oocyteId: "" }))).toBe("embryology.media.subject_required");
   });
 });
 
