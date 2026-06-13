@@ -1,7 +1,7 @@
 // Drizzle schema for the `fertility` domain (ADR-0008). Owner is person OR couple
 // (preservation vs treatment). Protocols are config (seeded). Stimulation
 // charting / dosing tables land in PR 2.2.
-import { pgSchema, jsonb, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgSchema, integer, jsonb, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const fertilitySchema = pgSchema("fertility");
 
@@ -27,3 +27,19 @@ export const protocol = fertilitySchema.table("protocol", {
   nameEn: text("name_en").notNull(),
   appliesTo: jsonb("applies_to").$type<string[]>().notNull().default([]),
 });
+
+export const stimDay = fertilitySchema.table(
+  "stim_day",
+  {
+    id: text("id").primaryKey(),
+    cycleId: text("cycle_id").notNull(),
+    day: integer("day").notNull(),
+    drugs: jsonb("drugs").notNull().default([]),
+    follicles: jsonb("follicles").notNull().default([]),
+    endometriumMm: integer("endometrium_mm"),
+    endocrine: jsonb("endocrine").notNull().default({}),
+    recordedBy: text("recorded_by").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ uq: uniqueIndex("stim_day_cycle_day_uq").on(t.cycleId, t.day) }),
+);
