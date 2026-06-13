@@ -5,6 +5,7 @@ import type { TheatreCase, TheatreCaseId } from "./types.js";
 import type { TheatreCaseStore } from "./theatre-store.js";
 import type { SchedulingPort } from "./ports.js";
 import { bedReservationStatus, type BedReservationStatus } from "./bed-reservation.js";
+import { theatreUtilisation, type TheatreUtilisation } from "./analytics.js";
 
 export interface ScheduleCaseInput {
   readonly typeId: string;
@@ -94,5 +95,11 @@ export class TheatreSchedulingService {
   async dayList(scheduledDate: string): Promise<{ cases: readonly TheatreCase[]; bedReservation: BedReservationStatus }> {
     const cases = await this.store.scheduledForDate(scheduledDate);
     return { cases, bedReservation: bedReservationStatus(cases.length, this.l2BedCapacity) };
+  }
+
+  /** Utilisation + turnaround analytics for one theatre on a day (docs/01 §E7 P1). */
+  async utilisation(theatreResourceId: string, scheduledDate: string, availableMinutes: number): Promise<TheatreUtilisation> {
+    const cases = (await this.store.scheduledForDate(scheduledDate)).filter((c) => c.theatreResourceId === theatreResourceId);
+    return theatreUtilisation(cases, availableMinutes);
   }
 }

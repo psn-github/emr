@@ -1,5 +1,5 @@
 import type { Result, AppError } from "@oxford/core";
-import { ok, err, newId, notFound } from "@oxford/core";
+import { ok, err, newId, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import { assertTransition } from "./bed.js";
 import type { Bed, BedId, BedStatus, BilingualName, Floor, FloorLevel, LocationNode, LocationNodeType } from "./types.js";
@@ -62,6 +62,23 @@ export class FacilityService {
 
   getBed(id: BedId): Promise<Bed | null> {
     return this.store.getBed(id);
+  }
+
+  /** Complete housekeeping turnaround on a vacated bed (cleaning → free) — the
+   *  audited step that returns a bed to the available pool. Only a `cleaning`
+   *  bed can be turned around. */
+  async completeTurnaround(actorId: string, bedId: BedId): Promise<Result<Bed, AppError>> {
+    const bed = await this.store.getBed(bedId);
+    if (bed === null) return err(notFound("bed not found", "facility.bed.not_found"));
+    if (bed.status !== "cleaning") {
+      return err(validationError("only a cleaning bed can be turned around", "facility.bed.not_cleaning"));
+    }
+    return this.setBedStatus(actorId, bedId, "free");
+  }
+
+  /** Beds awaiting housekeeping turnaround (vacated, not yet free). */
+  async bedsAwaitingTurnaround(): Promise<readonly Bed[]> {
+    return (await this.store.listBeds()).filter((b) => b.status === "cleaning");
   }
 
   async beds(): Promise<readonly Bed[]> {

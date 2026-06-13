@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** **Phase 3 — Theatres, perioperative journey & beds — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 3.0→3.8 on `main`. Phases 0–2 complete (Phase 2 signed off). An oocyte retrieval + a hysteroscopy each run the full admit→theatre→discharge journey end-to-end (closeout e2e, PR 3.8): WHO checklist enforced, consumables deducted+billed, CSSD sterile-gated, discharge pharmacy-gated, every floor transfer audited, audit chain intact. ADR-0023/0024/0025 in force. **Do not start Phase 4 until the Medical Director signs off the Phase 3 exit gate.**
-- **Last updated:** 2026-06-13 — Phase 3 PR 3.8 (closeout e2e — full perioperative journey ×2 on real Postgres). All Phase 3 PRs merged; exit-gate report delivered; **HOLD for sign-off**. **Still open:** **bed turnaround (cleaning→free) workflow + theatre-utilisation/turnaround analytics are P1 (deferred)** — the closeout simulates housekeeping via the existing audited bed-status machine; implant/device registry reporting P2. **Cutover-gating (not the build):** marital-status disposition rule + permitted PGT indications (counsel); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software read access.
+- **Phase:** **Phase 3 — Theatres, perioperative journey & beds — COMPLETE (incl. P1 turnaround + utilisation); awaiting exit-gate sign-off (HOLD).** PRs 3.0→3.9 on `main`. Phases 0–2 complete (Phase 2 signed off). Full surgical journey runs end-to-end with WHO checklist enforced, consumables billed, CSSD sterile-gated, discharge pharmacy-gated, bed turnaround + theatre-utilisation analytics, every floor transfer audited. ADR-0023/0024/0025 in force. **MD asked to fold bed-turnaround + utilisation into Phase 3 (done, PR 3.9), then sign off and proceed to Phase 4.**
+- **Last updated:** 2026-06-13 — Phase 3 PR 3.9 (bed turnaround cleaning→free + theatre-utilisation/turnaround analytics, the deferred P1 items; 100%; turnaround + utilisation reviewed via the API on real Postgres). PR 3.8 (closeout) merged. **Next: Phase 3 sign-off → propose Phase 4 (Operations ERP).** **Cutover-gating (not the build):** marital-status disposition rule + permitted PGT indications (counsel); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software read access. Implant/device registry reporting remains P2.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Bed turnaround + theatre-utilisation analytics (PR 3.9)
+**Shipped (the deferred Phase 3 P1 items, folded in at MD request).** **Bed turnaround** in `@oxford/facility`: `completeTurnaround` (audited cleaning→free; only a cleaning bed) + `bedsAwaitingTurnaround` worklist (the dedicated housekeeping step that returns a vacated bed to the pool; the live bed board already shows cleaning status as the expected-discharge/turnaround view). **Theatre-utilisation analytics** in `@oxford/perioperative`: pure `theatreUtilisation` (booked minutes, utilisation % vs available session minutes, total turnaround/idle gaps) + `TheatreSchedulingService.utilisation(theatre, date, availableMinutes)`. App: `flow.completeTurnaround`/`bedsAwaitingTurnaround` (ops-gated) and `perioperative.theatreUtilisation` (clinical-gated) routes. **100% coverage** (facility + perioperative); +2 API e2e.
+**Review (through the API on real Postgres) — pass:** housekeeping turns a cleaning bed back to **free** (and drops it from the worklist); a non-cleaning/missing bed is rejected; a theatre's day reports **booked 120 min, turnaround 30 min, 25% utilisation** over an 8h session.
+**Phase 3 build fully complete (incl. P1); exit-gate report delivered; HOLD for sign-off.**
 
 ## 2026-06-13 — Phase 3 closeout: full perioperative journey e2e + exit gate (PR 3.8)
 **Shipped:** a cross-cutting **end-to-end e2e** (`apps/api/src/phase3-perioperative-journey.e2e.test.ts`) running an **oocyte retrieval AND a hysteroscopy** each through the **complete perioperative journey** on a real Postgres — proving the Phase 3 exit-gate invariants in one flow:
