@@ -81,6 +81,9 @@ describe("InstalmentService", () => {
     // a patient with no plan is never blocked
     expect((await svc.assertProgressionAllowed("nobody", new Date("2026-07-02T00:00:00Z"))).ok).toBe(true);
     expect((await svc.planById(plan.value.id))!.depositFils).toBe(200000);
+    // all-arrears feed (dashboard): at 07-02 the deposit is paid but the first
+    // instalment (400000) is due and unpaid → one plan, 400000 arrears
+    expect([...(await svc.allArrears(new Date("2026-07-02T00:00:00Z")))]).toEqual([400000]);
   });
 
   it("rejects a plan whose total ≠ the invoice, and an unknown invoice/plan", async () => {

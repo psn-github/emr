@@ -98,6 +98,11 @@ export class ChargeCaptureService {
   chargesForPatient(patientId: string): Promise<readonly Charge[]> {
     return this.charges.chargesForPatient(patientId);
   }
+  /** Revenue rows (one per invoiced charge) for the revenue-by-line dashboard. */
+  async revenueRows(): Promise<readonly { line: string; amountFils: number }[]> {
+    const charges = await this.charges.invoicedCharges();
+    return charges.map((c) => ({ line: c.source, amountFils: c.quantity * c.unitAmountFils }));
+  }
   listChargeCodes(): Promise<readonly ChargeMasterItem[]> {
     return this.master.items();
   }

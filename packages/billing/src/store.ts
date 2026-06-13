@@ -5,6 +5,8 @@ export interface BillingStore {
   getInvoice(id: InvoiceId): Promise<Invoice | null>;
   savePayment(p: Payment): Promise<void>;
   paymentsFor(invoiceId: InvoiceId): Promise<readonly Payment[]>;
+  /** All open (unpaid) invoices — drives the receivables-ageing dashboard. */
+  openInvoices(): Promise<readonly Invoice[]>;
 }
 
 export class InMemoryBillingStore implements BillingStore {
@@ -22,5 +24,8 @@ export class InMemoryBillingStore implements BillingStore {
   }
   async paymentsFor(invoiceId: InvoiceId): Promise<readonly Payment[]> {
     return this.payments.filter((p) => p.invoiceId === invoiceId);
+  }
+  async openInvoices(): Promise<readonly Invoice[]> {
+    return [...this.invoices.values()].filter((i) => i.status === "open");
   }
 }

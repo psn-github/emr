@@ -42,6 +42,10 @@ export class PgChargeStore implements ChargeStore {
     const r = await this.pool.query<ChargeRow>("SELECT * FROM billing.charge WHERE patient_id = $1 ORDER BY occurred_at", [patientId]);
     return r.rows.map(chargeFrom);
   }
+  async invoicedCharges(): Promise<readonly Charge[]> {
+    const r = await this.pool.query<ChargeRow>("SELECT * FROM billing.charge WHERE invoice_id IS NOT NULL ORDER BY occurred_at", []);
+    return r.rows.map(chargeFrom);
+  }
 }
 
 interface MasterRow { code: string; description: BilingualText; unit_amount_fils: string | number; active: boolean }

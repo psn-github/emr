@@ -49,6 +49,19 @@ export class BillingService {
     return ok(invoice);
   }
 
+  /** Receivables ageing rows for the financial dashboard: each open invoice's
+   *  outstanding balance and age in days as of `asOf`. */
+  async openInvoiceAgeing(asOf: Date): Promise<readonly { invoiceId: string; balanceFils: number; ageDays: number }[]> {
+    const open = await this.store.openInvoices();
+    const out: { invoiceId: string; balanceFils: number; ageDays: number }[] = [];
+    for (const inv of open) {
+      const t = await this.computeTotals(inv);
+      const ageDays = Math.floor((asOf.getTime() - new Date(inv.createdAt).getTime()) / (24 * 60 * 60 * 1000));
+      out.push({ invoiceId: inv.id, balanceFils: t.balanceFils, ageDays });
+    }
+    return out;
+  }
+
   /** Computed money view (subtotal/tax/total/paid/balance). */
   async totals(invoiceId: InvoiceId): Promise<Result<InvoiceTotals, AppError>> {
     const invoice = await this.store.getInvoice(invoiceId);

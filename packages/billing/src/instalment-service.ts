@@ -81,6 +81,16 @@ export class InstalmentService {
     return ok(undefined);
   }
 
+  /** Arrears (fils) for every active plan as of `asOf` — feeds the risk dashboard. */
+  async allArrears(asOf: Date): Promise<readonly number[]> {
+    const plans = await this.store.allActivePlans();
+    const out: number[] = [];
+    for (const plan of plans) {
+      out.push((await this.decide(plan, asOf)).arrearsFils);
+    }
+    return out;
+  }
+
   private async decide(plan: InstalmentPlan, asOf: Date): Promise<ProgressionDecision> {
     const totals = await this.billing.totals(asId<"Invoice">(plan.invoiceId));
     const paid = totals.ok ? totals.value.paidFils : 0;
