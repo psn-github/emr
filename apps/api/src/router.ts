@@ -547,6 +547,58 @@ export const appRouter = router({
       }),
   }),
 
+  // Procurement / accounts-payable (financial domain, MFA-gated). Requisition →
+  // approval → PO → goods receipt (receives real stock) → supplier invoice →
+  // 3-way match. AP money is integer fils, separate from patient billing.
+  procurement: router({
+    createRequisition: protectedProcedure("financial:procurement.write")
+      .input((v: unknown) => v as { lines: { itemId: string; quantity: number }[]; reason: string; requestedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.procurement.createRequisition(ctx.session.subject.staffId, input.lines, input.reason, input.requestedAt);
+        return { requisitionId: r.id, status: r.status };
+      }),
+    autoRequisition: protectedProcedure("financial:procurement.write")
+      .input((v: unknown) => v as { asOf: string; withinDays: number; requestedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.procurement.autoRequisitionFromAlerts(ctx.session.subject.staffId, new Date(input.asOf), input.withinDays, input.requestedAt);
+        return { requisitionId: r?.id ?? null, lines: r?.lines.length ?? 0 };
+      }),
+    decideRequisition: protectedProcedure("financial:procurement.approve")
+      .input((v: unknown) => v as { requisitionId: string; approve: boolean })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.procurement.decide(ctx.session.subject.staffId, asId<"Requisition">(input.requisitionId), input.approve);
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "decision failed" });
+        return { status: r.value.status };
+      }),
+    createPurchaseOrder: protectedProcedure("financial:procurement.write")
+      .input((v: unknown) => v as { requisitionId?: string; supplierId: string; lines: { itemId: string; quantity: number; unitPriceFils: number }[]; createdAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const po = await ctx.services.procurement.createPurchaseOrder(ctx.session.subject.staffId, input, input.createdAt);
+        return { purchaseOrderId: po.id, status: po.status };
+      }),
+    receiveGoods: protectedProcedure("financial:procurement.write")
+      .input((v: unknown) => v as { poId: string; lines: { itemId: string; lotNo: string; quantity: number; expiryDate: string; locationId: string }[]; receivedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.procurement.receiveGoods(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "NOT_FOUND", message: r.error.detailKey ?? "receive failed" });
+        return { goodsReceiptId: r.value.id };
+      }),
+    recordSupplierInvoice: protectedProcedure("financial:procurement.write")
+      .input((v: unknown) => v as { poId: string; lines: { itemId: string; quantity: number; amountFils: number }[]; totalFils: number; recordedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.procurement.recordSupplierInvoice(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invoice failed" });
+        return { supplierInvoiceId: r.value.id };
+      }),
+    matchInvoice: protectedProcedure("financial:procurement.approve")
+      .input((v: unknown) => v as { poId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.procurement.matchInvoice(ctx.session.subject.staffId, asId<"PurchaseOrder">(input.poId));
+        if (!r.ok) throw new TRPCError({ code: "PRECONDITION_FAILED", message: r.error.detailKey ?? "match failed" });
+        return { matched: r.value.matched, discrepancies: r.value.discrepancies };
+      }),
+  }),
+
   // Billing (MFA-gated financial domain).
   billing: router({
     createInvoice: protectedProcedure("financial:invoice.write")
