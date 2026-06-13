@@ -20,6 +20,66 @@ export interface StockLot {
   readonly receivedAt: string;
 }
 
+export type RequisitionId = Id<"Requisition">;
+export type PurchaseOrderId = Id<"PurchaseOrder">;
+export type GoodsReceiptId = Id<"GoodsReceipt">;
+export type SupplierInvoiceId = Id<"SupplierInvoice">;
+
+export interface RequisitionLine {
+  readonly itemId: string;
+  readonly quantity: number;
+}
+export interface Requisition {
+  readonly id: RequisitionId;
+  readonly lines: readonly RequisitionLine[];
+  readonly status: "draft" | "approved" | "rejected" | "ordered";
+  readonly reason: string;
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+}
+
+export interface PurchaseOrderLine {
+  readonly itemId: string;
+  readonly quantity: number;
+  readonly unitPriceFils: number;
+}
+export interface PurchaseOrder {
+  readonly id: PurchaseOrderId;
+  readonly requisitionId: string | null;
+  readonly supplierId: string;
+  readonly lines: readonly PurchaseOrderLine[];
+  readonly status: "open" | "received" | "matched" | "flagged";
+  readonly createdAt: string;
+}
+
+export interface GoodsReceiptLine {
+  readonly itemId: string;
+  readonly lotNo: string;
+  readonly quantity: number;
+  readonly expiryDate: string;
+  readonly locationId: string;
+}
+export interface GoodsReceipt {
+  readonly id: GoodsReceiptId;
+  readonly poId: string;
+  readonly lines: readonly GoodsReceiptLine[];
+  readonly receivedAt: string;
+  readonly receivedBy: string;
+}
+
+export interface SupplierInvoiceLine {
+  readonly itemId: string;
+  readonly quantity: number;
+  readonly amountFils: number;
+}
+export interface SupplierInvoice {
+  readonly id: SupplierInvoiceId;
+  readonly poId: string;
+  readonly lines: readonly SupplierInvoiceLine[];
+  readonly totalFils: number;
+  readonly recordedAt: string;
+}
+
 /** A cold-chain temperature reading for a location/lot (cold-chain logging). */
 export interface ColdChainReading {
   readonly id: ColdChainReadingId;

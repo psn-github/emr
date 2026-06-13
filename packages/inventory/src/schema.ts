@@ -1,5 +1,5 @@
 // Drizzle schema for the `inventory` domain (docs/01 §E9).
-import { pgSchema, text, integer, boolean, doublePrecision, date, timestamp, index } from "drizzle-orm/pg-core";
+import { pgSchema, text, integer, boolean, doublePrecision, date, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 
 export const inventorySchema = pgSchema("inventory");
 
@@ -15,6 +15,48 @@ export const stockLot = inventorySchema.table(
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
   },
   (t) => ({ byItem: index("stock_lot_item_idx").on(t.itemId) }),
+);
+
+export const requisition = inventorySchema.table("requisition", {
+  id: text("id").primaryKey(),
+  lines: jsonb("lines").$type<{ itemId: string; quantity: number }[]>().notNull().default([]),
+  status: text("status").notNull(),
+  reason: text("reason").notNull(),
+  requestedBy: text("requested_by").notNull(),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+});
+
+export const purchaseOrder = inventorySchema.table("purchase_order", {
+  id: text("id").primaryKey(),
+  requisitionId: text("requisition_id"),
+  supplierId: text("supplier_id").notNull(),
+  lines: jsonb("lines").$type<{ itemId: string; quantity: number; unitPriceFils: number }[]>().notNull().default([]),
+  status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const goodsReceipt = inventorySchema.table(
+  "goods_receipt",
+  {
+    id: text("id").primaryKey(),
+    poId: text("po_id").notNull(),
+    lines: jsonb("lines").$type<unknown[]>().notNull().default([]),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    receivedBy: text("received_by").notNull(),
+  },
+  (t) => ({ byPo: index("goods_receipt_po_idx").on(t.poId) }),
+);
+
+export const supplierInvoice = inventorySchema.table(
+  "supplier_invoice",
+  {
+    id: text("id").primaryKey(),
+    poId: text("po_id").notNull(),
+    lines: jsonb("lines").$type<unknown[]>().notNull().default([]),
+    totalFils: integer("total_fils").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ byPo: index("supplier_invoice_po_idx").on(t.poId) }),
 );
 
 export const coldChainReading = inventorySchema.table(
