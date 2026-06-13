@@ -62,6 +62,16 @@ export class BillingService {
     return out;
   }
 
+  /** A patient's invoices with computed totals (portal balances view). */
+  async patientBalances(patientId: string): Promise<readonly { invoiceId: string; status: string; createdAt: string; totals: InvoiceTotals }[]> {
+    const invoices = await this.store.invoicesForPatient(patientId);
+    const out: { invoiceId: string; status: string; createdAt: string; totals: InvoiceTotals }[] = [];
+    for (const inv of invoices) {
+      out.push({ invoiceId: inv.id, status: inv.status, createdAt: inv.createdAt, totals: await this.computeTotals(inv) });
+    }
+    return out;
+  }
+
   /** Computed money view (subtotal/tax/total/paid/balance). */
   async totals(invoiceId: InvoiceId): Promise<Result<InvoiceTotals, AppError>> {
     const invoice = await this.store.getInvoice(invoiceId);

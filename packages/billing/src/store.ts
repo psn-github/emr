@@ -7,6 +7,8 @@ export interface BillingStore {
   paymentsFor(invoiceId: InvoiceId): Promise<readonly Payment[]>;
   /** All open (unpaid) invoices — drives the receivables-ageing dashboard. */
   openInvoices(): Promise<readonly Invoice[]>;
+  /** All invoices for a patient — drives the portal balances view. */
+  invoicesForPatient(patientId: string): Promise<readonly Invoice[]>;
 }
 
 export class InMemoryBillingStore implements BillingStore {
@@ -27,5 +29,8 @@ export class InMemoryBillingStore implements BillingStore {
   }
   async openInvoices(): Promise<readonly Invoice[]> {
     return [...this.invoices.values()].filter((i) => i.status === "open");
+  }
+  async invoicesForPatient(patientId: string): Promise<readonly Invoice[]> {
+    return [...this.invoices.values()].filter((i) => i.patientId === patientId);
   }
 }

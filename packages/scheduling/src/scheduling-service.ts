@@ -121,6 +121,11 @@ export class SchedulingService {
   list(): Promise<readonly Appointment[]> {
     return this.store.listAppointments();
   }
+
+  /** A patient's own appointments (portal read; caller enforces own-data). */
+  async appointmentsForPatient(patientId: string): Promise<readonly Appointment[]> {
+    return (await this.store.listAppointments()).filter((a) => a.patientId === patientId);
+  }
 }
 
 function dedupe(ids: readonly ResourceId[]): ResourceId[] {

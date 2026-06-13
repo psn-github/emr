@@ -52,6 +52,18 @@ describe("SchedulingService.book", () => {
   });
 });
 
+describe("SchedulingService.appointmentsForPatient", () => {
+  it("returns only the given patient's appointments (portal read)", async () => {
+    const { svc, doc, scanner, type } = await setup();
+    await svc.book("rec-1", { typeId: type.id, patientId: "pat-1", practitionerId: doc.id, resourceIds: [scanner.id], start: "2026-06-15T09:00:00Z", end: "2026-06-15T09:30:00Z" });
+    await svc.book("rec-1", { typeId: type.id, patientId: "pat-2", practitionerId: doc.id, resourceIds: [scanner.id], start: "2026-06-15T10:00:00Z", end: "2026-06-15T10:30:00Z" });
+    const mine = await svc.appointmentsForPatient("pat-1");
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.patientId).toBe("pat-1");
+    expect(await svc.appointmentsForPatient("nobody")).toHaveLength(0);
+  });
+});
+
 describe("SchedulingService lifecycle", () => {
   async function booked() {
     const ctx = await setup();
