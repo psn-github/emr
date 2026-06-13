@@ -16,6 +16,8 @@ import { FacilityService, FlowService, PgFacilityStore, PgFlowStore } from "@oxf
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
 import { BillingService, PgBillingStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
+import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
+import { EmbryologyService, PgEmbryologyStore, type WitnessPort } from "@oxford/embryology";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -32,8 +34,13 @@ export interface Services {
   readonly notifications: NotificationService;
   readonly billing: BillingService;
   readonly clinical: ClinicalService;
+  readonly witnessing: WitnessingService;
+  readonly embryology: EmbryologyService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
+  /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
+   *  so dev/test can feed the witnessing records RI would otherwise return. */
+  readonly witnessProvider: RiWitnessStubProvider;
 }
 
 function mergedCatalog(): Catalog {
@@ -58,5 +65,17 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const notifications = new NotificationService(i18n, notificationOutbox, audit, events);
   const billing = new BillingService(new PgBillingStore(pool), audit, events, clock);
   const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock);
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, notificationOutbox };
+
+  // Witnessing: RI Witness is authoritative (ADR-0018). A stub provider stands in
+  // until the CooperSurgical integration is scoped + residency-reviewed. The
+  // embryology lab integrates through the WitnessPort seam — it never witnesses.
+  const witnessProvider = new RiWitnessStubProvider();
+  const witnessing = new WitnessingService(new PgWitnessingStore(pool), witnessProvider, audit, events, clock);
+  const witnessPort: WitnessPort = {
+    registerHandlingEvent: (actorId, input) => witnessing.registerHandlingEvent(actorId, input).then(() => undefined),
+    assertCycleStepSignOff: (cycleId) => witnessing.assertCycleStepSignOff(cycleId),
+  };
+  const embryology = new EmbryologyService(new PgEmbryologyStore(pool), witnessPort, audit, events);
+
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, notificationOutbox, witnessProvider };
 }

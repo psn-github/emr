@@ -82,8 +82,41 @@ export const appRouter = router({
   }),
 
   embryology: router({
-    // Embryology lab data — embryology domain permission required.
+    // Embryology lab data — embryology domain permission required (MFA-gated).
     read: protectedProcedure("embryology:lab.read").query(() => ({ ok: true })),
+
+    // Record an insemination/ICSI handling event (witnessed via RI Witness).
+    recordInsemination: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { cycleId: string; oocyteId: string; method: "IVF" | "ICSI"; spermSourceId: string; operator: string; inseminatedAt: string; patientId: string })
+      .mutation(async ({ ctx, input }) => {
+        const rec = await ctx.services.embryology.recordInsemination(ctx.session.subject.staffId, input);
+        return { inseminationId: rec.id };
+      }),
+
+    // Embryo transfer — a TERMINAL act. Blocked unless every gamete/embryo
+    // handling event reconciles with RI Witness (no override).
+    recordTransfer: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { cycleId: string; embryoIds: string[]; catheter: string; difficulty: "easy" | "moderate" | "difficult"; ultrasoundGuided: boolean; procedureRef?: string; operator: string; transferredAt: string; patientId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.embryology.recordTransfer(ctx.session.subject.staffId, input);
+        if (!r.ok) {
+          const blocked = r.error.detailKey === "witnessing.sign_off.blocked";
+          throw new TRPCError({ code: blocked ? "PRECONDITION_FAILED" : "BAD_REQUEST", message: r.error.detailKey ?? "transfer failed" });
+        }
+        return { transferId: r.value.id, count: r.value.count };
+      }),
+
+    // Terminal disposition (freeze/discard/PGT-biopsy) — same witnessing gate.
+    recordDisposition: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { cycleId: string; embryoId: string; type: "transfer" | "freeze" | "discard" | "pgt_biopsy"; occurredAt: string; operator: string; patientId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.embryology.recordDisposition(ctx.session.subject.staffId, input);
+        if (!r.ok) {
+          const blocked = r.error.detailKey === "witnessing.sign_off.blocked";
+          throw new TRPCError({ code: blocked ? "PRECONDITION_FAILED" : "BAD_REQUEST", message: r.error.detailKey ?? "disposition failed" });
+        }
+        return { dispositionId: r.value.id };
+      }),
   }),
 
   // Patient-portal self-service booking. The patient principal may ONLY act on

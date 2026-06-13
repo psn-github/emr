@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.4 (witnessing seam + RI reconciliation + blocking sign-off, `@oxford/witnessing`, 100%, adversarial review passed). PR 2.3 (monitoring) merged.
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.5 (embryology IVF lab + witnessing gate on terminal acts, `@oxford/embryology`, 100%, RBAC + witnessing adversarial review passed through the API). PR 2.4 (witnessing seam) merged.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,17 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Embryology (IVF lab) + witnessing gate wired into terminal acts (PR 2.5)
+**Shipped:** new **`@oxford/embryology`** domain module (docs/01 §E4). Records the lab chain — **oocyte** (count/maturity MII·MI·GV·degenerate/dish/position, linked to retrieval), **insemination/ICSI** (method/operator/sperm-source, a witnessed handling event), **fertilisation check** (0PN/1PN/2PN/3PN — only **2PN** creates a culture embryo; abnormal PN never silently becomes a transferable embryo), **culture grading** (day-by-day morphology + **Gardner** blastocyst grade, validated 1–6 / A–C), **disposition** (freeze/discard/PGT-biopsy) and **embryo transfer** (count/catheter/difficulty/US-guidance) — each audited + event-emitting, and **embryo life-history reconstruction** (oocyte → checks → gradings → dispositions). Integrates witnessing through a **`WitnessPort` seam** (dependency-inverted; wired to `@oxford/witnessing` in the app — embryology never witnesses). **The terminal acts (transfer, disposition) are BLOCKED unless the cycle's handling chain reconciles `matched` with RI Witness** — the E4 acceptance invariant, enforced at the domain level (no override). App wiring: `WitnessingService`+`EmbryologyService` in the composition root (RI stub provider per ADR-0018); embryology router gains MFA-gated `recordInsemination`/`recordTransfer`/`recordDisposition`. **100% coverage** (embryology 18 tests; +4 API e2e).
+**Adversarial review (embryology RBAC + witnessing) — through the tRPC API on real Postgres, all pass:**
+- **RBAC:** a clinical-domain role calling `embryology.read`/`recordInsemination` → **FORBIDDEN** (deny-by-default; embryology is its own permission domain).
+- **Witnessing A1:** transfer attempted while RI has not confirmed the insemination → **PRECONDITION_FAILED** (blocked, not recorded).
+- **Witnessing A2:** divergent RI record (different patient) after ingest → transfer **BLOCKED**.
+- **Legit path:** RI confirms the matching handling record → transfer **succeeds** (count returned).
+- Package-level: same three proofs against real Postgres with the real `WitnessingService` wired as the port.
+**Open / needs product owner:** none new. (PGT order/result, lab QC log, time-lapse morphokinetics are P1/P2 — deferred behind the vendor-neutral seam, ADR-0019; om-software embryo-follow-up migration (E4) still gated on om-software access, tracked above.)
+**Next:** PR 2.6 — andrology (WHO 6th-ed semen analysis + sperm prep/freeze with witnessing); adversarial review (andrology).
 
 ## 2026-06-13 — Witnessing seam + RI reconciliation + blocking sign-off (PR 2.4)
 **Shipped:** new **`@oxford/witnessing`** platform package (the RI-Witness reconciliation seam, CLAUDE.md hard rule + ADR-0018). RI Witness (RFID) stays **authoritative**; Oxford never witnesses. The package: records the **handling events** Oxford observed and **pushes demographics out** (Oxford = demographic master); ingests RI records **back** behind a `WitnessingProvider`/`RiWitnessStubProvider` adapter (no real device, no PHI); maintains an **append-only reconciliation ledger** (`matched` / `pending_sync` / `divergent`, with non-PHI reasons `no_ri_record`/`ri_flagged_mismatch`/`patient_mismatch`/`sample_mismatch`/`orphan_ri_record`); and **blocks cycle-step sign-off on ANY non-matched event** via `assertCycleStepSignOff`. Pure core (`reconcile.ts`) + service + in-memory & Postgres stores + Drizzle schema/migration. **No competing witness UI; structurally no override path** (`assertSignOffAllowed` takes only the ledger — no force flag/branch can flip a divergent event to matched). **100% coverage** (26 tests). Sign-off enforcement is wired into the cycle-step flow in PR 2.5 (embryology).
