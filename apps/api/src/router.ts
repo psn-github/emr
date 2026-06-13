@@ -889,6 +889,38 @@ export const appRouter = router({
         return { entityType: input.entityType, entityId: input.entityId, count: records.length, chainIntact: integrity.ok, records };
       }),
   }),
+
+  // Light HR (docs/01 §E14, ADR-0040) — staff registry, licence/competency expiry
+  // alerts, and rota shifts feeding scheduling availability. HR domain (MFA-gated).
+  hr: router({
+    registerStaff: protectedProcedure("hr:staff.write")
+      .input((v: unknown) => v as { name: string; role: string; professionalId?: string })
+      .mutation(async ({ ctx, input }) => {
+        const s = await ctx.services.hr.registerStaff(ctx.session.subject.staffId, input);
+        return { staffId: s.id };
+      }),
+    listStaff: protectedProcedure("hr:staff.read").query(async ({ ctx }) => ({ staff: await ctx.services.hr.listStaff() })),
+    addCredential: protectedProcedure("hr:staff.write")
+      .input((v: unknown) => v as { staffId: string; type: "licence" | "competency"; name: string; authority?: string; issuedAt: string; expiresAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.hr.addCredential(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid credential" });
+        return { credentialId: r.value.id };
+      }),
+    credentialAlerts: protectedProcedure("hr:staff.read")
+      .input((v: unknown) => v as { asOf: string; withinDays: number })
+      .query(async ({ ctx, input }) => ctx.services.hr.credentialAlerts(new Date(input.asOf), input.withinDays)),
+    planShift: protectedProcedure("hr:rota.write")
+      .input((v: unknown) => v as { staffId: string; resourceId: string; start: string; end: string; role: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.hr.planShift(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid shift" });
+        return { shiftId: r.value.id };
+      }),
+    availability: protectedProcedure("hr:rota.read")
+      .input((v: unknown) => v as { resourceId: string; from: string; to: string })
+      .query(async ({ ctx, input }) => ({ shifts: await ctx.services.hr.availability(input.resourceId, input.from, input.to) })),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

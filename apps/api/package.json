@@ -30,6 +30,7 @@
     "@oxford/inventory": "workspace:*",
     "@oxford/assets": "workspace:*",
     "@oxford/analytics": "workspace:*",
+    "@oxford/hr": "workspace:*",
     "@oxford/migration": "workspace:*",
     "@trpc/server": "^11.0.0",
     "pg": "^8.13.1"
