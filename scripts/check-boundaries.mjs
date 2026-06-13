@@ -26,7 +26,7 @@ const ALLOWED = {
 };
 
 // Explicit classification; anything else under packages/ defaults to `domain`.
-const PLATFORM = new Set(["core", "audit", "i18n", "ui", "notifications", "documents", "crypto", "migration"]);
+const PLATFORM = new Set(["core", "audit", "i18n", "ui", "notifications", "documents", "crypto", "migration", "witnessing"]);
 function classify(area, dir) {
   if (area === "apps") return "app";
   if (dir === "core") return "core";
