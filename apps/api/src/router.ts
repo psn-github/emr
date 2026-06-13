@@ -7,6 +7,7 @@ import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
+import type { ItemCategory } from "@oxford/inventory";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
@@ -499,6 +500,24 @@ export const appRouter = router({
         if (!signed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: signed.error.detailKey ?? "sign failed" });
         return { letterId: draft.id, status: signed.value.status };
       }),
+  }),
+
+  // Operations ERP — supplier + item catalogue (admin/ops domain, MFA-gated).
+  inventory: router({
+    addSupplier: protectedProcedure("admin:inventory.write")
+      .input((v: unknown) => v as { name: string; contactEmail?: string; contactPhone?: string })
+      .mutation(async ({ ctx, input }) => {
+        const s = await ctx.services.catalogue.addSupplier(ctx.session.subject.staffId, input);
+        return { supplierId: s.id };
+      }),
+    addItem: protectedProcedure("admin:inventory.write")
+      .input((v: unknown) => v as { name: string; category: ItemCategory; unit: string; packSize: number; coldChain: boolean; controlled: boolean; parLevel: number; preferredSupplierId?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.catalogue.addItem(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid item" });
+        return { itemId: r.value.id };
+      }),
+    listItems: protectedProcedure("admin:inventory.read").query(async ({ ctx }) => ({ items: await ctx.services.catalogue.items() })),
   }),
 
   // Billing (MFA-gated financial domain).
