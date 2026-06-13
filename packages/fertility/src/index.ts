@@ -5,6 +5,7 @@ export type { Cycle, CycleId, CycleType, CycleStatus, CycleOwner, Protocol } fro
 export { PERSON_SCOPED_TYPES } from "./types.js";
 export { canAdvance, assertAdvance } from "./lifecycle.js";
 export { cycleTimeline, CYCLE_STAGE_ORDER, type StepState, type TimelineStep, type CycleTimeline } from "./timeline.js";
+export { buildMedicationSchedule, injectionTeachingFor, DEFAULT_INJECTION_TEACHING, type MedicationDrug, type MedicationDay } from "./medication.js";
 export { requiredConsents, assertConsentsComplete } from "./consent.js";
 export type { FertilityGate } from "./gate.js";
 export { SEED_PROTOCOLS } from "./protocols.js";
