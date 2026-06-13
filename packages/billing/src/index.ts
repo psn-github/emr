@@ -22,8 +22,18 @@ export {
   type PaymentMethod,
   type PaymentKind,
   type BilingualText,
+  type PackageId,
+  type PatientPackageId,
+  type PackageComponent,
+  type Package,
+  type PatientPackageComponent,
+  type PatientPackage,
 } from "./types.js";
+export { validatePackage, recognise, type PackageInput, type PackageComponentInput, type Recognition } from "./packages.js";
 export { BillingService } from "./billing-service.js";
+export { PackageService, type SellResult, type CaptureResult, type ComponentRecognition } from "./package-service.js";
 export { type BillingStore, InMemoryBillingStore } from "./store.js";
+export { type PackageStore, InMemoryPackageStore } from "./package-store.js";
 export { PgBillingStore } from "./pg-store.js";
-export { billingSchema, invoice, payment } from "./schema.js";
+export { PgPackageStore } from "./package-pg-store.js";
+export { billingSchema, invoice, payment, packageDef, patientPackage } from "./schema.js";

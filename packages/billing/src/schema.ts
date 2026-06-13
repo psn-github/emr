@@ -1,7 +1,7 @@
 // Drizzle schema for the `billing` domain (ADR-0008). Money is integer fils.
 // Invoice lines are jsonb; payments are append-only (no row is ever deleted —
 // refunds/voids are Phase 5 and are themselves recorded entries, never deletes).
-import { pgSchema, bigint, jsonb, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgSchema, bigint, boolean, jsonb, text, timestamp, index } from "drizzle-orm/pg-core";
 
 export const billingSchema = pgSchema("billing");
 
@@ -18,6 +18,32 @@ export const invoice = billingSchema.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (t) => ({ byPatient: index("invoice_patient_idx").on(t.patientId) }),
+);
+
+export const packageDef = billingSchema.table("package", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull(),
+  name: jsonb("name").notNull(),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
+  components: jsonb("components").notNull().default([]),
+  priceFils: bigint("price_fils", { mode: "number" }).notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
+export const patientPackage = billingSchema.table(
+  "patient_package",
+  {
+    id: text("id").primaryKey(),
+    packageId: text("package_id").notNull(),
+    packageVersion: bigint("package_version", { mode: "number" }).notNull(),
+    patientId: text("patient_id").notNull(),
+    priceFils: bigint("price_fils", { mode: "number" }).notNull(),
+    invoiceId: text("invoice_id").notNull(),
+    components: jsonb("components").notNull().default([]),
+    status: text("status").notNull().default("active"),
+    soldAt: timestamp("sold_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ byPatient: index("patient_package_patient_idx").on(t.patientId) }),
 );
 
 export const payment = billingSchema.table(
