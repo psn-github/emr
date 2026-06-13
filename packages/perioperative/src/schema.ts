@@ -5,6 +5,50 @@ import { pgSchema, text, integer, boolean, date, jsonb, timestamp, index } from 
 
 export const perioperativeSchema = pgSchema("perioperative");
 
+export const intraOpRecord = perioperativeSchema.table("intraop_record", {
+  id: text("id").primaryKey(),
+  encounterId: text("encounter_id").notNull().unique(),
+  procedurePerformed: text("procedure_performed").notNull(),
+  findings: text("findings").notNull(),
+  anaestheticTechnique: text("anaesthetic_technique").notNull(),
+  drugs: jsonb("drugs").$type<{ formularyCode: string; dose: number; unit: string }[]>().notNull().default([]),
+  staff: jsonb("staff").$type<string[]>().notNull().default([]),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
+  recordedBy: text("recorded_by").notNull(),
+});
+
+export const consumableUse = perioperativeSchema.table(
+  "consumable_use",
+  {
+    id: text("id").primaryKey(),
+    encounterId: text("encounter_id").notNull(),
+    code: text("code").notNull(),
+    description: text("description").notNull(),
+    lotNo: text("lot_no").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPriceFils: integer("unit_price_fils").notNull(),
+    invoiceRef: text("invoice_ref").notNull(),
+    recordedBy: text("recorded_by").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ byEncounter: index("consumable_use_encounter_idx").on(t.encounterId) }),
+);
+
+export const specimenRecord = perioperativeSchema.table(
+  "specimen_record",
+  {
+    id: text("id").primaryKey(),
+    encounterId: text("encounter_id").notNull(),
+    type: text("type").notNull(),
+    site: text("site").notNull(),
+    lotRef: text("lot_ref").notNull(),
+    collectedAt: timestamp("collected_at", { withTimezone: true }).notNull(),
+    recordedBy: text("recorded_by").notNull(),
+  },
+  (t) => ({ byEncounter: index("specimen_record_encounter_idx").on(t.encounterId) }),
+);
+
 // WHO Surgical Safety Checklist — one row per encounter; each phase is a jsonb
 // PhaseRecord (or null until completed).
 export const whoChecklist = perioperativeSchema.table("who_checklist", {

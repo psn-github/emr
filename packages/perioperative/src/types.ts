@@ -17,6 +17,53 @@ export type JourneyStage =
   | "discharged"
   | "cancelled";
 
+export type IntraOpRecordId = Id<"IntraOpRecord">;
+export type ConsumableUseId = Id<"ConsumableUse">;
+export type SpecimenRecordId = Id<"SpecimenRecord">;
+
+export interface DrugAdministration {
+  readonly formularyCode: string;
+  readonly dose: number;
+  readonly unit: string;
+}
+
+export interface IntraOpRecord {
+  readonly id: IntraOpRecordId;
+  readonly encounterId: string;
+  readonly procedurePerformed: string;
+  readonly findings: string;
+  readonly anaestheticTechnique: string;
+  readonly drugs: readonly DrugAdministration[];
+  readonly staff: readonly string[];
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  readonly recordedBy: string;
+}
+
+export interface ConsumableUse {
+  readonly id: ConsumableUseId;
+  readonly encounterId: string;
+  readonly code: string;
+  readonly description: string;
+  readonly lotNo: string;
+  readonly quantity: number;
+  readonly unitPriceFils: number;
+  readonly invoiceRef: string;
+  readonly recordedBy: string;
+  readonly recordedAt: string;
+}
+
+/** A specimen removed in theatre — captured with its source + lot for traceability. */
+export interface SpecimenRecord {
+  readonly id: SpecimenRecordId;
+  readonly encounterId: string;
+  readonly type: string;
+  readonly site: string;
+  readonly lotRef: string;
+  readonly collectedAt: string;
+  readonly recordedBy: string;
+}
+
 export type PreOpAssessmentId = Id<"PreOpAssessment">;
 
 /** ASA physical-status grade (I–VI → 1–6). Mallampati airway class 1–4. */

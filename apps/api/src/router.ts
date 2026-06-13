@@ -7,7 +7,7 @@ import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
-import type { JourneyStage, WhoPhase } from "@oxford/perioperative";
+import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -339,6 +339,29 @@ export const appRouter = router({
         const r = await ctx.services.whoChecklist.completePhase(ctx.session.subject.staffId, input.encounterId, input.phase, input.confirmedItems, input.completedAt);
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "checklist phase failed" });
         return { phase: input.phase, ok: true };
+      }),
+
+    // Intra-operative + anaesthesia record (drugs from formulary).
+    recordIntraOp: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; procedurePerformed: string; findings: string; anaestheticTechnique: string; drugs: { formularyCode: string; dose: number; unit: AnaesthesiaUnit }[]; staff: string[]; startedAt: string; finishedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.intraOp.recordIntraOp(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid intra-op record" });
+        return { recordId: r.value.id };
+      }),
+    // Consumables/implants at point of use → stock deduction + billing (lot-traced).
+    recordConsumables: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; patientId: string; uses: ConsumableUseInput[]; recordedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.intraOp.recordConsumables(ctx.session.subject.staffId, input.encounterId, input.patientId, input.uses, input.recordedAt);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "consumables failed" });
+        return { invoiceRef: r.value.invoiceRef, count: r.value.consumables.length };
+      }),
+    recordSpecimen: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; type: string; site: string; lotRef: string; collectedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const s = await ctx.services.intraOp.recordSpecimen(ctx.session.subject.staffId, input);
+        return { specimenId: s.id };
       }),
   }),
 

@@ -31,6 +31,31 @@ export interface ChecklistGate {
   assertMayLeaveTheatre(encounterId: string): Promise<Result<void, AppError>>;
 }
 
+/** Inventory seam (ADR-0024) — deduct consumables/implants from stock at point
+ *  of use. A stub records the deduction now; the real @oxford/inventory module
+ *  is Phase 4. */
+export interface InventoryDeductItem {
+  readonly code: string;
+  readonly lotNo: string;
+  readonly quantity: number;
+}
+export interface InventoryPort {
+  deduct(actorId: string, items: readonly InventoryDeductItem[]): Promise<Result<void, AppError>>;
+}
+
+/** Billing seam — raise the consumable/implant charges via @oxford/billing
+ *  (integer fils stays in billing). Returns the invoice id. */
+export interface ConsumableChargeLine {
+  readonly chargeCode: string;
+  readonly descriptionEn: string;
+  readonly descriptionAr: string;
+  readonly unitAmountFils: number;
+  readonly quantity: number;
+}
+export interface PerioperativeBillingPort {
+  raiseConsumableCharges(actorId: string, patientId: string, lines: readonly ConsumableChargeLine[]): Promise<string>;
+}
+
 export interface FacilityFlowPort {
   /** Place the patient into a free location of `kind` with the given flow status.
    *  Returns the node used, or a capacity error if none is free. */
