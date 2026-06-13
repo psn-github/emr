@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 3 — Theatres, perioperative journey & beds (in progress).** Phases 0–2 complete on `main` (Phase 2 signed off; PRs 2.0→2.12 incl. cryostore go-live wiring, marital-status disposition, PGT capture). Phase 3 approved "as proposed" (PR plan 3.0→3.8); ADR-0023/0024/0025 set the facility-reuse + InventoryPort + PharmacyPort decisions. Building on the Phase 1 `facility`/`flow` + `scheduling` models.
-- **Last updated:** 2026-06-13 — Phase 3 PR 3.2 (two-theatre case scheduling on the shared calendar via a scheduling seam + provisional L2 bed reservation with list-exceeds-beds flag, 100%, conflict + overflow + RBAC adversarial review passed on real Postgres). PR 3.1 (perioperative journey) merged. **Next: PR 3.3 — pre-op assessment.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
+- **Last updated:** 2026-06-13 — Phase 3 PR 3.3 (pre-op assessment: anaesthetic hx / Mallampati / ASA / fasting / consent, 100%, validation + RBAC review passed). PR 3.2 (theatre scheduling) merged. **Next: PR 3.4 — WHO Surgical Safety Checklist (blocking).** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Pre-operative assessment (PR 3.3)
+**Shipped:** pre-op assessment in `@oxford/perioperative` — anaesthetic history, **airway (Mallampati 1–4)**, **ASA grade 1–6**, investigations, **fasting confirmation**, and **consent linkage**, one per encounter. Pure `validatePreOp` (100%; rejects out-of-range ASA/airway, unconfirmed fasting, missing consent); store + Postgres + schema + forward-only additive migration 0003. App: `PreOpService` wired; perioperative router `recordPreOp` (MFA-gated, clinical). **100% coverage** (perioperative 22 tests; +1 API e2e).
+**Review (through the API on real Postgres) — all pass:** a valid assessment persists; out-of-range ASA and unconfirmed fasting are **rejected**; a reception role is **FORBIDDEN**.
+**Next:** PR 3.4 — **WHO Surgical Safety Checklist (blocking)** — sign-in / time-out / sign-out, audited; adversarial (cannot proceed/sign-out with any phase incomplete).
 
 ## 2026-06-13 — Two-theatre case scheduling (PR 3.2)
 **Shipped:** theatre case scheduling in `@oxford/perioperative`. `TheatreSchedulingService.scheduleCase` books the **theatre + staff on the SHARED resource calendar via a `SchedulingPort` seam** (conflict-aware — a clash on a shared resource is rejected), captures staffing/equipment requirements, and **provisionally reserves an L2 bed for the case's day**, returning a `bedReservation` that **flags when the day's list would exceed the 6 L2 beds** (a warning, not a block — emits `TheatreListExceedsBeds`). Pure `bed-reservation.ts` (100%); `TheatreCase` store + Postgres + schema + forward-only additive migration 0002. App: `SchedulingPort` adapter onto `@oxford/scheduling`; `TheatreSchedulingService` wired (L2 capacity = 6 config); perioperative router `scheduleCase`/`cancelCase`/`dayList` (MFA-gated, clinical domain).

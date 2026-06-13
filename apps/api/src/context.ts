@@ -26,6 +26,8 @@ import {
   PgPerioperativeStore,
   TheatreSchedulingService,
   PgTheatreCaseStore,
+  PreOpService,
+  PgPreOpStore,
   type FacilityFlowPort,
   type SchedulingPort,
 } from "@oxford/perioperative";
@@ -53,6 +55,7 @@ export interface Services {
   readonly cryostore: CryostoreService;
   readonly perioperative: PerioperativeService;
   readonly theatreScheduling: TheatreSchedulingService;
+  readonly preOp: PreOpService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -190,6 +193,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     events,
     L2_BED_CAPACITY,
   );
+  const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, notificationOutbox, witnessProvider };
 }

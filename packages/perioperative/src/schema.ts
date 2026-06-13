@@ -1,9 +1,22 @@
 // Drizzle schema for the `perioperative` domain (docs/01 §E7). The encounter ties
 // the surgical journey together; bed/floor movements live in the facility schema
 // (ADR-0023) — not duplicated here.
-import { pgSchema, text, date, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgSchema, text, integer, boolean, date, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 
 export const perioperativeSchema = pgSchema("perioperative");
+
+export const preOpAssessment = perioperativeSchema.table("preop_assessment", {
+  id: text("id").primaryKey(),
+  encounterId: text("encounter_id").notNull().unique(),
+  anaestheticHistory: text("anaesthetic_history").notNull(),
+  mallampatiClass: integer("mallampati_class").notNull(),
+  asaGrade: integer("asa_grade").notNull(),
+  investigations: jsonb("investigations").$type<string[]>().notNull().default([]),
+  fastingConfirmed: boolean("fasting_confirmed").notNull(),
+  consentRef: text("consent_ref").notNull(),
+  assessedBy: text("assessed_by").notNull(),
+  assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull(),
+});
 
 export const theatreCase = perioperativeSchema.table(
   "theatre_case",

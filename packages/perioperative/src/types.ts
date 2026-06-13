@@ -17,6 +17,23 @@ export type JourneyStage =
   | "discharged"
   | "cancelled";
 
+export type PreOpAssessmentId = Id<"PreOpAssessment">;
+
+/** ASA physical-status grade (I–VI → 1–6). Mallampati airway class 1–4. */
+export interface PreOpAssessment {
+  readonly id: PreOpAssessmentId;
+  readonly encounterId: string;
+  readonly anaestheticHistory: string;
+  readonly mallampatiClass: number; // 1–4
+  readonly asaGrade: number; // 1–6
+  readonly investigations: readonly string[];
+  readonly fastingConfirmed: boolean;
+  /** Reference to the captured surgical/anaesthetic consent (required). */
+  readonly consentRef: string;
+  readonly assessedBy: string;
+  readonly assessedAt: string;
+}
+
 export type TheatreCaseId = Id<"TheatreCase">;
 export type TheatreCaseStatus = "scheduled" | "cancelled";
 
