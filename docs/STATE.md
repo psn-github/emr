@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 4 — Operations ERP (procurement, inventory, assets) — in progress.** Phases 0–3 complete on `main` (**Phase 3 signed off**). Phase 4 approved "as proposed" (PR plan 4.0→4.7); ADR-0026..0030 set the real-inventory-behind-InventoryPort, separate-AP-money, controlled-drugs-register, calibration-blocking, and media-lot↔embryo-traceability decisions. Builds on facility (locations) + the Phase-3 InventoryPort seam + billing discipline.
-- **Last updated:** 2026-06-13 — **Phase 4 started** (approved as proposed). PR 4.0 (kickoff ADRs 0026–0030) done; **PR 4.1 (supplier + item catalogue) next**. **Cutover-gating (not the build):** marital-status disposition rule + permitted PGT indications (counsel); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software read access; **NEW:** Kuwaiti controlled-drugs schedule + MOH reporting format (config/counsel); which asset classes are use-blocking on overdue calibration (config, default incubators/critical). Implant/device registry reporting remains P2.
+- **Last updated:** 2026-06-13 — Phase 4 PR 4.1 (`@oxford/inventory` supplier + item catalogue: suppliers + items with units/pack-size/cold-chain/controlled/par-level; 100%; validation + RBAC review passed on real Postgres). PR 4.0 (kickoff ADRs) merged. **Next: PR 4.2 — multi-location inventory (lot/expiry/FEFO + alerts) wiring the real InventoryPort.** **Cutover-gating (not the build):** marital-status disposition rule + permitted PGT indications (counsel); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software read access; **NEW:** Kuwaiti controlled-drugs schedule + MOH reporting format (config/counsel); which asset classes are use-blocking on overdue calibration (config, default incubators/critical). Implant/device registry reporting remains P2.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Supplier + item catalogue (PR 4.1)
+**Shipped:** new **`@oxford/inventory`** module — the **catalogue** (docs/01 §E9): suppliers (name/contacts/active) + items (name, category consumable/media/drug/lab_kit/office, unit, pack size, cold-chain, controlled, par level, preferred supplier). Pure `validateCatalogueItem` (100%; no empty name/unit, positive pack size, non-negative par); store + Postgres + schema + forward-only additive migration 0001. App: `CatalogueService` wired; `inventory` router `addSupplier`/`addItem`/`listItems` (MFA-gated, **admin/ops** domain). **100% coverage** (inventory 6 tests; +2 API e2e).
+**Review (through the API on real Postgres) — pass:** supplier + item add/list with preferred-supplier link; an invalid item is rejected; a clinical role cannot manage the catalogue (**FORBIDDEN**).
+**Next:** PR 4.2 — multi-location inventory (stock by location + lot/expiry, FEFO, cold-chain, min/max/par + critical-stock/expiry alerts), wiring the real `@oxford/inventory` behind the Phase-3 InventoryPort.
 
 ## 2026-06-13 — Phase 4 kickoff: Operations ERP decision ADRs (PR 4.0)
 **Shipped (docs only).** Phase 3 signed off; begin Phase 4 (Operations ERP — procurement, inventory, assets; docs/01 §E9–E10), approved "as proposed" (PR plan 4.0→4.7). Decisions:

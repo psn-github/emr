@@ -42,6 +42,7 @@ import {
   type PerioperativeBillingPort,
   type PharmacyPort,
 } from "@oxford/perioperative";
+import { CatalogueService, PgCatalogueStore } from "@oxford/inventory";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -71,6 +72,7 @@ export interface Services {
   readonly intraOp: IntraOpService;
   readonly recovery: RecoveryService;
   readonly cssd: CssdService;
+  readonly catalogue: CatalogueService;
   /** Dev/test stub inventory outbox (records deductions; real module is Phase 4). */
   readonly inventoryOutbox: RecordingInventoryProvider;
   /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
@@ -223,6 +225,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   };
   const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventoryOutbox, perioperativeBilling, audit, events);
   const cssd = new CssdService(new PgCssdStore(pool), audit, events);
+  const catalogue = new CatalogueService(new PgCatalogueStore(pool), audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
   // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
@@ -253,5 +256,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, inventoryOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventoryOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }
