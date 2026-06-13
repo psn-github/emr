@@ -3,9 +3,20 @@ import { fixedClock, ok, err, conflict, type Result, type AppError } from "@oxfo
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { PerioperativeService } from "./perioperative-service.js";
 import { InMemoryPerioperativeStore } from "./store.js";
-import type { FacilityFlowPort } from "./ports.js";
+import type { FacilityFlowPort, ChecklistGate } from "./ports.js";
 import type { CareLocationKind } from "./journey.js";
 import type { JourneyStage } from "./types.js";
+
+class FakeChecklist implements ChecklistGate {
+  enterOk = true;
+  leaveOk = true;
+  async assertMayEnterTheatre(): Promise<Result<void, AppError>> {
+    return this.enterOk ? ok(undefined) : err(conflict("WHO not complete", "perioperative.who.not_ready_for_theatre"));
+  }
+  async assertMayLeaveTheatre(): Promise<Result<void, AppError>> {
+    return this.leaveOk ? ok(undefined) : err(conflict("WHO sign-out missing", "perioperative.who.not_ready_to_leave"));
+  }
+}
 
 class FakeFlow implements FacilityFlowPort {
   placeOk = true;
@@ -26,7 +37,8 @@ function build() {
   const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock);
   const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
   const flow = new FakeFlow();
-  return { svc: new PerioperativeService(new InMemoryPerioperativeStore(), flow, audit, events), flow, audit, events };
+  const checklist = new FakeChecklist();
+  return { svc: new PerioperativeService(new InMemoryPerioperativeStore(), flow, checklist, audit, events), flow, checklist, audit, events };
 }
 
 const admit = (svc: PerioperativeService) => svc.admit("nurse-1", { patientId: "pat-1", indication: "oocyte retrieval", admittedAt: "2026-06-22T08:00:00Z" });
@@ -95,6 +107,35 @@ describe("PerioperativeService.advanceJourney", () => {
     const dis = await svc.advanceJourney("n", a.value.id, "discharged");
     expect(dis.ok).toBe(false);
     if (!dis.ok) expect(dis.error.detailKey).toBe("facility.flow.release_failed");
+  });
+});
+
+describe("PerioperativeService — WHO checklist gate", () => {
+  it("blocks entering theatre until the checklist allows it", async () => {
+    const { svc, checklist } = build();
+    const a = await admit(svc);
+    if (!a.ok) return;
+    await svc.advanceJourney("n", a.value.id, "ward_bed");
+    await svc.advanceJourney("n", a.value.id, "pre_theatre");
+    checklist.enterOk = false;
+    const blocked = await svc.advanceJourney("n", a.value.id, "in_theatre");
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.detailKey).toBe("perioperative.who.not_ready_for_theatre");
+    checklist.enterOk = true;
+    expect((await svc.advanceJourney("n", a.value.id, "in_theatre")).ok).toBe(true);
+  });
+
+  it("blocks leaving theatre (→ recovery) until sign-out is complete", async () => {
+    const { svc, checklist } = build();
+    const a = await admit(svc);
+    if (!a.ok) return;
+    for (const s of ["ward_bed", "pre_theatre", "in_theatre"] as const) await svc.advanceJourney("n", a.value.id, s);
+    checklist.leaveOk = false;
+    const blocked = await svc.advanceJourney("n", a.value.id, "recovery");
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.detailKey).toBe("perioperative.who.not_ready_to_leave");
+    checklist.leaveOk = true;
+    expect((await svc.advanceJourney("n", a.value.id, "recovery")).ok).toBe(true);
   });
 });
 

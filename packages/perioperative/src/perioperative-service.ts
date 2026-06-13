@@ -3,7 +3,7 @@ import { ok, err, newId, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type { SurgicalEncounter, SurgicalEncounterId, JourneyStage } from "./types.js";
 import type { PerioperativeStore } from "./store.js";
-import type { FacilityFlowPort } from "./ports.js";
+import type { FacilityFlowPort, ChecklistGate } from "./ports.js";
 import { assertAdvance, stagePlacement } from "./journey.js";
 
 export interface AdmitInput {
@@ -24,6 +24,7 @@ export class PerioperativeService {
   constructor(
     private readonly store: PerioperativeStore,
     private readonly flow: FacilityFlowPort,
+    private readonly checklist: ChecklistGate,
     private readonly audit: AuditLog,
     private readonly events: DomainEventLog,
   ) {}
@@ -56,6 +57,17 @@ export class PerioperativeService {
     if (toStage === "cancelled") return err(validationError("use cancel() to cancel an encounter", "perioperative.use_cancel"));
     const transition = assertAdvance(encounter.stage, toStage);
     if (!transition.ok) return err(transition.error);
+
+    // WHO checklist BLOCKING gate (docs/01 §E7): no incision without sign-in +
+    // time-out; no leaving theatre without sign-out.
+    if (toStage === "in_theatre") {
+      const gate = await this.checklist.assertMayEnterTheatre(encounterId);
+      if (!gate.ok) return err(gate.error);
+    }
+    if (encounter.stage === "in_theatre" && toStage === "recovery") {
+      const gate = await this.checklist.assertMayLeaveTheatre(encounterId);
+      if (!gate.ok) return err(gate.error);
+    }
 
     const placement = stagePlacement(toStage);
     if (placement !== null) {

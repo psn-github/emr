@@ -4,6 +4,7 @@
 // enforced (the 7th L2 admission is blocked — the "list exceeds beds" flag); RBAC.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { seedFacility } from "@oxford/facility";
+import { WHO_REQUIRED_ITEMS } from "@oxford/perioperative";
 import type { Session } from "@oxford/identity";
 import { createPool, runMigrations } from "./db.js";
 import { buildServices } from "./context.js";
@@ -61,7 +62,14 @@ describe.skipIf(!DATABASE_URL)("perioperative journey (e2e via the API + real Po
     const { encounterId, stage } = await doc.perioperative.admit({ patientId: pid, indication: "oocyte retrieval", admittedAt: "2026-06-22T08:00:00Z" });
     expect(stage).toBe("admitted");
 
-    for (const s of ["ward_bed", "pre_theatre", "in_theatre", "recovery", "post_op_ward"] as const) {
+    await doc.perioperative.advance({ encounterId, toStage: "ward_bed" });
+    await doc.perioperative.advance({ encounterId, toStage: "pre_theatre" });
+    // WHO checklist gates theatre entry/exit (proven in who-checklist.e2e); complete it.
+    await doc.perioperative.completeChecklistPhase({ encounterId, phase: "sign_in", confirmedItems: [...WHO_REQUIRED_ITEMS.sign_in], completedAt: "2026-06-22T08:30:00Z" });
+    await doc.perioperative.completeChecklistPhase({ encounterId, phase: "time_out", confirmedItems: [...WHO_REQUIRED_ITEMS.time_out], completedAt: "2026-06-22T08:40:00Z" });
+    await doc.perioperative.advance({ encounterId, toStage: "in_theatre" });
+    await doc.perioperative.completeChecklistPhase({ encounterId, phase: "sign_out", confirmedItems: [...WHO_REQUIRED_ITEMS.sign_out], completedAt: "2026-06-22T09:30:00Z" });
+    for (const s of ["recovery", "post_op_ward"] as const) {
       const r = await doc.perioperative.advance({ encounterId, toStage: s });
       expect(r.stage).toBe(s);
     }

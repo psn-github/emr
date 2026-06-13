@@ -28,6 +28,8 @@ import {
   PgTheatreCaseStore,
   PreOpService,
   PgPreOpStore,
+  WhoChecklistService,
+  PgWhoChecklistStore,
   type FacilityFlowPort,
   type SchedulingPort,
 } from "@oxford/perioperative";
@@ -56,6 +58,7 @@ export interface Services {
   readonly perioperative: PerioperativeService;
   readonly theatreScheduling: TheatreSchedulingService;
   readonly preOp: PreOpService;
+  readonly whoChecklist: WhoChecklistService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -170,7 +173,8 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       return r.ok ? ok(undefined) : err(r.error);
     },
   };
-  const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, audit, events);
+  const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
+  const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, whoChecklist, audit, events);
 
   // Two-theatre case scheduling on the SHARED scheduling calendar (conflict-aware),
   // provisionally reserving an L2 bed per case-day (capacity 6 → ADR-0023).
@@ -195,5 +199,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, notificationOutbox, witnessProvider };
 }
