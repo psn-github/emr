@@ -48,8 +48,11 @@ export const result = clinicalSchema.table(
     status: text("status").notNull().default("unacknowledged"),
     filedAt: timestamp("filed_at", { withTimezone: true }).notNull(),
     acknowledgedBy: text("acknowledged_by"),
+    releasedToPatient: boolean("released_to_patient").notNull().default(false),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releasedBy: text("released_by"),
   },
-  (t) => ({ byStatus: index("result_status_idx").on(t.status) }),
+  (t) => ({ byStatus: index("result_status_idx").on(t.status), byPatient: index("result_patient_idx").on(t.patientId) }),
 );
 
 export const letter = clinicalSchema.table("letter", {

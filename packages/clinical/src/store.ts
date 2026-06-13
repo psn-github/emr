@@ -10,6 +10,7 @@ export interface ClinicalStore {
   saveResult(r: Result): Promise<void>;
   getResult(id: ResultId): Promise<Result | null>;
   unacknowledgedResults(): Promise<readonly Result[]>;
+  releasedResultsForPatient(patientId: string): Promise<readonly Result[]>;
   saveLetter(l: Letter): Promise<void>;
   getLetter(id: LetterId): Promise<Letter | null>;
 }
@@ -47,6 +48,9 @@ export class InMemoryClinicalStore implements ClinicalStore {
   }
   async unacknowledgedResults(): Promise<readonly Result[]> {
     return [...this.results.values()].filter((r) => r.status === "unacknowledged");
+  }
+  async releasedResultsForPatient(patientId: string): Promise<readonly Result[]> {
+    return [...this.results.values()].filter((r) => r.patientId === patientId && r.releasedToPatient);
   }
   async saveLetter(l: Letter): Promise<void> {
     this.letters.set(l.id, l);

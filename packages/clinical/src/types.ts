@@ -66,6 +66,11 @@ export interface Result {
   readonly status: ResultStatus;
   readonly filedAt: string;
   readonly acknowledgedBy: string | null;
+  /** A result is invisible in the patient portal until a clinician releases it
+   *  (ADR-0042). Released results carry who/when. */
+  readonly releasedToPatient: boolean;
+  readonly releasedAt: string | null;
+  readonly releasedBy: string | null;
 }
 
 export type LetterStatus = "draft" | "signed";

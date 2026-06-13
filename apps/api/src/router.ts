@@ -460,6 +460,15 @@ export const appRouter = router({
         return { invoices: await ctx.services.billing.patientBalances(input.patientId) };
       }),
 
+    // The patient's released results only — unreleased results are invisible (ADR-0042).
+    results: patientProcedure
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        return { results: await ctx.services.clinical.releasedResultsForPatient(input.patientId) };
+      }),
+
     // Cycle timeline ("where am I / what's next") for a cycle the patient owns —
     // person-scoped to the patient, or a couple that includes them (ADR-0042).
     cycleTimeline: patientProcedure
@@ -549,6 +558,21 @@ export const appRouter = router({
         const signed = await ctx.services.clinical.signLetter(actor, draft.id);
         if (!signed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: signed.error.detailKey ?? "sign failed" });
         return { letterId: draft.id, status: signed.value.status };
+      }),
+    fileResult: protectedProcedure("clinical:order.write")
+      .input((v: unknown) => v as { orderId: string; summary: string; abnormal: boolean })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.clinical.fileResult(ctx.session.subject.staffId, asId<"Order">(input.orderId), input.summary, input.abnormal);
+        if (!r.ok) throw new TRPCError({ code: "NOT_FOUND", message: r.error.detailKey ?? "order not found" });
+        return { resultId: r.value.id };
+      }),
+    // Clinician releases a result to the patient portal (invisible until released).
+    releaseResult: protectedProcedure("clinical:result.release")
+      .input((v: unknown) => v as { resultId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.clinical.releaseResult(ctx.session.subject.staffId, asId<"Result">(input.resultId));
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "release failed" });
+        return { released: r.value.releasedToPatient };
       }),
   }),
 

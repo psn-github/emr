@@ -47,10 +47,10 @@ export class PgClinicalStore implements ClinicalStore {
 
   async saveResult(res: Result): Promise<void> {
     await this.pool.query(
-      `INSERT INTO clinical.result (id, order_id, patient_id, summary, abnormal, status, filed_at, acknowledged_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, acknowledged_by=EXCLUDED.acknowledged_by`,
-      [res.id, res.orderId, res.patientId, res.summary, res.abnormal, res.status, res.filedAt, res.acknowledgedBy],
+      `INSERT INTO clinical.result (id, order_id, patient_id, summary, abnormal, status, filed_at, acknowledged_by, released_to_patient, released_at, released_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, acknowledged_by=EXCLUDED.acknowledged_by, released_to_patient=EXCLUDED.released_to_patient, released_at=EXCLUDED.released_at, released_by=EXCLUDED.released_by`,
+      [res.id, res.orderId, res.patientId, res.summary, res.abnormal, res.status, res.filedAt, res.acknowledgedBy, res.releasedToPatient, res.releasedAt, res.releasedBy],
     );
   }
   async getResult(id: ResultId): Promise<Result | null> {
@@ -59,6 +59,10 @@ export class PgClinicalStore implements ClinicalStore {
   }
   async unacknowledgedResults(): Promise<readonly Result[]> {
     const r = await this.pool.query<ResultRow>("SELECT * FROM clinical.result WHERE status = 'unacknowledged' ORDER BY filed_at");
+    return r.rows.map(resultFrom);
+  }
+  async releasedResultsForPatient(patientId: string): Promise<readonly Result[]> {
+    const r = await this.pool.query<ResultRow>("SELECT * FROM clinical.result WHERE patient_id = $1 AND released_to_patient = true ORDER BY filed_at", [patientId]);
     return r.rows.map(resultFrom);
   }
 
@@ -79,11 +83,11 @@ export class PgClinicalStore implements ClinicalStore {
 interface EncRow { id: string; patient_id: string; type: string; practitioner_id: string; status: string; opened_at: Date; closed_at: Date | null }
 interface NoteRow { id: string; encounter_id: string; patient_id: string; versions: NoteVersion[] }
 interface OrderRow { id: string; encounter_id: string; patient_id: string; kind: string; code: string; status: string; ordered_by: string; at: Date }
-interface ResultRow { id: string; order_id: string; patient_id: string; summary: string; abnormal: boolean; status: string; filed_at: Date; acknowledged_by: string | null }
+interface ResultRow { id: string; order_id: string; patient_id: string; summary: string; abnormal: boolean; status: string; filed_at: Date; acknowledged_by: string | null; released_to_patient: boolean; released_at: Date | null; released_by: string | null }
 interface LetterRow { id: string; patient_id: string; template_key: string; locale: string; body: string; status: string; signed_by: string | null; signed_at: Date | null }
 
 const encFrom = (r: EncRow): Encounter => ({ id: asId<"Encounter">(r.id), patientId: r.patient_id, type: r.type as Encounter["type"], practitionerId: r.practitioner_id, status: r.status as Encounter["status"], openedAt: new Date(r.opened_at).toISOString(), closedAt: r.closed_at ? new Date(r.closed_at).toISOString() : null });
 const noteFrom = (r: NoteRow): ClinicalNote => ({ id: asId<"ClinicalNote">(r.id), encounterId: asId<"Encounter">(r.encounter_id), patientId: r.patient_id, versions: r.versions });
 const orderFrom = (r: OrderRow): Order => ({ id: asId<"Order">(r.id), encounterId: asId<"Encounter">(r.encounter_id), patientId: r.patient_id, kind: r.kind as Order["kind"], code: r.code, status: r.status as Order["status"], orderedBy: r.ordered_by, at: new Date(r.at).toISOString() });
-const resultFrom = (r: ResultRow): Result => ({ id: asId<"Result">(r.id), orderId: asId<"Order">(r.order_id), patientId: r.patient_id, summary: r.summary, abnormal: r.abnormal, status: r.status as Result["status"], filedAt: new Date(r.filed_at).toISOString(), acknowledgedBy: r.acknowledged_by });
+const resultFrom = (r: ResultRow): Result => ({ id: asId<"Result">(r.id), orderId: asId<"Order">(r.order_id), patientId: r.patient_id, summary: r.summary, abnormal: r.abnormal, status: r.status as Result["status"], filedAt: new Date(r.filed_at).toISOString(), acknowledgedBy: r.acknowledged_by, releasedToPatient: r.released_to_patient, releasedAt: r.released_at === null ? null : new Date(r.released_at).toISOString(), releasedBy: r.released_by });
 const letterFrom = (r: LetterRow): Letter => ({ id: asId<"Letter">(r.id), patientId: r.patient_id, templateKey: r.template_key, locale: r.locale as Letter["locale"], body: r.body, status: r.status as Letter["status"], signedBy: r.signed_by, signedAt: r.signed_at ? new Date(r.signed_at).toISOString() : null });
