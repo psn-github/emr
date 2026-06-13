@@ -66,6 +66,25 @@ describe("ClinicalService ordering & results inbox", () => {
     }
   });
 
+  it("releases a result to the patient — invisible until released (ADR-0042)", async () => {
+    const { svc, order } = await ordered();
+    const r = await svc.fileResult("lab-1", order.id, "AMH 1.2 ng/mL", true);
+    if (!r.ok) throw new Error("setup");
+    // unreleased → not in the patient's released set
+    expect(await svc.releasedResultsForPatient(order.patientId)).toHaveLength(0);
+    const rel = await svc.releaseResult("doc-1", r.value.id);
+    expect(rel.ok && rel.value.releasedToPatient).toBe(true);
+    expect(rel.ok && rel.value.releasedBy).toBe("doc-1");
+    const released = await svc.releasedResultsForPatient(order.patientId);
+    expect(released).toHaveLength(1);
+    expect(released[0]!.id).toBe(r.value.id);
+    // double-release + unknown guarded
+    const again = await svc.releaseResult("doc-1", r.value.id);
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.error.detailKey).toBe("clinical.result.released");
+    expect((await svc.releaseResult("doc-1", asId<"Result">("ghost") as ResultId)).ok).toBe(false);
+  });
+
   it("handles not-found and double-acknowledge", async () => {
     const { svc, order } = await ordered();
     expect((await svc.fileResult("lab-1", asId<"Order">("ghost") as OrderId, "x", false)).ok).toBe(false);

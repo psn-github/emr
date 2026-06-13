@@ -10,6 +10,7 @@ import { PgClinicalStore } from "./pg-store.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const migration = readFileSync(new URL("../migrations/0001_clinical.sql", import.meta.url), "utf8");
+const migration2 = readFileSync(new URL("../migrations/0002_clinical_result_release.sql", import.meta.url), "utf8");
 
 describe.skipIf(!DATABASE_URL)("PgClinicalStore", () => {
   const pool = new pg.Pool({ connectionString: DATABASE_URL });
@@ -17,6 +18,7 @@ describe.skipIf(!DATABASE_URL)("PgClinicalStore", () => {
 
   beforeAll(async () => {
     await pool.query(migration);
+    await pool.query(migration2);
   });
   beforeEach(async () => {
     await pool.query("TRUNCATE clinical.encounter, clinical.clinical_note, clinical.clinical_order, clinical.result, clinical.letter");

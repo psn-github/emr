@@ -97,7 +97,7 @@ export class ClinicalService {
   async fileResult(actorId: string, orderId: OrderId, summary: string, abnormal: boolean): Promise<R<Result, AppError>> {
     const order = await this.store.getOrder(orderId);
     if (order === null) return err(notFound("order not found", "clinical.order.not_found"));
-    const result: Result = { id: newId<"Result">(), orderId, patientId: order.patientId, summary, abnormal, status: "unacknowledged", filedAt: this.clock.now().toISOString(), acknowledgedBy: null };
+    const result: Result = { id: newId<"Result">(), orderId, patientId: order.patientId, summary, abnormal, status: "unacknowledged", filedAt: this.clock.now().toISOString(), acknowledgedBy: null, releasedToPatient: false, releasedAt: null, releasedBy: null };
     await this.store.saveResult(result);
     await this.store.saveOrder({ ...order, status: "resulted" });
     await this.audit.record({ actorId, entityType: "Result", entityId: result.id, action: "CREATE", after: { orderId, abnormal } });
@@ -118,8 +118,26 @@ export class ClinicalService {
     return ok(updated);
   }
 
+  /** Clinician releases a result to the patient portal (ADR-0042): until released,
+   *  a result is invisible to the patient. Idempotency-guarded. */
+  async releaseResult(actorId: string, id: ResultId): Promise<R<Result, AppError>> {
+    const result = await this.store.getResult(id);
+    if (result === null) return err(notFound("result not found", "clinical.result.not_found"));
+    if (result.releasedToPatient) return err(validationError("already released", "clinical.result.released"));
+    const updated: Result = { ...result, releasedToPatient: true, releasedAt: this.clock.now().toISOString(), releasedBy: actorId };
+    await this.store.saveResult(updated);
+    await this.audit.record({ actorId, entityType: "Result", entityId: id, action: "UPDATE", before: { releasedToPatient: false }, after: { releasedToPatient: true } });
+    await this.events.emit({ type: "ResultReleasedToPatient", aggregateType: "Result", aggregateId: id, data: { patientId: result.patientId } });
+    return ok(updated);
+  }
+
   resultsInbox(): Promise<readonly Result[]> {
     return this.store.unacknowledgedResults();
+  }
+
+  /** Results released to a patient (the portal read; caller enforces own-data). */
+  releasedResultsForPatient(patientId: string): Promise<readonly Result[]> {
+    return this.store.releasedResultsForPatient(patientId);
   }
 
   async draftLetter(actorId: string, patientId: string, templateKey: string, locale: "en" | "ar", body: string): Promise<Letter> {
