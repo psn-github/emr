@@ -24,6 +24,8 @@ export type {
   GradingEntry,
   Disposition,
   EmbryoTransfer,
+  MediaApplicationId,
+  MediaApplication,
   PgtOrderId,
   PgtResultId,
   PgtType,
@@ -33,6 +35,7 @@ export type {
 } from "./types.js";
 export { makeGardnerGrade, parseGardnerGrade, formatGardnerGrade } from "./grading.js";
 export { isNormalFertilisation, yieldsEmbryo } from "./fertilisation.js";
+export { validateMediaApplication, recallReachability, hasValue, type MediaApplicationInput, type RecallReach } from "./media.js";
 export { PGT_TYPES, assertPgtIndicationPermitted } from "./pgt.js";
 export type { WitnessPort, HandlingEventInput } from "./witness-port.js";
 export { type EmbryologyStore, InMemoryEmbryologyStore, type PgtStore, InMemoryPgtStore } from "./store.js";
@@ -58,6 +61,7 @@ export {
   gradingEntry,
   disposition,
   embryoTransfer,
+  mediaApplication,
   pgtOrder,
   pgtResult,
 } from "./schema.js";

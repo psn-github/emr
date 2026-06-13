@@ -12,6 +12,7 @@ export type EmbryoId = Id<"Embryo">;
 export type GradingEntryId = Id<"GradingEntry">;
 export type DispositionId = Id<"Disposition">;
 export type EmbryoTransferId = Id<"EmbryoTransfer">;
+export type MediaApplicationId = Id<"MediaApplication">;
 
 /** Oocyte maturity at retrieval. */
 export type Maturity = "MII" | "MI" | "GV" | "degenerate";
@@ -89,6 +90,32 @@ export interface Disposition {
   readonly occurredAt: string;
   readonly operator: string;
   readonly witnessKey: string;
+}
+
+/**
+ * A culture-media (or other consumable) lot applied to a specific embryo/oocyte
+ * at a lab step — the append-only fact that powers media-recall reachability. The
+ * lot is identified by (itemId, lotNo): the SAME identifiers the inventory
+ * catalogue/stock use, so a manufacturer recall of a lot maps straight to the
+ * embryos exposed. This is a shared-identifier cross-reference, NOT a cross-module
+ * dependency — embryology never imports inventory.
+ */
+export interface MediaApplication {
+  readonly id: MediaApplicationId;
+  readonly cycleId: string;
+  /** The embryo exposed, or null when the media touched an oocyte pre-embryo. */
+  readonly embryoId: EmbryoId | null;
+  /** The oocyte exposed, or null when applied directly to a named embryo. */
+  readonly oocyteId: OocyteId | null;
+  /** Catalogue media item id (inventory's identifier). */
+  readonly itemId: string;
+  /** Media lot number (inventory's stock-lot identifier) — the recall key. */
+  readonly lotNo: string;
+  /** The lab step the media was used at (e.g. "fertilisation", "culture-d3"). */
+  readonly step: string;
+  readonly quantity: number;
+  readonly appliedAt: string;
+  readonly operator: string;
 }
 
 // PGT order/consent/result capture (docs/01 §E4 P1; genetics lab stays external).

@@ -238,4 +238,11 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** embryology records the **inventory media-lot id** on its culture/grading records; the traceability link is that lot id (no cross-module table access — embryology stores the string the inventory module issued). A **lot-recall query** answers "given a media lot → which embryos were cultured in it." Module boundaries preserved; the lot id is the join.
 - **Consequences:** a media-lot recall enumerates affected embryos directly; inventory and embryology stay decoupled (linked only by the lot id).
 
-_(Claude Code: continue numbering from ADR-0031.)_
+## ADR-0031 — Media traceability as a dedicated append-only record; traceability-only (no stock coupling)
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** implementing ADR-0030. Two choices surfaced: (a) overload grading/culture records with a lot id, vs a dedicated record; and (b) whether applying a media lot should also *deduct* inventory stock through a port.
+- **Decision:** record each media application as a **dedicated, append-only `embryology.media_application` row** (cycle, embryo **or** oocyte, `itemId` + `lotNo`, step, quantity, when, who) rather than overloading grading — one media event maps to one row, and pre-embryo (oocyte-stage) applications are representable. The lot is keyed by the inventory's own **(itemId, lotNo)** — a shared-identifier cross-reference, not a cross-module dependency. The record is **traceability-only**: it does NOT gate on or mutate inventory stock. Recording lab reality (which lot touched which embryo) is the authoritative patient-safety fact and must never be blocked by stock bookkeeping; coupling to stock deduction is deferred pending the lab's confirmed unit-of-use mapping (media is drawn in sub-vial volumes that do not map cleanly to inventory issue units).
+- **Consequences:** `mediaRecall(itemId, lotNo)` enumerates every embryo/oocyte/cycle exposed to a recalled lot, and an embryo's life history now lists the lots it (and its originating oocyte) saw. Stock-consumption reconciliation is a future, separately-scoped enhancement — logged so it is not silently dropped.
+
+_(Claude Code: continue numbering from ADR-0032.)_

@@ -86,6 +86,26 @@ export const disposition = embryologySchema.table(
   (t) => ({ byCycle: index("disposition_cycle_idx").on(t.cycleId) }),
 );
 
+export const mediaApplication = embryologySchema.table(
+  "media_application",
+  {
+    id: text("id").primaryKey(),
+    cycleId: text("cycle_id").notNull(),
+    embryoId: text("embryo_id"),
+    oocyteId: text("oocyte_id"),
+    itemId: text("item_id").notNull(),
+    lotNo: text("lot_no").notNull(),
+    step: text("step").notNull(),
+    quantity: integer("quantity").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull(),
+    operator: text("operator").notNull(),
+  },
+  (t) => ({
+    byLot: index("media_application_lot_idx").on(t.itemId, t.lotNo),
+    byCycle: index("media_application_cycle_idx").on(t.cycleId),
+  }),
+);
+
 export const pgtOrder = embryologySchema.table(
   "pgt_order",
   {

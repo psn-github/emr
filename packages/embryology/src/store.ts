@@ -7,6 +7,7 @@ import type {
   Disposition,
   EmbryoTransfer,
   EmbryoId,
+  MediaApplication,
   PgtOrder,
   PgtOrderId,
   PgtResult,
@@ -28,6 +29,11 @@ export interface EmbryologyStore {
   dispositionsForCycle(cycleId: string): Promise<readonly Disposition[]>;
   saveTransfer(t: EmbryoTransfer): Promise<void>;
   transfersForCycle(cycleId: string): Promise<readonly EmbryoTransfer[]>;
+  saveMediaApplication(m: MediaApplication): Promise<void>;
+  /** Recall reachability: every application of a given media lot, across cycles. */
+  mediaApplicationsForLot(itemId: string, lotNo: string): Promise<readonly MediaApplication[]>;
+  /** Life-history reconstruction: a cycle's media applications. */
+  mediaApplicationsForCycle(cycleId: string): Promise<readonly MediaApplication[]>;
 }
 
 /** PGT order/result persistence (kept a separate port from the lab store). */
@@ -64,6 +70,7 @@ export class InMemoryEmbryologyStore implements EmbryologyStore {
   private readonly gradings: GradingEntry[] = [];
   private readonly dispositions: Disposition[] = [];
   private readonly transfers: EmbryoTransfer[] = [];
+  private readonly mediaApplications: MediaApplication[] = [];
 
   async saveOocyte(o: Oocyte): Promise<void> {
     this.oocytes.push(o);
@@ -109,5 +116,14 @@ export class InMemoryEmbryologyStore implements EmbryologyStore {
   }
   async transfersForCycle(cycleId: string): Promise<readonly EmbryoTransfer[]> {
     return this.transfers.filter((t) => t.cycleId === cycleId);
+  }
+  async saveMediaApplication(m: MediaApplication): Promise<void> {
+    this.mediaApplications.push(m);
+  }
+  async mediaApplicationsForLot(itemId: string, lotNo: string): Promise<readonly MediaApplication[]> {
+    return this.mediaApplications.filter((m) => m.itemId === itemId && m.lotNo === lotNo);
+  }
+  async mediaApplicationsForCycle(cycleId: string): Promise<readonly MediaApplication[]> {
+    return this.mediaApplications.filter((m) => m.cycleId === cycleId);
   }
 }
