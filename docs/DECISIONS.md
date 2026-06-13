@@ -259,4 +259,53 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** assets are a **new `@oxford/assets` domain module** (register + PPM/calibration + fault/downtime), separate from `@oxford/inventory` (consumable stock) — fine-grained module convention, boundaries clean. The use-blocking gate is `AssetService.assertUsable(assetId, asOf)`, a **server-side** decision keyed off the per-asset `critical` flag (config). A critical asset is usable **only when its latest calibration's next-due date is in the future**; calibration that is **overdue OR never recorded ("missing")** both **block** use (`calibration_overdue` / `calibration_missing`) — a never-calibrated critical device is at least as unsafe as a lapsed one, so the conservative path blocks it. Non-critical assets are **alert-only** (never blocked). Alerts sort the fleet into blocking / non-blocking / due-soon. The gate is queryable now; wiring it into specific lab/theatre use-paths (embryology incubation, etc.) is a later cross-cutting integration.
 - **Consequences:** "overdue calibration on an incubator raises a blocking alert visible in the lab" (the §E10 exit-gate) holds, and a critical asset can't be used unvalidated; 100% coverage on the calibration/usability/validation logic (patient-safety). The earlier open item "which asset classes are use-blocking" is closed: it's the `critical` flag, not a hardcoded class list.
 
-_(Claude Code: continue numbering from ADR-0034.)_
+## ADR-0034 — No cash: cash payments are structurally absent (KNET + card only)
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director / product owner)
+- **Context:** under the new Kuwait rules the clinic takes **no cash**. Payments are **KNET or credit card** only. (Supersedes the earlier `PaymentMethod = "cash" | "card" | "knet"`.)
+- **Decision:** cash is **structurally absent** (same posture as donor/surrogacy): `PaymentMethod` is **`"knet" | "card"`** — there is no `cash` member, no cash-handling code, drawer, or UI, anywhere. A request to post a cash payment cannot type-check, and the server rejects any unknown method. Adversarially tested.
+- **Consequences:** the system cannot represent or record a cash transaction; reconciliation and receipts are KNET/card only; removing the member is a one-time refactor of `@oxford/billing` (PR 5.1).
+
+## ADR-0035 — No tax: the billing money model carries no tax field/line/calculation
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director / product owner)
+- **Context:** there is **no sales/VAT tax in Kuwait**. The earlier model kept a `taxRateBps`/`taxFils` "for regulatory fitness"; the product owner has confirmed no tax applies.
+- **Decision:** **remove tax from the money model** — no `taxRateBps` on invoices, no `taxFils` in totals, no `taxAmount()` in `money.ts`; an invoice **total = subtotal**. Money stays integer fils, 100% covered. (Supersedes docs/01 §E11 "tax/regulatory fields per Kuwait".)
+- **Consequences:** simpler, correct invoices/statements; no dormant tax surface to misuse. If Kuwait ever introduces a tax, it returns as an explicit ADR + migration, not a dormant field.
+
+## ADR-0036 — KNET + card via a residency-reviewed PaymentGatewayPort
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** docs/01 §E11 requires KNET + card payments on Gulf rails; payment processing touches PHI-adjacent + PCI data and residency rules (docs/03, ADR-0006/0007).
+- **Decision:** payments go through a **`PaymentGatewayPort`** seam (authorize/capture/refund + receipt reference). A **dev/test stub** stands in until the **in-region, residency-reviewed** gateway is selected; the real adapter lands behind the port with a residency review logged as an ADR. The billing domain never embeds a gateway SDK.
+- **Consequences:** billing logic (balances, instalments, receipts, refunds) is testable now without a live gateway; the real KNET/card processor is a config/adapter swap, residency-gated.
+
+## ADR-0037 — Packages & cycle bundles as versioned config with per-component recognition
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** IVF is sold as packages (e.g. "ICSI package": consult + monitoring + retrieval + lab + transfer, drugs optional) with inclusions/exclusions (docs/01 §E11).
+- **Decision:** a **package is a versioned config bundle** of components (charge codes + quantities + inclusion flags) in a config table, not code. Selling a package **instantiates** it on a patient with **per-component recognition**, and charge capture **maps clinical/lab/theatre events to package components** (consuming an inclusion) vs billing extra. Configuration is data (CLAUDE.md).
+- **Consequences:** packages/pricing change without code; component recognition supports margin analysis (E12) and correct over-/under-inclusion billing.
+
+## ADR-0038 — Deposits & instalment plans gate cycle progression (block/allow rule is config)
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** self-pay IVF runs on deposits + instalments, and cycle steps are gated on payment status (docs/01 §E11 acceptance: "outstanding-balance rules correctly gate the next cycle step").
+- **Decision:** an **instalment plan** has scheduled instalments, balance tracking, and payment-due notifications. Cycle-step progression is gated via a **`FinanceGate` seam** the fertility/embryology flow consults: a step is **blocked when the plan is in arrears beyond the configured rule** (e.g. deposit unpaid, or an instalment overdue past a grace window). The rule is **configuration** (thresholds/grace), defaulting conservative (block on deposit-unpaid). No permissive default. Money 100% covered.
+- **Consequences:** progression-gating is enforced server-side (not advisory) and adversarially tested; clinics tune the rule without code; the gate is injected (no billing→fertility import).
+
+## ADR-0039 — KPIs, dashboards & reporting as read models; MOH/accreditation formats are config
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** docs/01 §E12 needs Vienna-consensus lab KPIs, clinical-outcome and operational/financial dashboards, MOH/accreditation outputs, and one-click audit export.
+- **Decision:** KPIs/dashboards are **read models computed from domain data + the event/audit logs** (no new source of truth; no cross-module table access — aggregate via published reads/events). Outcome reporting is **de-identifiable**. **One-click audit-trail export per entity** reuses the hash-chained audit log. The exact **MOH/accreditation report formats are config** (like the CD/MOH item, AMD-0005) — pending confirmation; the data/queries ship, the regulatory file shape drops in later.
+- **Consequences:** reporting never forks the data model; formats are confirmable without rebuild; audit export is a first-class compliance feature.
+
+## ADR-0040 — Light HR: staff registry + licence/competency expiry + rota → scheduling; payroll external
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** docs/01 §E14 wants light HR — MOH licence/competency expiry tracking (esp. witnessing-qualified embryologists) and rota feeding scheduling; full payroll stays external.
+- **Decision:** a **staff registry** with **credential/licence + competency records carrying expiry**, with due/overdue alerting; **rota/shift planning feeds resource availability** in scheduling (via the existing scheduling seam, not a direct table reach). **Full payroll is out of scope** (external). Competency expiry MAY inform (not silently block) witnessing eligibility — any hard gate is an explicit, configured rule.
+- **Consequences:** licence lapses are visible/alertable; rota integrates with scheduling; HR stays "light" and bounded.
+
+_(Claude Code: continue numbering from ADR-0041.)_

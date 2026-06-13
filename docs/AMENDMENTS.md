@@ -78,5 +78,16 @@
 - **Conservative stance:** the register works fully and safely now; only the regulatory *classification contents* and *report format* are pending. No permissive default introduced.
 - **Status:** **open** — mechanism shipped; the two specifics tracked here for MD/regulatory confirmation (cutover-gating, like the other Kuwaiti-law items).
 
+## AMD-0006 — No cash + no tax (Kuwait): supersede docs/01 §E11 payment/tax text
+- **Date:** 2026-06-13
+- **Raised by:** Medical Director / product owner (Phase 5 sign-off)
+- **Type:** proposed-change (**approved & closed**)
+- **Documents involved:** docs/01 §E11 (billing: "KNET and card"; "tax/regulatory fields per Kuwait"), `@oxford/billing`
+- **Decision:**
+  1. **No cash.** Under the new Kuwait rules the clinic takes no cash; payments are **KNET or credit card only**. Cash is **structurally absent** — `PaymentMethod = "knet" | "card"`, no cash member/code/UI anywhere (ADR-0034).
+  2. **No tax.** There is **no sales/VAT tax in Kuwait**; the billing money model carries **no tax field, line, or calculation** — invoice total = subtotal (ADR-0035). Supersedes the §E11 "tax/regulatory fields per Kuwait" line.
+- **Status:** **approved & closed** — recorded as ADR-0034/0035; implemented in PR 5.1 (remove cash + tax from `@oxford/billing`, adversarially tested).
+- **Product-owner decision:** confirmed by the Medical Director, 2026-06-13.
+
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.
