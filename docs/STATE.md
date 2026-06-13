@@ -26,7 +26,7 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[ops]** Select + provision the in-region (GCC/Kuwait-permissible) production host + managed PostgreSQL to replace the DigitalOcean VPS, which is staging/synthetic-only (ADR-0007, docs/PATIENT-DATA.md). Blocks loading any real PHI / go-live; swapping the deploy target is a secrets change.
 - **[legal]** Permitted PGT indications scope (docs/03 §1). Blocks PGT capture cutover.
 - **[legal]** Marital-status-change specimen disposition handling (docs/03 §1). Blocks cryostore cutover.
-- **[legal]** Permitted indications for single-person fertility preservation — single-woman oocyte freezing: medical preservation vs elective/social (ADR-0015, AMD-0002, docs/03 §1). Build as a **configurable coded field**; confirm clinic policy. Blocks fertility-preservation cutover.
+- **[CLOSED — Medical Director, 2026-06-13]** Single-person fertility preservation is **legal in Kuwait and standard clinic practice** (ADR-0015, AMD-0002). No longer a legal gate. The medical-vs-elective indication is retained as a **configurable coded field captured for clinical governance**, not a restriction — to be built with the Phase 2 cryostore/cycle.
 - **[ops, assigned: PO]** Clinic review of all 7 notification templates before go-live, **particular attention to the Khaleeji Arabic wording** (current wording is placeholder; templates are bilingual + discreet by test).
 - **[legal]** Medical-record retention period (docs/03 §3). Blocks retention job.
 - **[integration]** RI Witness integration path with CooperSurgical — sync-tool version, EMR-integration licence, programmatic pull-back of witnessing/traceability vs report-only (docs/02 §4, docs/01 §G). Prerequisite for Phase 2 embryology build.
