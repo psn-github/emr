@@ -492,6 +492,45 @@ export const appRouter = router({
         return { balanceFils: r.value.totals.balanceFils, gatewayRef: r.value.payment.gatewayRef };
       }),
 
+    // Secure messaging — the patient's own threads (content behind auth, never in
+    // notifications). Own-data only.
+    threads: patientProcedure
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        return { threads: await ctx.services.messaging.threadsForPatient(input.patientId) };
+      }),
+    threadMessages: patientProcedure
+      .input((v: unknown) => v as { patientId: string; threadId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const thread = await ctx.services.messaging.getThread(asId<"MessageThread">(input.threadId));
+        if (thread === null || thread.patientId !== input.patientId) throw new TRPCError({ code: "FORBIDDEN", message: "not your thread" });
+        return { messages: await ctx.services.messaging.messages(input.threadId) };
+      }),
+    startThread: patientProcedure
+      .input((v: unknown) => v as { patientId: string; subject: string; body: string })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const r = await ctx.services.messaging.startThread(`patient:${input.patientId}`, { patientId: input.patientId, subject: input.subject, body: input.body, senderKind: "patient", senderId: input.patientId });
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "message rejected" });
+        return { threadId: r.value.thread.id };
+      }),
+    sendMessage: patientProcedure
+      .input((v: unknown) => v as { patientId: string; threadId: string; body: string })
+      .mutation(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const thread = await ctx.services.messaging.getThread(asId<"MessageThread">(input.threadId));
+        if (thread === null || thread.patientId !== input.patientId) throw new TRPCError({ code: "FORBIDDEN", message: "not your thread" });
+        const r = await ctx.services.messaging.postMessage(`patient:${input.patientId}`, { threadId: input.threadId, senderKind: "patient", senderId: input.patientId, body: input.body });
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "message rejected" });
+        return { messageId: r.value.id };
+      }),
+
     // The patient's released results only — unreleased results are invisible (ADR-0042).
     results: patientProcedure
       .input((v: unknown) => v as { patientId: string })
@@ -644,6 +683,24 @@ export const appRouter = router({
         const r = await ctx.services.clinical.releaseResult(ctx.session.subject.staffId, asId<"Result">(input.resultId));
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "release failed" });
         return { released: r.value.releasedToPatient };
+      }),
+  }),
+
+  // Staff side of secure messaging (clinical domain, MFA-gated). Staff read a
+  // patient's threads and reply; the patient side is under `portal`.
+  messaging: router({
+    patientThreads: protectedProcedure("clinical:message.read")
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => ({ threads: await ctx.services.messaging.threadsForPatient(input.patientId) })),
+    thread: protectedProcedure("clinical:message.read")
+      .input((v: unknown) => v as { threadId: string })
+      .query(async ({ ctx, input }) => ({ messages: await ctx.services.messaging.messages(input.threadId) })),
+    reply: protectedProcedure("clinical:message.write")
+      .input((v: unknown) => v as { threadId: string; body: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.messaging.postMessage(ctx.session.subject.staffId, { threadId: input.threadId, senderKind: "staff", senderId: ctx.session.subject.staffId, body: input.body });
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "reply failed" });
+        return { messageId: r.value.id };
       }),
   }),
 
