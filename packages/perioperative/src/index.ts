@@ -7,7 +7,19 @@ export type { SurgicalEncounterId, JourneyStage, SurgicalEncounter, TheatreCaseI
 export { canAdvance, assertAdvance, stagePlacement, type CareLocationKind, type StagePlacement } from "./journey.js";
 export { validatePreOp, type PreOpInput } from "./preop.js";
 export { bedReservationStatus, type BedReservationStatus } from "./bed-reservation.js";
-export type { FacilityFlowPort, SchedulingPort, BookTheatreSlotInput } from "./ports.js";
+export {
+  WHO_REQUIRED_ITEMS,
+  phaseComplete,
+  assertMayEnterTheatre,
+  assertMayLeaveTheatre,
+  type WhoPhase,
+  type WhoChecklist,
+  type PhaseRecord,
+} from "./who-checklist.js";
+export type { FacilityFlowPort, SchedulingPort, BookTheatreSlotInput, ChecklistGate } from "./ports.js";
+export { type WhoChecklistStore, InMemoryWhoChecklistStore } from "./who-store.js";
+export { PgWhoChecklistStore } from "./who-pg-store.js";
+export { WhoChecklistService } from "./who-service.js";
 export { type PerioperativeStore, InMemoryPerioperativeStore } from "./store.js";
 export { PgPerioperativeStore } from "./pg-store.js";
 export { type TheatreCaseStore, InMemoryTheatreCaseStore } from "./theatre-store.js";
@@ -17,4 +29,4 @@ export { TheatreSchedulingService, type ScheduleCaseInput, type ScheduleCaseResu
 export { type PreOpStore, InMemoryPreOpStore } from "./preop-store.js";
 export { PgPreOpStore } from "./preop-pg-store.js";
 export { PreOpService, type RecordPreOpInput } from "./preop-service.js";
-export { perioperativeSchema, surgicalEncounter, theatreCase, preOpAssessment } from "./schema.js";
+export { perioperativeSchema, surgicalEncounter, theatreCase, preOpAssessment, whoChecklist } from "./schema.js";

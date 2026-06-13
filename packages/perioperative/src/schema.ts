@@ -5,6 +5,15 @@ import { pgSchema, text, integer, boolean, date, jsonb, timestamp, index } from 
 
 export const perioperativeSchema = pgSchema("perioperative");
 
+// WHO Surgical Safety Checklist — one row per encounter; each phase is a jsonb
+// PhaseRecord (or null until completed).
+export const whoChecklist = perioperativeSchema.table("who_checklist", {
+  encounterId: text("encounter_id").primaryKey(),
+  signIn: jsonb("sign_in"),
+  timeOut: jsonb("time_out"),
+  signOut: jsonb("sign_out"),
+});
+
 export const preOpAssessment = perioperativeSchema.table("preop_assessment", {
   id: text("id").primaryKey(),
   encounterId: text("encounter_id").notNull().unique(),

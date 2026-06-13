@@ -7,7 +7,7 @@ import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
-import type { JourneyStage } from "@oxford/perioperative";
+import type { JourneyStage, WhoPhase } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -288,8 +288,9 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const r = await ctx.services.perioperative.advanceJourney(ctx.session.subject.staffId, asId<"SurgicalEncounter">(input.encounterId), input.toStage);
         if (!r.ok) {
-          const capacity = r.error.code === "CONFLICT";
-          throw new TRPCError({ code: capacity ? "CONFLICT" : "BAD_REQUEST", message: r.error.detailKey ?? "advance failed" });
+          // CONFLICT = bed/theatre capacity; PRECONDITION_FAILED = WHO checklist gate.
+          const code = r.error.code === "CONFLICT" ? "CONFLICT" : r.error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED" : "BAD_REQUEST";
+          throw new TRPCError({ code, message: r.error.detailKey ?? "advance failed" });
         }
         return { stage: r.value.stage };
       }),
@@ -327,6 +328,17 @@ export const appRouter = router({
         const r = await ctx.services.preOp.recordPreOp(ctx.session.subject.staffId, input);
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid pre-op assessment" });
         return { assessmentId: r.value.id, asaGrade: r.value.asaGrade };
+      }),
+
+    // WHO Surgical Safety Checklist — complete a phase (sign-in/time-out/sign-out).
+    // The journey's advance() enforces the blocking gate (no incision without
+    // sign-in+time-out; no leaving theatre without sign-out).
+    completeChecklistPhase: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; phase: WhoPhase; confirmedItems: string[]; completedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.whoChecklist.completePhase(ctx.session.subject.staffId, input.encounterId, input.phase, input.confirmedItems, input.completedAt);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "checklist phase failed" });
+        return { phase: input.phase, ok: true };
       }),
   }),
 

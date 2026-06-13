@@ -23,6 +23,14 @@ export interface SchedulingPort {
   bookTheatreSlot(actorId: string, input: BookTheatreSlotInput): Promise<Result<{ appointmentId: string }, AppError>>;
 }
 
+/** WHO checklist seam — the journey consults this to BLOCK theatre entry/exit
+ *  until the checklist phases are complete (docs/01 §E7). Implemented by the
+ *  WhoChecklistService; injected into the perioperative journey. */
+export interface ChecklistGate {
+  assertMayEnterTheatre(encounterId: string): Promise<Result<void, AppError>>;
+  assertMayLeaveTheatre(encounterId: string): Promise<Result<void, AppError>>;
+}
+
 export interface FacilityFlowPort {
   /** Place the patient into a free location of `kind` with the given flow status.
    *  Returns the node used, or a capacity error if none is free. */
