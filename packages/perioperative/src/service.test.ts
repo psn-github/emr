@@ -3,7 +3,7 @@ import { fixedClock, ok, err, conflict, type Result, type AppError } from "@oxfo
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { PerioperativeService } from "./perioperative-service.js";
 import { InMemoryPerioperativeStore } from "./store.js";
-import type { FacilityFlowPort, ChecklistGate } from "./ports.js";
+import type { FacilityFlowPort, ChecklistGate, DischargeGate } from "./ports.js";
 import type { CareLocationKind } from "./journey.js";
 import type { JourneyStage } from "./types.js";
 
@@ -15,6 +15,13 @@ class FakeChecklist implements ChecklistGate {
   }
   async assertMayLeaveTheatre(): Promise<Result<void, AppError>> {
     return this.leaveOk ? ok(undefined) : err(conflict("WHO sign-out missing", "perioperative.who.not_ready_to_leave"));
+  }
+}
+
+class FakeDischarge implements DischargeGate {
+  ok = true;
+  async assertMayDischarge(): Promise<Result<void, AppError>> {
+    return this.ok ? ok(undefined) : err(conflict("not ready", "perioperative.discharge.prescription_unfulfilled"));
   }
 }
 
@@ -38,7 +45,8 @@ function build() {
   const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
   const flow = new FakeFlow();
   const checklist = new FakeChecklist();
-  return { svc: new PerioperativeService(new InMemoryPerioperativeStore(), flow, checklist, audit, events), flow, checklist, audit, events };
+  const discharge = new FakeDischarge();
+  return { svc: new PerioperativeService(new InMemoryPerioperativeStore(), flow, checklist, discharge, audit, events), flow, checklist, discharge, audit, events };
 }
 
 const admit = (svc: PerioperativeService) => svc.admit("nurse-1", { patientId: "pat-1", indication: "oocyte retrieval", admittedAt: "2026-06-22T08:00:00Z" });
@@ -136,6 +144,21 @@ describe("PerioperativeService — WHO checklist gate", () => {
     if (!blocked.ok) expect(blocked.error.detailKey).toBe("perioperative.who.not_ready_to_leave");
     checklist.leaveOk = true;
     expect((await svc.advanceJourney("n", a.value.id, "recovery")).ok).toBe(true);
+  });
+});
+
+describe("PerioperativeService — discharge gate", () => {
+  it("blocks discharge until the discharge gate allows it", async () => {
+    const { svc, discharge } = build();
+    const a = await admit(svc);
+    if (!a.ok) return;
+    for (const s of ["ward_bed", "pre_theatre", "in_theatre", "recovery", "post_op_ward"] as const) await svc.advanceJourney("n", a.value.id, s);
+    discharge.ok = false;
+    const blocked = await svc.advanceJourney("n", a.value.id, "discharged");
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.detailKey).toBe("perioperative.discharge.prescription_unfulfilled");
+    discharge.ok = true;
+    expect((await svc.advanceJourney("n", a.value.id, "discharged")).ok).toBe(true);
   });
 });
 

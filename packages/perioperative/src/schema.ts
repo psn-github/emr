@@ -5,6 +5,31 @@ import { pgSchema, text, integer, boolean, date, jsonb, timestamp, index } from 
 
 export const perioperativeSchema = pgSchema("perioperative");
 
+export const observation = perioperativeSchema.table(
+  "observation",
+  {
+    id: text("id").primaryKey(),
+    encounterId: text("encounter_id").notNull(),
+    phase: text("phase").notNull(),
+    aldreteScore: integer("aldrete_score"),
+    systolicBp: integer("systolic_bp").notNull(),
+    heartRate: integer("heart_rate").notNull(),
+    spo2: integer("spo2").notNull(),
+    notes: text("notes").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    recordedBy: text("recorded_by").notNull(),
+  },
+  (t) => ({ byEncounter: index("observation_encounter_idx").on(t.encounterId) }),
+);
+
+export const followUp = perioperativeSchema.table("follow_up", {
+  encounterId: text("encounter_id").primaryKey(),
+  id: text("id").notNull(),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+  bookedBy: text("booked_by").notNull(),
+  bookedAt: timestamp("booked_at", { withTimezone: true }).notNull(),
+});
+
 export const intraOpRecord = perioperativeSchema.table("intraop_record", {
   id: text("id").primaryKey(),
   encounterId: text("encounter_id").notNull().unique(),

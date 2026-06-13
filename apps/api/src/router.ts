@@ -363,6 +363,21 @@ export const appRouter = router({
         const s = await ctx.services.intraOp.recordSpecimen(ctx.session.subject.staffId, input);
         return { specimenId: s.id };
       }),
+
+    // Recovery (L1) + post-op ward (L2) observations and the discharge follow-up.
+    recordObservation: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; phase: "recovery" | "post_op_ward"; aldreteScore?: number; systolicBp: number; heartRate: number; spo2: number; notes?: string; recordedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.recovery.recordObservation(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid observation" });
+        return { observationId: r.value.id };
+      }),
+    bookFollowUp: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { encounterId: string; scheduledFor: string; bookedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const f = await ctx.services.recovery.bookFollowUp(ctx.session.subject.staffId, input);
+        return { followUpId: f.id };
+      }),
   }),
 
   // Patient-portal self-service booking. The patient principal may ONLY act on
