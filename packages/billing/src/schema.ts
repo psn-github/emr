@@ -61,6 +61,31 @@ export const instalmentPlan = billingSchema.table(
   (t) => ({ byPatient: index("instalment_plan_patient_idx").on(t.patientId) }),
 );
 
+export const chargeMaster = billingSchema.table("charge_master", {
+  code: text("code").primaryKey(),
+  description: jsonb("description").notNull(),
+  unitAmountFils: bigint("unit_amount_fils", { mode: "number" }).notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
+export const charge = billingSchema.table(
+  "charge",
+  {
+    id: text("id").primaryKey(),
+    patientId: text("patient_id").notNull(),
+    chargeCode: text("charge_code").notNull(),
+    description: jsonb("description").notNull(),
+    quantity: bigint("quantity", { mode: "number" }).notNull(),
+    unitAmountFils: bigint("unit_amount_fils", { mode: "number" }).notNull(),
+    source: text("source").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    recognised: boolean("recognised").notNull().default(false),
+    patientPackageId: text("patient_package_id"),
+    invoiceId: text("invoice_id"),
+  },
+  (t) => ({ byPatient: index("charge_patient_idx").on(t.patientId) }),
+);
+
 export const payment = billingSchema.table(
   "payment",
   {

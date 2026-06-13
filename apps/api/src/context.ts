@@ -14,7 +14,7 @@ import { I18n, coreMessages, type Catalog } from "@oxford/i18n";
 import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
 import { FacilityService, FlowService, PgFacilityStore, PgFlowStore, type PatientFlowStatus } from "@oxford/facility";
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
-import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore, GatewayPaymentService, StubPaymentGateway } from "@oxford/billing";
+import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore, GatewayPaymentService, StubPaymentGateway, ChargeCaptureService, PgChargeMasterStore, PgChargeStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
 import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, type WitnessPort } from "@oxford/embryology";
@@ -63,6 +63,7 @@ export interface Services {
   readonly gatewayPayments: GatewayPaymentService;
   /** Dev/test payment gateway stub (ADR-0036) until the in-region processor. */
   readonly paymentGateway: StubPaymentGateway;
+  readonly charges: ChargeCaptureService;
   readonly clinical: ClinicalService;
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
@@ -143,6 +144,9 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // processor replaces this stub behind the same PaymentGatewayPort.
   const paymentGateway = new StubPaymentGateway();
   const gatewayPayments = new GatewayPaymentService(billing, paymentGateway);
+  // Item-level charge capture (ADR-0037): priced from the charge master (no
+  // free-text charges), recognised against packages, batched into invoices.
+  const charges = new ChargeCaptureService(new PgChargeMasterStore(pool), new PgChargeStore(pool), packages, billing, audit, events);
   const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock);
 
   // Witnessing: RI Witness is authoritative (ADR-0018). A stub provider stands in
@@ -277,5 +281,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, pharmacyStub, notificationOutbox, witnessProvider };
 }
