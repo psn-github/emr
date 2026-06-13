@@ -11,7 +11,8 @@ import type {
   EmbryoId,
   GardnerGrade,
 } from "./types.js";
-import type { EmbryologyStore } from "./store.js";
+import type { EmbryologyStore, PgtStore } from "./store.js";
+import type { PgtOrder, PgtOrderId, PgtResult } from "./types.js";
 
 /** Postgres-backed EmbryologyStore. Clinical lab data is append-only/soft-delete
  *  per CLAUDE.md; these writes are inserts. */
@@ -130,4 +131,42 @@ function dispFrom(r: DispRow): Disposition {
 }
 function transferFrom(r: TransferRow): EmbryoTransfer {
   return { id: asId<"EmbryoTransfer">(r.id), cycleId: r.cycle_id, embryoIds: r.embryo_ids.map((e) => asId<"Embryo">(e)), count: r.count, catheter: r.catheter, difficulty: r.difficulty as EmbryoTransfer["difficulty"], ultrasoundGuided: r.ultrasound_guided, procedureRef: r.procedure_ref, operator: r.operator, transferredAt: iso(r.transferred_at), witnessKey: r.witness_key };
+}
+
+/** Postgres-backed PgtStore. Append-only PGT order/result capture. */
+export class PgPgtStore implements PgtStore {
+  constructor(private readonly pool: Pool) {}
+
+  async saveOrder(o: PgtOrder): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO embryology.pgt_order (id, embryo_id, cycle_id, type, indication, consent_document_ref, ordered_by, ordered_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      [o.id, o.embryoId, o.cycleId, o.type, o.indication, o.consentDocumentRef, o.orderedBy, o.orderedAt],
+    );
+  }
+  async ordersForCycle(cycleId: string): Promise<readonly PgtOrder[]> {
+    const r = await this.pool.query<PgtOrderRow>("SELECT * FROM embryology.pgt_order WHERE cycle_id = $1 ORDER BY ordered_at", [cycleId]);
+    return r.rows.map(pgtOrderFrom);
+  }
+  async saveResult(res: PgtResult): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO embryology.pgt_result (id, order_id, embryo_id, status, report_ref, resolved_at, recorded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+      [res.id, res.orderId, res.embryoId, res.status, res.reportRef, res.resolvedAt, res.recordedBy],
+    );
+  }
+  async resultForOrder(orderId: PgtOrderId): Promise<PgtResult | undefined> {
+    const r = await this.pool.query<PgtResultRow>("SELECT * FROM embryology.pgt_result WHERE order_id = $1 LIMIT 1", [orderId]);
+    return r.rows[0] ? pgtResultFrom(r.rows[0]) : undefined;
+  }
+}
+
+interface PgtOrderRow { id: string; embryo_id: string; cycle_id: string; type: string; indication: string; consent_document_ref: string; ordered_by: string; ordered_at: Date }
+interface PgtResultRow { id: string; order_id: string; embryo_id: string; status: string; report_ref: string; resolved_at: Date; recorded_by: string }
+
+function pgtOrderFrom(r: PgtOrderRow): PgtOrder {
+  return { id: asId<"PgtOrder">(r.id), embryoId: asId<"Embryo">(r.embryo_id), cycleId: r.cycle_id, type: r.type as PgtOrder["type"], indication: r.indication, consentDocumentRef: r.consent_document_ref, orderedBy: r.ordered_by, orderedAt: iso(r.ordered_at) };
+}
+function pgtResultFrom(r: PgtResultRow): PgtResult {
+  return { id: asId<"PgtResult">(r.id), orderId: asId<"PgtOrder">(r.order_id), embryoId: asId<"Embryo">(r.embryo_id), status: r.status as PgtResult["status"], reportRef: r.report_ref, resolvedAt: iso(r.resolved_at), recordedBy: r.recorded_by };
 }

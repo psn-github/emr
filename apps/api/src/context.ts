@@ -17,7 +17,7 @@ import { NotificationService, RecordingNotificationProvider, notificationMessage
 import { BillingService, PgBillingStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
-import { EmbryologyService, PgEmbryologyStore, type WitnessPort } from "@oxford/embryology";
+import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
@@ -39,6 +39,7 @@ export interface Services {
   readonly clinical: ClinicalService;
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
+  readonly pgt: PgtService;
   readonly andrology: AndrologyService;
   readonly outcomes: OutcomesService;
   readonly cryostore: CryostoreService;
@@ -48,6 +49,11 @@ export interface Services {
    *  so dev/test can feed the witnessing records RI would otherwise return. */
   readonly witnessProvider: RiWitnessStubProvider;
 }
+
+/** Clinic-configured, counsel-confirmed permitted PGT indications. EMPTY until
+ *  the clinic confirms its permitted set with legal counsel — PGT orders are
+ *  rejected until then (conservative; AMD-0004 open item). Configuration, not code. */
+const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
 
 function mergedCatalog(): Catalog {
   return {
@@ -82,6 +88,10 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     assertCycleStepSignOff: (cycleId) => witnessing.assertCycleStepSignOff(cycleId),
   };
   const embryology = new EmbryologyService(new PgEmbryologyStore(pool), witnessPort, audit, events);
+  // PGT capture (genetics lab stays external). Permitted indications are CONFIG,
+  // bounded by clinic counsel — EMPTY by default, so PGT orders are blocked until
+  // the clinic configures its counsel-confirmed permitted set (no permissive default).
+  const pgt = new PgtService(new PgPgtStore(pool), audit, events, PGT_PERMITTED_INDICATIONS);
   // Andrology shares the witnessing seam (its sperm freeze is a witnessed event).
   const andrology = new AndrologyService(new PgAndrologyStore(pool), witnessPort, audit, events);
   // Outcome continuum (fertility → pregnancy → live birth), linked back to the cycle.
@@ -111,5 +121,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   };
   const cryostore = new CryostoreService(new PgCryostoreStore(pool), witnessPort, cryoUseGate, cryoBilling, audit, events, clock);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, andrology, outcomes, cryostore, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, notificationOutbox, witnessProvider };
 }

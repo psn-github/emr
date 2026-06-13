@@ -91,6 +91,37 @@ export interface Disposition {
   readonly witnessKey: string;
 }
 
+// PGT order/consent/result capture (docs/01 §E4 P1; genetics lab stays external).
+// Permitted indications are clinic CONFIGURATION (bounded by counsel) — never
+// hardcoded here.
+export type PgtOrderId = Id<"PgtOrder">;
+export type PgtResultId = Id<"PgtResult">;
+export type PgtType = "PGT-A" | "PGT-M" | "PGT-SR";
+export type PgtResultStatus = "euploid" | "aneuploid" | "mosaic" | "no_result";
+
+export interface PgtOrder {
+  readonly id: PgtOrderId;
+  readonly embryoId: EmbryoId;
+  readonly cycleId: string;
+  readonly type: PgtType;
+  readonly indication: string;
+  /** Reference to the captured PGT consent in the document store (required). */
+  readonly consentDocumentRef: string;
+  readonly orderedBy: string;
+  readonly orderedAt: string;
+}
+
+export interface PgtResult {
+  readonly id: PgtResultId;
+  readonly orderId: PgtOrderId;
+  readonly embryoId: EmbryoId;
+  readonly status: PgtResultStatus;
+  /** Reference to the external genetics-lab report in the document store. */
+  readonly reportRef: string;
+  readonly resolvedAt: string;
+  readonly recordedBy: string;
+}
+
 export interface EmbryoTransfer {
   readonly id: EmbryoTransferId;
   readonly cycleId: string;

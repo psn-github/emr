@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 2.0→2.9 all merged to `main`. Phases 0 + 1 also complete. A complete antagonist-ICSI cycle runs end-to-end through the stack with no spreadsheet (closeout e2e, PR 2.9). Decisions in force: RI Witness behind a stub (ADR-0018); no time-lapse device — vendor-neutral seam (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); om-software tool-by-tool replacement (ADR-0020). **Do not start Phase 3 until the Medical Director signs off the Phase 2 exit gate.**
-- **Last updated:** 2026-06-13 — **Phase 2 SIGNED OFF** by the Medical Director, conditional on completing two configurable items then proceeding to Phase 3. PR 2.11 (marital-status-change disposition pathway) done; **PR 2.12 (PGT capture) next**, then propose the Phase 3 plan. **Still open (gates cutover, not the build):** specific legal disposition rule (marital-status change) + permitted PGT indications (clinic counsel — mechanisms built configurable); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
+- **Last updated:** 2026-06-13 — **Phase 2 SIGNED OFF**; both pre-Phase-3 configurable items shipped (PR 2.11 marital-status disposition pathway; PR 2.12 PGT capture). **Next: propose the Phase 3 plan (theatres/perioperative/beds) for sign-off before coding.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — PGT order/consent/result capture (PR 2.12)
+**Shipped (second of the two pre-Phase-3 items).** PGT capture in `@oxford/embryology` (docs/01 §E4 P1; the genetics lab itself stays external). `PgtService.orderPgt` requires a **captured consent** AND an **indication in the clinic's permitted set**; `recordPgtResult` captures the external lab's result (euploid/aneuploid/mosaic/no_result) against the order. **Permitted indications are configuration, bounded by counsel — the default is EMPTY, so PGT orders are rejected until the clinic configures its counsel-confirmed set** (conservative; no permissive default). Pure `pgt.ts` + `PgtService` (100%); in-memory + Postgres stores; schema + forward-only additive migration 0002. App: `PgtService` wired in the composition root with an empty `PGT_PERMITTED_INDICATIONS` config; embryology router `orderPgt` / `recordPgtResult` (MFA-gated).
+**Review (through the API on real Postgres) — all pass:** a clinical-domain role cannot order PGT (**FORBIDDEN** — embryology domain); with no permitted indications configured, every PGT order is **rejected** (`indication_not_permitted`) — i.e. PGT is blocked until counsel-confirmed indications are set. The accept path (consent + permitted indication → order; result capture) is unit-tested in the package (100%).
+**Open / needs product owner:** the **permitted PGT indications** list (clinic counsel) — drop into `PGT_PERMITTED_INDICATIONS` config when confirmed; specific marital-status disposition rule (counsel); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping; om-software access.
+**Next:** **both pre-Phase-3 items are now done** — propose the **Phase 3** (theatres / perioperative journey / beds) task breakdown for sign-off before writing code.
 
 ## 2026-06-13 — Marital-status-change disposition pathway (PR 2.11)
 **Shipped (MD: "build both, then Phase 3").** A configurable, never-permissive mechanism for specimen disposition on a marital-status change (AMD-0004; counsel-bounded — the legal *decision* stays a human/config matter, this is only the *mechanism*).
