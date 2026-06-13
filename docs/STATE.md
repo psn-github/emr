@@ -39,6 +39,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-06-13 — Basic invoicing & payments (PR 1.5)
+**Shipped:** `@oxford/billing` — money as **integer fils** (1 KWD = 1000 fils; no float drift), pure `money` math (line/subtotal/tax-bps/total/balance/format) at **100%**; `Invoice` (bilingual lines, Kuwait tax-rate field defaulting 0) + `Payment` (cash/card/knet) with receipts; `BillingService.createInvoice/totals/postPayment` — partial payments, marks paid at zero balance, **rejects overpayment / zero / non-integer amounts / already-paid**. Drizzle schema + migration; Postgres-backed store (exact fils round-trip), integration-tested. Packages/instalments/KNET-gateway/refunds/discounts are Phase 5. **100% coverage** (13 tests).
+**Adversarial self-review (money):** `[attack] reception → financial:payment.post: DENIED`; financial role also requires **MFA**; `[attack] pay 10001 against 10000 balance: REJECTED`; money is exact integer fils (no float drift across many small lines).
+**Open / needs product owner:** none new.
+**Next:** PR 1.6 — patient-portal booking + bilingual reminders (wired to the stubbed notification provider) + check-in; adversarial review (patient identity/access).
+
 ## 2026-06-13 — Clinical EMR core (PR 1.4)
 **Shipped:** `@oxford/clinical` — `Encounter` (O&G types), **append-only versioned `ClinicalNote`** (amendments add a version, never overwrite; full history retained), ordering (`Order` lab/imaging/referral, status-tracked) + **results inbox** (`Result` with abnormal flag, acknowledge/action loop), and **bilingual letters** (draft → e-sign). `ClinicalService` ties it together; every mutation audited + emits events. Drizzle schema + migration `0001_clinical.sql`; Postgres-backed `PgClinicalStore` (note version history persisted as jsonb), integration-tested. **100% coverage** (11 tests). Problem list / coded allergies / meds / obstetric history are captured as structured note-body fields for now; dedicated coded entities are a documented Phase-1 follow-on.
 **Adversarial self-review (clinical PHI):** `[attack] reception → clinical:note.read: DENIED`; clinical reads also require **MFA** (`auth.mfa_required`) even with the permission; and an amendment **cannot erase the original** — `[attack] amend keeps original v1` proven (v1 body intact, amendment attributed to its author). Deny-by-default + append-only both hold.
