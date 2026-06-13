@@ -83,6 +83,9 @@ importers:
       '@oxford/inventory':
         specifier: workspace:*
         version: link:../../packages/inventory
+      '@oxford/messaging':
+        specifier: workspace:*
+        version: link:../../packages/messaging
       '@oxford/migration':
         specifier: workspace:*
         version: link:../../packages/migration
@@ -380,6 +383,25 @@ importers:
         version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
 
   packages/inventory:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+
+  packages/messaging:
     dependencies:
       '@oxford/audit':
         specifier: workspace:*
