@@ -24,12 +24,20 @@ export type {
   GradingEntry,
   Disposition,
   EmbryoTransfer,
+  PgtOrderId,
+  PgtResultId,
+  PgtType,
+  PgtResultStatus,
+  PgtOrder,
+  PgtResult,
 } from "./types.js";
 export { makeGardnerGrade, parseGardnerGrade, formatGardnerGrade } from "./grading.js";
 export { isNormalFertilisation, yieldsEmbryo } from "./fertilisation.js";
+export { PGT_TYPES, assertPgtIndicationPermitted } from "./pgt.js";
 export type { WitnessPort, HandlingEventInput } from "./witness-port.js";
-export { type EmbryologyStore, InMemoryEmbryologyStore } from "./store.js";
-export { PgEmbryologyStore } from "./pg-store.js";
+export { type EmbryologyStore, InMemoryEmbryologyStore, type PgtStore, InMemoryPgtStore } from "./store.js";
+export { PgEmbryologyStore, PgPgtStore } from "./pg-store.js";
+export { PgtService, type OrderPgtInput, type RecordPgtResultInput } from "./pgt-service.js";
 export {
   EmbryologyService,
   type RecordOocyteInput,
@@ -50,4 +58,6 @@ export {
   gradingEntry,
   disposition,
   embryoTransfer,
+  pgtOrder,
+  pgtResult,
 } from "./schema.js";

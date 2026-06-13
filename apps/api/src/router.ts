@@ -6,6 +6,7 @@ import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
 import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
+import type { PgtType, PgtResultStatus } from "@oxford/embryology";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -201,6 +202,23 @@ export const appRouter = router({
           throw new TRPCError({ code: blocked ? "PRECONDITION_FAILED" : "BAD_REQUEST", message: r.error.detailKey ?? "disposition failed" });
         }
         return { dispositionId: r.value.id };
+      }),
+
+    // PGT order/consent/result capture (genetics lab stays external). Orders are
+    // rejected unless a consent is captured AND the indication is in the clinic's
+    // counsel-confirmed permitted set (config; empty by default).
+    orderPgt: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { embryoId: string; cycleId: string; type: PgtType; indication: string; consentDocumentRef: string; orderedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pgt.orderPgt(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "pgt order rejected" });
+        return { orderId: r.value.id };
+      }),
+    recordPgtResult: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { orderId: string; embryoId: string; status: PgtResultStatus; reportRef: string; resolvedAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const res = await ctx.services.pgt.recordPgtResult(ctx.session.subject.staffId, input);
+        return { resultId: res.id, status: res.status };
       }),
   }),
 

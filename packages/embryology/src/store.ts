@@ -7,6 +7,9 @@ import type {
   Disposition,
   EmbryoTransfer,
   EmbryoId,
+  PgtOrder,
+  PgtOrderId,
+  PgtResult,
 } from "./types.js";
 
 export interface EmbryologyStore {
@@ -25,6 +28,32 @@ export interface EmbryologyStore {
   dispositionsForCycle(cycleId: string): Promise<readonly Disposition[]>;
   saveTransfer(t: EmbryoTransfer): Promise<void>;
   transfersForCycle(cycleId: string): Promise<readonly EmbryoTransfer[]>;
+}
+
+/** PGT order/result persistence (kept a separate port from the lab store). */
+export interface PgtStore {
+  saveOrder(o: PgtOrder): Promise<void>;
+  ordersForCycle(cycleId: string): Promise<readonly PgtOrder[]>;
+  saveResult(r: PgtResult): Promise<void>;
+  resultForOrder(orderId: PgtOrderId): Promise<PgtResult | undefined>;
+}
+
+export class InMemoryPgtStore implements PgtStore {
+  private readonly orders: PgtOrder[] = [];
+  private readonly results: PgtResult[] = [];
+
+  async saveOrder(o: PgtOrder): Promise<void> {
+    this.orders.push(o);
+  }
+  async ordersForCycle(cycleId: string): Promise<readonly PgtOrder[]> {
+    return this.orders.filter((o) => o.cycleId === cycleId);
+  }
+  async saveResult(r: PgtResult): Promise<void> {
+    this.results.push(r);
+  }
+  async resultForOrder(orderId: PgtOrderId): Promise<PgtResult | undefined> {
+    return this.results.find((r) => r.orderId === orderId);
+  }
 }
 
 export class InMemoryEmbryologyStore implements EmbryologyStore {
