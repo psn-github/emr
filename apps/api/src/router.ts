@@ -9,7 +9,7 @@ import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, Revie
 import type { PgtType, PgtResultStatus } from "@oxford/embryology";
 import type { ItemCategory } from "@oxford/inventory";
 import type { AssetCategory } from "@oxford/assets";
-import { cycleTimeline } from "@oxford/fertility";
+import { cycleTimeline, buildMedicationSchedule } from "@oxford/fertility";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
@@ -483,6 +483,21 @@ export const appRouter = router({
           : await ctx.services.registry.coupleIncludes(asId<"Couple">(c.owner.coupleId), asId<"Person">(input.patientId));
         if (!ownsCycle) throw new TRPCError({ code: "FORBIDDEN", message: "not your cycle" });
         return { timeline: cycleTimeline(c.status) };
+      }),
+
+    // Medication schedule + injection-teaching videos for an owned cycle.
+    medicationSchedule: patientProcedure
+      .input((v: unknown) => v as { patientId: string; cycleId: string })
+      .query(async ({ ctx, input }) => {
+        const own = assertOwnData(ctx.patient, input.patientId);
+        if (!own.ok) throw new TRPCError({ code: "FORBIDDEN", message: own.error.detailKey ?? "forbidden" });
+        const c = await ctx.services.cycle.get(asId<"Cycle">(input.cycleId));
+        if (c === null) throw new TRPCError({ code: "NOT_FOUND", message: "cycle not found" });
+        const ownsCycle = c.owner.kind === "person"
+          ? c.owner.personId === input.patientId
+          : await ctx.services.registry.coupleIncludes(asId<"Couple">(c.owner.coupleId), asId<"Person">(input.patientId));
+        if (!ownsCycle) throw new TRPCError({ code: "FORBIDDEN", message: "not your cycle" });
+        return { schedule: buildMedicationSchedule(await ctx.services.stim.chart(input.cycleId)) };
       }),
   }),
 

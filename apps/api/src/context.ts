@@ -45,7 +45,7 @@ import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, Pro
 import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
-import { CycleService, PgCycleStore } from "@oxford/fertility";
+import { CycleService, PgCycleStore, StimulationService, PgStimStore } from "@oxford/fertility";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -89,6 +89,7 @@ export interface Services {
   readonly analytics: AnalyticsService;
   readonly hr: HrService;
   readonly cycle: CycleService;
+  readonly stim: StimulationService;
   /** Dev/test pharmacy stub (discharge-prescription fulfilment; real is E8). */
   readonly pharmacyStub: StubPharmacyProvider;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
@@ -259,6 +260,8 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
     assertMayTreat: (coupleId) => registry.canStartFertility(asId<"Couple">(coupleId)),
   });
+  // Stimulation chart — read surface for the patient medication schedule.
+  const stim = new StimulationService(new PgStimStore(pool), audit, events, clock);
   const perioperativeBilling: PerioperativeBillingPort = {
     async raiseConsumableCharges(actorId, patientId, lines) {
       const r = await billing.createInvoice(actorId, patientId, lines.map((l) => ({ chargeCode: l.chargeCode, description: { ar: l.descriptionAr, en: l.descriptionEn }, unitAmountFils: l.unitAmountFils, quantity: l.quantity })));
@@ -298,5 +301,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, pharmacyStub, notificationOutbox, witnessProvider };
 }
