@@ -182,4 +182,25 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** storage is **billed annually and continues as long as fees are paid**; where fees lapse or a regulatory ceiling applies, **MOH regulations govern** disposition — handled through the existing non-engagement pathway (reminders → overdue → clinical/legal review; **never auto-destroy**). The specific MOH numeric ceiling, when confirmed, is entered as **configuration** (storage-period config), not code.
 - **Consequences:** the storage-period model is settled and already implemented (annual consent expiry is configurable; the never-auto-destroy pathway routes lapses to human review). The only remaining detail is the numeric MOH ceiling value, captured in config when the clinic confirms it. The marital-status-change disposition + permitted-PGT-indications confirms remain open with counsel.
 
-_(Claude Code: continue numbering from ADR-0023.)_
+## ADR-0023 — Perioperative journey builds on the Phase 1 facility/flow model (no new bed model)
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director — "approved as proposed")
+- **Context:** Phase 3 (docs/01 §E7) needs admit→bed→recovery→theatre→recovery→bed→discharge with audited floor transfers, a live bed board, and capacity awareness. The Phase 1 `@oxford/facility` module already models the real building (Ground pharmacy; L1 = 2 theatres + 3 recovery beds; L2 = 6 inpatient beds; L3 = clinic + lab) with `Floor`/`LocationNode`/`Bed`, and `FlowService` already tracks patient location, audited `LocationMovement`s, the bed board, and `BedCapacity`.
+- **Decision:** Phase 3 **reuses** the facility/flow model rather than introducing a parallel bed model. A new `@oxford/perioperative` domain module owns the `SurgicalEncounter` and the perioperative **journey state machine**, and **drives bed allocation/transfers through an injected facility/flow seam** (app-layer wiring to `FacilityService`/`FlowService`) — no cross-domain table access. Capacity numbers are the seeded topology: **6 × L2 inpatient, 3 × L1 recovery, 2 × L1 theatres, admit on L3** (confirmed by the Medical Director).
+- **Consequences:** one source of truth for "who is where"; the flow board (E1) shows perioperative patients automatically; module boundaries preserved via a seam. Theatre scheduling reuses the Phase 1 `scheduling` shared-resource calendar.
+
+## ADR-0024 — InventoryPort seam for theatre consumables/implants (real module is Phase 4)
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director — "approved as proposed")
+- **Context:** intra-op consumables/implants must deduct from stock and flow to billing (docs/01 §E7), but the inventory/ERP module is Phase 4.
+- **Decision:** capture consumables/implants at point of use behind an **`InventoryPort` seam** (a stub records the deduction now; the real `@oxford/inventory` adapter is wired in Phase 4). Billing of consumables uses the existing `@oxford/billing` via a port (integer fils stays in billing). Implant/lot identifiers are captured for traceability now regardless of the inventory backend.
+- **Consequences:** the theatre flow is built and tested now; real stock deduction lands with Phase 4 behind the same seam (mirrors RI Witness/KMS seam pattern).
+
+## ADR-0025 — PharmacyPort seam; discharge gated on prescription fulfilment (real is E8 pharmacy)
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director — "approved as proposed")
+- **Context:** discharge from L2 is **gated on the discharge prescription being fulfilled/handed over by the Ground-floor pharmacy** + a follow-up booking (docs/01 §E7), but the pharmacy module (E8) is later.
+- **Decision:** model discharge-prescription fulfilment behind a **`PharmacyPort` seam** (a stub marks fulfilment now; the real pharmacy adapter is wired with E8). Discharge from L2 is **blocked** until the port reports the prescription fulfilled/handed over and a follow-up is booked — enforced server-side, adversarially tested.
+- **Consequences:** the discharge gate (a patient-safety control) is built and proven now; the real pharmacy integration slots in behind the seam without changing the gate.
+
+_(Claude Code: continue numbering from ADR-0026.)_

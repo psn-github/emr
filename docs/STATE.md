@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** **Phase 2 — Fertility EMR & IVF laboratory — BUILD COMPLETE; awaiting exit-gate sign-off (HOLD).** PRs 2.0→2.9 all merged to `main`. Phases 0 + 1 also complete. A complete antagonist-ICSI cycle runs end-to-end through the stack with no spreadsheet (closeout e2e, PR 2.9). Decisions in force: RI Witness behind a stub (ADR-0018); no time-lapse device — vendor-neutral seam (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); om-software tool-by-tool replacement (ADR-0020). **Do not start Phase 3 until the Medical Director signs off the Phase 2 exit gate.**
-- **Last updated:** 2026-06-13 — **Phase 2 SIGNED OFF**; both pre-Phase-3 configurable items shipped (PR 2.11 marital-status disposition pathway; PR 2.12 PGT capture). **Next: propose the Phase 3 plan (theatres/perioperative/beds) for sign-off before coding.** **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
+- **Phase:** **Phase 3 — Theatres, perioperative journey & beds (in progress).** Phases 0–2 complete on `main` (Phase 2 signed off; PRs 2.0→2.12 incl. cryostore go-live wiring, marital-status disposition, PGT capture). Phase 3 approved "as proposed" (PR plan 3.0→3.8); ADR-0023/0024/0025 set the facility-reuse + InventoryPort + PharmacyPort decisions. Building on the Phase 1 `facility`/`flow` + `scheduling` models.
+- **Last updated:** 2026-06-13 — **Phase 3 started** (approved as proposed). PR 3.0 (kickoff ADRs 0023/0024/0025) done; **PR 3.1 (SurgicalEncounter + journey state machine) next**. **Still open (gates cutover, not the build):** specific marital-status disposition rule + permitted PGT indications (clinic counsel — mechanisms built configurable, values awaited); numeric MOH storage ceiling (config); CooperSurgical RI Witness scoping (MD emailing); om-software read access.
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -40,6 +40,14 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Phase 3 kickoff: alignment + decision ADRs (PR 3.0)
+**Shipped (docs only).** Phase 2 signed off; Phase 3 (theatres, perioperative journey & beds — docs/01 §E7) approved "as proposed" (PR plan 3.0→3.8). Decisions recorded:
+- **ADR-0023** — Phase 3 **reuses the Phase 1 `facility`/`flow` model** (no parallel bed model). A new `@oxford/perioperative` module owns `SurgicalEncounter` + the journey state machine and drives bed allocation/transfers via an injected facility/flow seam. Confirmed capacity (already seeded): **6 × L2 inpatient, 3 × L1 recovery, 2 × L1 theatres, admit on L3**. Theatre scheduling reuses the Phase 1 `scheduling` shared-resource calendar.
+- **ADR-0024** — **InventoryPort** seam for intra-op consumables/implants (stub now; real `@oxford/inventory` in Phase 4); consumable billing via the existing billing port; implant/lot captured for traceability now.
+- **ADR-0025** — **PharmacyPort** seam; **discharge from L2 blocked until the discharge prescription is fulfilled/handed over + follow-up booked** (stub now; real with E8 pharmacy); enforced server-side, adversarially tested.
+**Anaesthesia drugs** reuse/extend the controlled **formulary** (no free text). **CSSD** built to the P0 traceability bar (set composition + cycle + per-patient usage); turnaround/cleaning status is P1 (deferred).
+**Next:** PR 3.1 — `SurgicalEncounter` + perioperative journey state machine + audited bed/floor movements (on facility/flow); adversarial (illegal transitions blocked, capacity overflow flagged).
 
 ## 2026-06-13 — PGT order/consent/result capture (PR 2.12)
 **Shipped (second of the two pre-Phase-3 items).** PGT capture in `@oxford/embryology` (docs/01 §E4 P1; the genetics lab itself stays external). `PgtService.orderPgt` requires a **captured consent** AND an **indication in the clinic's permitted set**; `recordPgtResult` captures the external lab's result (euploid/aneuploid/mosaic/no_result) against the order. **Permitted indications are configuration, bounded by counsel — the default is EMPTY, so PGT orders are rejected until the clinic configures its counsel-confirmed set** (conservative; no permissive default). Pure `pgt.ts` + `PgtService` (100%); in-memory + Postgres stores; schema + forward-only additive migration 0002. App: `PgtService` wired in the composition root with an empty `PGT_PERMITTED_INDICATIONS` config; embryology router `orderPgt` / `recordPgtResult` (MFA-gated).
