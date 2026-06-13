@@ -35,4 +35,12 @@ export class AuditLog {
   async entries(): Promise<readonly ChainRecord<AuditPayload>[]> {
     return this.log.records();
   }
+
+  /** The ordered audit trail for one entity — the one-click compliance export
+   *  (docs/01 §E12; document 03). Records keep their chain fields so the export
+   *  is independently verifiable. */
+  async entriesForEntity(entityType: string, entityId: string): Promise<readonly ChainRecord<AuditPayload>[]> {
+    const all = await this.log.records();
+    return all.filter((r) => r.payload.entityType === entityType && r.payload.entityId === entityId);
+  }
 }
