@@ -41,6 +41,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-06-13 — Monitoring-visit workflow + trigger calculator + procedures (PR 2.3)
+**Shipped:** `@oxford/fertility` monitoring — `MonitoringService.recordVisit` (clinician decision continue/adjust/**trigger**/cancel; audited + event), the **trigger-timing calculator** (`computeRetrievalTime` = trigger + 36h default, configurable; `countdownHours`) — a `trigger` decision **auto-creates the retrieval `Procedure`** at the computed time; `scheduleProcedure` + `linkTheatreBooking` (the theatre slot itself is booked in the app layer via scheduling — logical `theatreBookingRef`). Drizzle schema + migration; Postgres store, integration-tested. **100% coverage** (35 tests).
+**Open / needs product owner:** none new.
+**Next:** PR 2.4 — **witnessing seam + reconciliation** (WitnessingProvider stub per ADR-0018; blocking-on-divergence; 100%; no competing witness UI); adversarial review (witnessing).
+
 ## 2026-06-13 — om-software replacement strategy + map (ADR-0020, docs/07)
 **Shipped (docs):** **ADR-0020** — the EMR **replaces** the om-software first-gen tools **tool-by-tool, never big-bang**: (1) parallel-run gate per tool, (2) no decommission without proven data migration (+ reconciliation report; "history never lost" holds), (3) map-don't-fork (reimplement on the EMR foundation, don't copy HTML/Flask/SQLite). New **docs/07** replacement map (each tool → target module → data to migrate → phase → parallel-run/decommission gate). docs/01 §E note; docs/05 Phase 2 gains per-tool migration sequencing (embryo follow-up→E4, semen-analysis→E5, Document Ledger/HTML tools→E2/E0; Cliniko patient-context→E1 already Phase 1). Phase 0/1 plan unchanged.
 **Open / needs product owner:** om-software **retirement order** + **archive-vs-migrate per tool**; **om-software read access** for field-level mapping (and the stim dosing-calculator port).

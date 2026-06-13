@@ -32,3 +32,11 @@ export type {
 export { StimulationService } from "./stim-service.js";
 export { type StimStore, InMemoryStimStore } from "./stim-store.js";
 export { PgStimStore } from "./stim-pg-store.js";
+
+// Monitoring-visit workflow + trigger calculator + procedures.
+export { computeRetrievalTime, countdownHours, DEFAULT_TRIGGER_TO_RETRIEVAL_HOURS } from "./trigger.js";
+export type { MonitoringVisit, MonitoringVisitId, MonitoringDecision, Procedure, ProcedureId, ProcedureType } from "./monitoring.js";
+export { MonitoringService, type RecordVisitInput, type VisitResult } from "./monitoring-service.js";
+export { type MonitoringStore, InMemoryMonitoringStore } from "./monitoring-store.js";
+export { PgMonitoringStore } from "./monitoring-pg-store.js";
+export { monitoringVisit, procedure } from "./schema.js";
