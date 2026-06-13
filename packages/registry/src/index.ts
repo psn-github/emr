@@ -16,7 +16,8 @@ export {
   assertMayStartFertility,
   type MarriageVerification,
 } from "./marriage.js";
-export { RegistryService, type VerifyMarriageInput } from "./registry-service.js";
+export { personIsLiving, type DeathRecord, type DeathRecordId } from "./vital-status.js";
+export { RegistryService, type VerifyMarriageInput, type RecordDeathInput } from "./registry-service.js";
 export { InMemoryRegistryStore, type RegistryStore } from "./store.js";
 export { PgRegistryStore } from "./pg-store.js";
-export { registrySchema, person, couple, marriageVerification } from "./schema.js";
+export { registrySchema, person, couple, marriageVerification, deathRecord } from "./schema.js";

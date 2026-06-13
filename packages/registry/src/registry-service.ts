@@ -3,16 +3,22 @@ import { ok, err, newId, notFound, validationError, AppError } from "@oxford/cor
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type { KeyProvider } from "@oxford/crypto";
 import type { Couple, CoupleId } from "./couple.js";
-import { assertMayStartFertility } from "./marriage.js";
+import { assertMayStartFertility, isMarriageVerified } from "./marriage.js";
 import type { MarriageVerification } from "./marriage.js";
 import type { Person, PersonId, RegisterPersonInput } from "./person.js";
 import type { RegistryStore } from "./store.js";
+import { personIsLiving, type DeathRecord } from "./vital-status.js";
 
 const CIVIL_ID_AAD = "person.civil_id";
 
 export interface VerifyMarriageInput {
   readonly documentRef: string;
   readonly method: string;
+}
+
+export interface RecordDeathInput {
+  readonly dateOfDeath: string;
+  readonly documentRef: string;
 }
 
 /**
@@ -150,6 +156,48 @@ export class RegistryService {
     const couple = await this.store.getCouple(coupleId);
     if (couple === null) return err(notFound("couple not found", "registry.couple.not_found"));
     return assertMayStartFertility(couple);
+  }
+
+  /**
+   * Record a CLINICIAN-ATTESTED death (Medical Director decision, 2026-06-13) —
+   * the authoritative source for the cryostore no-posthumous-use gate. One record
+   * per person; re-attestation is rejected (a death record is not casually
+   * overwritten). The attesting clinician is the actor.
+   */
+  async recordDeath(actorId: string, personId: PersonId, input: RecordDeathInput): Promise<Result<DeathRecord, AppError>> {
+    const person = await this.store.getPerson(personId);
+    if (person === null) return err(notFound("person not found", "registry.person.not_found"));
+    const existing = await this.store.getDeathRecord(personId);
+    if (existing !== null) return err(validationError("a death record already exists for this person", "registry.death.already_recorded"));
+    const record: DeathRecord = {
+      id: newId<"DeathRecord">(),
+      personId,
+      dateOfDeath: input.dateOfDeath,
+      attestedBy: actorId,
+      documentRef: input.documentRef,
+      recordedAt: this.clock.now().toISOString(),
+    };
+    await this.store.saveDeathRecord(record);
+    await this.audit.record({ actorId, entityType: "Person", entityId: personId, action: "UPDATE", before: { living: true }, after: { living: false, dateOfDeath: input.dateOfDeath } });
+    await this.events.emit({ type: "DeathRecorded", aggregateType: "Person", aggregateId: personId, data: { dateOfDeath: input.dateOfDeath } });
+    return ok(record);
+  }
+
+  /** Authoritative vital status for the no-posthumous-use gate. */
+  async isPersonLiving(personId: PersonId): Promise<boolean> {
+    return personIsLiving(await this.store.getDeathRecord(personId));
+  }
+
+  /** Does this couple have a current verified marriage? (cryostore thaw fact) */
+  async isCoupleVerified(coupleId: CoupleId): Promise<boolean> {
+    const couple = await this.store.getCouple(coupleId);
+    return couple !== null && isMarriageVerified(couple);
+  }
+
+  /** Is this person a member of the couple? (cryostore thaw fact) */
+  async coupleIncludes(coupleId: CoupleId, personId: PersonId): Promise<boolean> {
+    const couple = await this.store.getCouple(coupleId);
+    return couple !== null && (couple.husbandPersonId === personId || couple.wifePersonId === personId);
   }
 
   /** Reveal a Civil ID (restricted, audited as a sensitive export). The value is

@@ -50,6 +50,9 @@ importers:
       '@oxford/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@oxford/cryostore':
+        specifier: workspace:*
+        version: link:../../packages/cryostore
       '@oxford/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto

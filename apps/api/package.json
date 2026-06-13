@@ -25,6 +25,7 @@
     "@oxford/embryology": "workspace:*",
     "@oxford/andrology": "workspace:*",
     "@oxford/outcomes": "workspace:*",
+    "@oxford/cryostore": "workspace:*",
     "@oxford/migration": "workspace:*",
     "@trpc/server": "^11.0.0",
     "pg": "^8.13.1"

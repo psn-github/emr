@@ -5,6 +5,7 @@ import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
 import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
+import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction } from "@oxford/cryostore";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -66,6 +67,67 @@ export const appRouter = router({
         );
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "verify failed" });
         return { status: r.value.status };
+      }),
+
+    // Clinician-attested death record — the authoritative vital status for the
+    // cryostore no-posthumous-use gate. Restricted permission.
+    recordDeath: protectedProcedure("clinical:vital_status.write")
+      .input((v: unknown) => v as { personId: string; dateOfDeath: string; documentRef: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.registry.recordDeath(ctx.session.subject.staffId, asId<"Person">(input.personId), { dateOfDeath: input.dateOfDeath, documentRef: input.documentRef });
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "record death failed" });
+        return { deathRecordId: r.value.id };
+      }),
+  }),
+
+  // Cryostorage. Lab custody (freeze/thaw/discard/consent/locate) is the
+  // embryology domain; the annual storage charge + non-engagement pathway is the
+  // financial domain. The thaw re-gate enforces ownership + the no-posthumous-use
+  // invariant via registry facts (no override).
+  cryostore: router({
+    freeze: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { kind: SpecimenKind; owner: SpecimenOwner; cycleId: string; straws: number; position: CryoPosition; freezeEventRef: string; patientId: string; occurredAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cryostore.freezeIntoStorage(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "CONFLICT", message: r.error.detailKey ?? "freeze failed" });
+        return { specimenId: r.value.id };
+      }),
+    thaw: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { specimenId: string; coupleId: string; patientId: string; occurredAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cryostore.thawForTreatment(ctx.session.subject.staffId, asId<"CryoSpecimen">(input.specimenId), input.coupleId, input.patientId, input.occurredAt);
+        if (!r.ok) {
+          const blocked = r.error.code === "FORBIDDEN" || r.error.code === "PRECONDITION_FAILED";
+          throw new TRPCError({ code: blocked ? "FORBIDDEN" : "BAD_REQUEST", message: r.error.detailKey ?? "thaw blocked" });
+        }
+        return { status: r.value.status };
+      }),
+    recordConsent: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { specimenId: string; consentedAt: string; storageYears: number })
+      .mutation(async ({ ctx, input }) => {
+        const c = await ctx.services.cryostore.recordStorageConsent(ctx.session.subject.staffId, asId<"CryoSpecimen">(input.specimenId), input.consentedAt, input.storageYears);
+        return { consentId: c.id, expiresAt: c.expiresAt };
+      }),
+    locate: protectedProcedure("embryology:lab.read")
+      .input((v: unknown) => v as { specimenId: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.cryostore.locate(asId<"CryoSpecimen">(input.specimenId));
+        if (!r.ok) throw new TRPCError({ code: "NOT_FOUND", message: r.error.detailKey ?? "not found" });
+        return r.value;
+      }),
+    raiseAnnualCharge: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { specimenId: string; patientId: string; chargeCode: string; descriptionEn: string; descriptionAr: string; amountFils: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cryostore.raiseAnnualStorageCharge(ctx.session.subject.staffId, asId<"CryoSpecimen">(input.specimenId), input.patientId, { chargeCode: input.chargeCode, descriptionEn: input.descriptionEn, descriptionAr: input.descriptionAr, amountFils: input.amountFils });
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "charge failed" });
+        return { invoiceId: r.value.invoiceId };
+      }),
+    advanceEngagement: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { specimenId: string; action: EngagementAction })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cryostore.advanceEngagement(ctx.session.subject.staffId, asId<"CryoSpecimen">(input.specimenId), input.action);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "bad transition" });
+        return { state: r.value };
       }),
   }),
 

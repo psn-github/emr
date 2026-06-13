@@ -53,5 +53,18 @@
 - **Status:** **approved** — build in PR 2.7; terminal disposition gated on the pending legal confirms (does not auto-destroy).
 - **Product-owner decision:** Approved 2026-06-13 (Medical Director).
 
+## AMD-0004 — Vital-status source, cryo storage period, and RI Witness status (Medical Director answers)
+- **Date:** 2026-06-13
+- **Raised by:** Medical Director (answers to the Phase 2 exit-gate open items)
+- **Type:** clarification (**resolved**)
+- **Documents involved:** docs/01 §E6, docs/03 §1/§2, docs/02 §Witnessing
+- **Answers:**
+  1. **Vital status → "Clinician attested death record."** → Recorded as **ADR-0021**: a clinician-attested `registry.death_record` is the authoritative source for the cryostore no-posthumous-use gate. **Built + wired** (PR 2.10): `registry.recordDeath` (restricted `clinical:vital_status.write`, audited), `isPersonLiving`, and the cryostore `UseGate`; adversarial e2e proves an attested death blocks thaw on real Postgres. **This closes the deferred cryostore API-wiring open item.**
+  2. **Cryo storage period → "per annum, as long as fees paid; as per MOH regulations otherwise."** → Recorded as **ADR-0022**. Already implemented: annual storage billing + configurable consent expiry; lapses route through the never-auto-destroy non-engagement pathway (MOH-governed disposition is a reviewed human step). Only the specific MOH numeric ceiling remains, captured as config when confirmed. **"Cryo storage max period" legal-confirm item: resolved in principle.**
+  3. **RI Witness → "Will sort — email to be sent to them."** → CooperSurgical scoping is being initiated by the MD (email). No build action; the `RiWitnessStubProvider` stays behind the seam (ADR-0018) until the real adapter is scoped + residency-reviewed.
+- **Still open with clinic legal counsel:** specimen disposition on **marital-status change**; permitted **PGT indications**. (Built configurable; cutover blocked on these.)
+- **Status:** **resolved** — items 1 & 2 actioned in PR 2.10 (ADR-0021/0022); item 3 tracked as a PO/MD action.
+- **Product-owner decision:** confirmed by the Medical Director, 2026-06-13.
+
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.

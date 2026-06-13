@@ -39,3 +39,14 @@ export const marriageVerification = registrySchema.table("marriage_verification"
   verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
   method: text("method").notNull(),
 });
+
+// Clinician-attested death record (one per person) — the authoritative vital
+// status for the cryostore no-posthumous-use gate.
+export const deathRecord = registrySchema.table("death_record", {
+  personId: text("person_id").primaryKey(),
+  id: text("id").notNull(),
+  dateOfDeath: date("date_of_death").notNull(),
+  attestedBy: text("attested_by").notNull(),
+  documentRef: text("document_ref").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+});
