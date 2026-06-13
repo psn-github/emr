@@ -13,6 +13,9 @@ import type {
   StorageConsent,
   Tank,
   TankReading,
+  DispositionReview,
+  ReviewReason,
+  ReviewOutcome,
 } from "./types.js";
 import type { CryostoreStore } from "./store.js";
 import { positionKey } from "./store.js";
@@ -20,6 +23,7 @@ import type { WitnessPort, UseGate, BillingPort, StorageChargeLine } from "./por
 import { assertThawForTreatmentAllowed } from "./ownership.js";
 import { computeExpiry, isExpired, expiresWithin } from "./storage-period.js";
 import { nextEngagementState, type EngagementAction } from "./engagement.js";
+import { assertResolveAllowed, outcomeRequiresDiscard } from "./disposition-review.js";
 
 export interface FreezeInput {
   readonly kind: SpecimenKind;
@@ -262,5 +266,73 @@ export class CryostoreService {
 
   tankReadings(tankId: string): Promise<readonly TankReading[]> {
     return this.store.readingsForTank(tankId);
+  }
+
+  // ---- AMD-0004: marital-status-change disposition review ----
+  /**
+   * Open a disposition review over every STORED specimen of an owner (e.g. on a
+   * couple dissolution). Idempotent per specimen — an already-open review is left
+   * as-is. Opening a review NEVER changes a specimen's status; disposition is a
+   * separate reviewed human decision.
+   */
+  async openDispositionReview(actorId: string, owner: SpecimenOwner, reason: ReviewReason): Promise<readonly DispositionReview[]> {
+    const specimens = await this.store.specimensForOwner(owner.kind, owner.id);
+    const opened: DispositionReview[] = [];
+    for (const specimen of specimens) {
+      if (specimen.status !== "stored") continue;
+      if ((await this.store.openReviewForSpecimen(specimen.id)) !== undefined) continue;
+      const review: DispositionReview = {
+        id: newId<"DispositionReview">(),
+        specimenId: specimen.id,
+        reason,
+        state: "open",
+        outcome: null,
+        rationale: null,
+        openedBy: actorId,
+        openedAt: this.clock.now().toISOString(),
+        resolvedBy: null,
+        resolvedAt: null,
+      };
+      await this.store.saveReview(review);
+      await this.audit.record({ actorId, entityType: "DispositionReview", entityId: review.id, action: "CREATE", after: { specimenId: specimen.id, reason } });
+      opened.push(review);
+    }
+    await this.events.emit({ type: "DispositionReviewOpened", aggregateType: "CryoSpecimen", aggregateId: owner.id, data: { reason, count: opened.length } });
+    return opened;
+  }
+
+  /**
+   * Resolve a disposition review with an explicit human decision + rationale.
+   * `retain` keeps the specimen in storage; `discard` routes through the
+   * witnessed, audited discard. There is no automatic resolution.
+   */
+  async resolveDispositionReview(
+    actorId: string,
+    specimenId: CryoSpecimenId,
+    outcome: ReviewOutcome,
+    rationale: string,
+    patientId: string,
+    occurredAt: string,
+  ): Promise<Result<DispositionReview, AppError>> {
+    const review = await this.store.openReviewForSpecimen(specimenId);
+    if (review === undefined) return err(notFound("no open disposition review for this specimen", "cryostore.review.not_open"));
+    const allowed = assertResolveAllowed(review, rationale);
+    if (!allowed.ok) return err(allowed.error);
+    if (outcomeRequiresDiscard(outcome)) {
+      const discarded = await this.discard(actorId, specimenId, `disposition review: ${rationale}`, patientId, occurredAt);
+      if (!discarded.ok) return err(discarded.error);
+    }
+    const resolved: DispositionReview = { ...review, state: "resolved", outcome, rationale, resolvedBy: actorId, resolvedAt: this.clock.now().toISOString() };
+    await this.store.saveReview(resolved);
+    await this.audit.record({ actorId, entityType: "DispositionReview", entityId: review.id, action: "UPDATE", before: { state: "open" }, after: { state: "resolved", outcome } });
+    await this.events.emit({ type: "DispositionReviewResolved", aggregateType: "CryoSpecimen", aggregateId: specimenId, data: { outcome } });
+    return ok(resolved);
+  }
+
+  openReview(specimenId: CryoSpecimenId): Promise<DispositionReview | undefined> {
+    return this.store.openReviewForSpecimen(specimenId);
+  }
+  reviewHistory(specimenId: CryoSpecimenId): Promise<readonly DispositionReview[]> {
+    return this.store.reviewsForSpecimen(specimenId);
   }
 }

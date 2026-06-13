@@ -5,6 +5,7 @@ import type {
   CryoSpecimenId,
   CryoPosition,
   CustodyEvent,
+  DispositionReview,
   EngagementState,
   SpecimenOwner,
   StorageConsent,
@@ -103,12 +104,30 @@ export class PgCryostoreStore implements CryostoreStore {
     const r = await this.pool.query<{ state: string }>("SELECT state FROM cryostore.engagement WHERE specimen_id = $1", [specimenId]);
     return (r.rows[0]?.state as EngagementState | undefined) ?? "current";
   }
+
+  async saveReview(review: DispositionReview): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO cryostore.disposition_review (id, specimen_id, reason, state, outcome, rationale, opened_by, opened_at, resolved_by, resolved_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state, outcome=EXCLUDED.outcome, rationale=EXCLUDED.rationale, resolved_by=EXCLUDED.resolved_by, resolved_at=EXCLUDED.resolved_at`,
+      [review.id, review.specimenId, review.reason, review.state, review.outcome, review.rationale, review.openedBy, review.openedAt, review.resolvedBy, review.resolvedAt],
+    );
+  }
+  async openReviewForSpecimen(specimenId: CryoSpecimenId): Promise<DispositionReview | undefined> {
+    const r = await this.pool.query<ReviewRow>("SELECT * FROM cryostore.disposition_review WHERE specimen_id = $1 AND state = 'open' ORDER BY opened_at LIMIT 1", [specimenId]);
+    return r.rows[0] ? reviewFrom(r.rows[0]) : undefined;
+  }
+  async reviewsForSpecimen(specimenId: CryoSpecimenId): Promise<readonly DispositionReview[]> {
+    const r = await this.pool.query<ReviewRow>("SELECT * FROM cryostore.disposition_review WHERE specimen_id = $1 ORDER BY opened_at", [specimenId]);
+    return r.rows.map(reviewFrom);
+  }
 }
 
 interface SpecimenRow { id: string; kind: string; owner: SpecimenOwner; cycle_id: string; straws: number; position: CryoPosition; status: string; freeze_event_ref: string; witness_key: string; created_at: Date }
 interface CustodyRow { id: string; specimen_id: string; type: string; from_position: CryoPosition | null; to_position: CryoPosition | null; occurred_at: Date; operator: string; witness_key: string }
 interface ConsentRow { id: string; specimen_id: string; consented_at: Date; expires_at: Date; renewed_at: Date | null }
 interface ReadingRow { id: string; tank_id: string; temperature_c: number; nitrogen_level_pct: number; recorded_at: Date }
+interface ReviewRow { id: string; specimen_id: string; reason: string; state: string; outcome: string | null; rationale: string | null; opened_by: string; opened_at: Date; resolved_by: string | null; resolved_at: Date | null }
 
 const iso = (d: Date): string => new Date(d).toISOString();
 
@@ -149,4 +168,18 @@ function consentFrom(r: ConsentRow): StorageConsent {
 }
 function readingFrom(r: ReadingRow): TankReading {
   return { id: asId<"TankReading">(r.id), tankId: r.tank_id, temperatureC: r.temperature_c, nitrogenLevelPct: r.nitrogen_level_pct, recordedAt: iso(r.recorded_at) };
+}
+function reviewFrom(r: ReviewRow): DispositionReview {
+  return {
+    id: asId<"DispositionReview">(r.id),
+    specimenId: asId<"CryoSpecimen">(r.specimen_id),
+    reason: r.reason as DispositionReview["reason"],
+    state: r.state as DispositionReview["state"],
+    outcome: r.outcome as DispositionReview["outcome"],
+    rationale: r.rationale,
+    openedBy: r.opened_by,
+    openedAt: iso(r.opened_at),
+    resolvedBy: r.resolved_by,
+    resolvedAt: r.resolved_at ? iso(r.resolved_at) : null,
+  };
 }

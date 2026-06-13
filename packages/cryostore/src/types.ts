@@ -80,3 +80,26 @@ export interface TankReading {
  *  no automated-destruction state — terminal disposition is a reviewed human
  *  step bounded by the pending legal confirms. */
 export type EngagementState = "current" | "reminded" | "overdue" | "in_legal_review";
+
+export type DispositionReviewId = Id<"DispositionReview">;
+
+/** Why a specimen entered disposition review. Extensible; marital-status change
+ *  (couple dissolution) is the first reason (AMD-0004). */
+export type ReviewReason = "marital_status_change";
+
+/** The reviewed human decision. `retain` keeps the specimen in storage; `discard`
+ *  routes through the witnessed, audited discard. Never automatic. */
+export type ReviewOutcome = "retain" | "discard";
+
+export interface DispositionReview {
+  readonly id: DispositionReviewId;
+  readonly specimenId: CryoSpecimenId;
+  readonly reason: ReviewReason;
+  readonly state: "open" | "resolved";
+  readonly outcome: ReviewOutcome | null;
+  readonly rationale: string | null;
+  readonly openedBy: string;
+  readonly openedAt: string;
+  readonly resolvedBy: string | null;
+  readonly resolvedAt: string | null;
+}

@@ -5,7 +5,7 @@ import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod } from "@oxford/billing";
 import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
-import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction } from "@oxford/cryostore";
+import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
 import { router, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData } from "./patient-access.js";
 
@@ -78,6 +78,18 @@ export const appRouter = router({
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "record death failed" });
         return { deathRecordId: r.value.id };
       }),
+
+    // Dissolve a couple on a marital-status change and OPEN a cryostore
+    // disposition review of its specimens (never auto-disposes; AMD-0004).
+    dissolveCouple: protectedProcedure("clinical:patient.register")
+      .input((v: unknown) => v as { coupleId: string; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const actor = ctx.session.subject.staffId;
+        const d = await ctx.services.registry.dissolveCouple(actor, asId<"Couple">(input.coupleId), input.reason);
+        if (!d.ok) throw new TRPCError({ code: "BAD_REQUEST", message: d.error.detailKey ?? "dissolve failed" });
+        const opened = await ctx.services.cryostore.openDispositionReview(actor, { kind: "couple", id: input.coupleId }, "marital_status_change");
+        return { status: d.value.status, reviewsOpened: opened.length };
+      }),
   }),
 
   // Cryostorage. Lab custody (freeze/thaw/discard/consent/locate) is the
@@ -128,6 +140,15 @@ export const appRouter = router({
         const r = await ctx.services.cryostore.advanceEngagement(ctx.session.subject.staffId, asId<"CryoSpecimen">(input.specimenId), input.action);
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "bad transition" });
         return { state: r.value };
+      }),
+    // Resolve a marital-status disposition review — an explicit human decision
+    // (retain / witnessed-discard) with a recorded rationale. Never automatic.
+    resolveDispositionReview: protectedProcedure("embryology:lab.write")
+      .input((v: unknown) => v as { specimenId: string; outcome: ReviewOutcome; rationale: string; patientId: string; occurredAt: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cryostore.resolveDispositionReview(ctx.session.subject.staffId, asId<"CryoSpecimen">(input.specimenId), input.outcome, input.rationale, input.patientId, input.occurredAt);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "resolve failed" });
+        return { state: r.value.state, outcome: r.value.outcome };
       }),
   }),
 

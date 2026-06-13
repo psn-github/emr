@@ -72,4 +72,22 @@ describe("RegistryService thaw facts (couple membership + verification)", () => 
     expect(await service.isCoupleVerified("nope" as never)).toBe(false);
     expect(await service.coupleIncludes("nope" as never, h.id)).toBe(false);
   });
+
+  it("dissolveCouple sets dissolved (idempotent) and rejects an unknown couple", async () => {
+    const { service, events } = build();
+    const h = await service.registerPerson("doc-1", male);
+    const w = await service.registerPerson("doc-1", female);
+    const couple = await service.createCouple("doc-1", h.id, w.id);
+    if (!couple.ok) return;
+    const d = await service.dissolveCouple("doc-1", couple.value.id, "divorce");
+    expect(d.ok && d.value.status).toBe("dissolved");
+    expect((await events.events()).at(-1)!.payload.type).toBe("CoupleDissolved");
+    // idempotent
+    const again = await service.dissolveCouple("doc-1", couple.value.id, "divorce");
+    expect(again.ok && again.value.status).toBe("dissolved");
+    // unknown couple
+    const missing = await service.dissolveCouple("doc-1", "nope" as never, "x");
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.error.detailKey).toBe("registry.couple.not_found");
+  });
 });

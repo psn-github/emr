@@ -1,4 +1,4 @@
-import type { CryoSpecimen, CryoSpecimenId, CustodyEvent, EngagementState, StorageConsent, Tank, TankReading } from "./types.js";
+import type { CryoSpecimen, CryoSpecimenId, CustodyEvent, DispositionReview, EngagementState, StorageConsent, Tank, TankReading } from "./types.js";
 
 export interface CryostoreStore {
   saveTank(t: Tank): Promise<void>;
@@ -22,6 +22,10 @@ export interface CryostoreStore {
 
   saveEngagement(specimenId: CryoSpecimenId, state: EngagementState): Promise<void>;
   engagementFor(specimenId: CryoSpecimenId): Promise<EngagementState>;
+
+  saveReview(review: DispositionReview): Promise<void>;
+  openReviewForSpecimen(specimenId: CryoSpecimenId): Promise<DispositionReview | undefined>;
+  reviewsForSpecimen(specimenId: CryoSpecimenId): Promise<readonly DispositionReview[]>;
 }
 
 /** A position is unique across the topology; this key addresses it. */
@@ -35,6 +39,7 @@ export class InMemoryCryostoreStore implements CryostoreStore {
   private readonly consents: StorageConsent[] = [];
   private readonly readings: TankReading[] = [];
   private readonly engagement = new Map<string, EngagementState>();
+  private readonly reviews: DispositionReview[] = [];
 
   async saveTank(t: Tank): Promise<void> {
     this.tankList.push(t);
@@ -84,5 +89,16 @@ export class InMemoryCryostoreStore implements CryostoreStore {
   }
   async engagementFor(specimenId: CryoSpecimenId): Promise<EngagementState> {
     return this.engagement.get(specimenId) ?? "current";
+  }
+  async saveReview(review: DispositionReview): Promise<void> {
+    const idx = this.reviews.findIndex((r) => r.id === review.id);
+    if (idx >= 0) this.reviews[idx] = review;
+    else this.reviews.push(review);
+  }
+  async openReviewForSpecimen(specimenId: CryoSpecimenId): Promise<DispositionReview | undefined> {
+    return this.reviews.find((r) => r.specimenId === specimenId && r.state === "open");
+  }
+  async reviewsForSpecimen(specimenId: CryoSpecimenId): Promise<readonly DispositionReview[]> {
+    return this.reviews.filter((r) => r.specimenId === specimenId);
   }
 }

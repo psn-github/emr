@@ -74,3 +74,22 @@ export const engagement = cryostoreSchema.table("engagement", {
   specimenId: text("specimen_id").primaryKey(),
   state: text("state").notNull(),
 });
+
+// Marital-status-change disposition review (AMD-0004). Append-only; resolution is
+// a reviewed human decision (retain/discard) with a recorded rationale.
+export const dispositionReview = cryostoreSchema.table(
+  "disposition_review",
+  {
+    id: text("id").primaryKey(),
+    specimenId: text("specimen_id").notNull(),
+    reason: text("reason").notNull(),
+    state: text("state").notNull(),
+    outcome: text("outcome"),
+    rationale: text("rationale"),
+    openedBy: text("opened_by").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => ({ bySpecimen: index("disposition_review_specimen_idx").on(t.specimenId) }),
+);
