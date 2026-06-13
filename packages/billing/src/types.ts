@@ -58,6 +58,8 @@ export interface Payment {
   readonly receiptNo: string;
   /** Refund reason (empty for payments). */
   readonly reason: string;
+  /** The payment gateway's transaction reference (empty for manual/legacy rows). */
+  readonly gatewayRef: string;
   readonly at: string;
 }
 

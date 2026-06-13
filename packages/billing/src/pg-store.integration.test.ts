@@ -11,6 +11,7 @@ import { PgBillingStore } from "./pg-store.js";
 const DATABASE_URL = process.env.DATABASE_URL;
 const migration = readFileSync(new URL("../migrations/0001_billing.sql", import.meta.url), "utf8");
 const migration2 = readFileSync(new URL("../migrations/0002_billing_refunds.sql", import.meta.url), "utf8");
+const migration5 = readFileSync(new URL("../migrations/0005_billing_gateway.sql", import.meta.url), "utf8");
 
 describe.skipIf(!DATABASE_URL)("PgBillingStore", () => {
   const pool = new pg.Pool({ connectionString: DATABASE_URL });
@@ -19,6 +20,7 @@ describe.skipIf(!DATABASE_URL)("PgBillingStore", () => {
   beforeAll(async () => {
     await pool.query(migration);
     await pool.query(migration2);
+    await pool.query(migration5);
   });
   beforeEach(async () => {
     await pool.query("TRUNCATE billing.invoice, billing.payment");

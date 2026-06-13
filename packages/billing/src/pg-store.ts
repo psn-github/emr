@@ -25,9 +25,9 @@ export class PgBillingStore implements BillingStore {
 
   async savePayment(p: Payment): Promise<void> {
     await this.pool.query(
-      `INSERT INTO billing.payment (id, invoice_id, kind, amount_fils, method, taken_by, receipt_no, reason, at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [p.id, p.invoiceId, p.kind, p.amountFils, p.method, p.takenBy, p.receiptNo, p.reason, p.at],
+      `INSERT INTO billing.payment (id, invoice_id, kind, amount_fils, method, taken_by, receipt_no, reason, gateway_ref, at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [p.id, p.invoiceId, p.kind, p.amountFils, p.method, p.takenBy, p.receiptNo, p.reason, p.gatewayRef, p.at],
     );
   }
 
@@ -54,6 +54,7 @@ interface PaymentRow {
   taken_by: string;
   receipt_no: string;
   reason: string;
+  gateway_ref: string;
   at: Date;
 }
 
@@ -77,6 +78,7 @@ function paymentFrom(r: PaymentRow): Payment {
     takenBy: r.taken_by,
     receiptNo: r.receipt_no,
     reason: r.reason,
+    gatewayRef: r.gateway_ref,
     at: new Date(r.at).toISOString(),
   };
 }

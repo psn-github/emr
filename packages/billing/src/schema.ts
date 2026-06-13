@@ -72,6 +72,7 @@ export const payment = billingSchema.table(
     takenBy: text("taken_by").notNull(),
     receiptNo: text("receipt_no").notNull(),
     reason: text("reason").notNull().default(""),
+    gatewayRef: text("gateway_ref").notNull().default(""),
     at: timestamp("at", { withTimezone: true }).notNull(),
   },
   (t) => ({ byInvoice: index("payment_invoice_idx").on(t.invoiceId) }),

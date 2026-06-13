@@ -70,6 +70,7 @@ export class BillingService {
     invoiceId: InvoiceId,
     amountFils: number,
     method: PaymentMethod,
+    gatewayRef = "",
   ): Promise<Result<{ payment: Payment; totals: InvoiceTotals }, AppError>> {
     const amt = assertAmount(amountFils);
     if (!amt.ok) return err(amt.error);
@@ -94,6 +95,7 @@ export class BillingService {
       takenBy: actorId,
       receiptNo: `RCPT-${newId<"Payment">().slice(0, 8)}`,
       reason: "",
+      gatewayRef,
       at: this.clock.now().toISOString(),
     };
     await this.store.savePayment(payment);
@@ -116,6 +118,7 @@ export class BillingService {
     amountFils: number,
     method: PaymentMethod,
     reason: string,
+    gatewayRef = "",
   ): Promise<Result<{ refund: Payment; totals: InvoiceTotals }, AppError>> {
     const amt = assertAmount(amountFils);
     if (!amt.ok) return err(amt.error);
@@ -139,6 +142,7 @@ export class BillingService {
       takenBy: actorId,
       receiptNo: `RFND-${newId<"Payment">().slice(0, 8)}`,
       reason,
+      gatewayRef,
       at: this.clock.now().toISOString(),
     };
     await this.store.savePayment(refund);

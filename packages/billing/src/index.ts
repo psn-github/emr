@@ -35,6 +35,8 @@ export {
 export { validatePackage, recognise, type PackageInput, type PackageComponentInput, type Recognition } from "./packages.js";
 export { validatePlan, scheduledDue, progressionDecision, type InstalmentInput, type ProgressionDecision } from "./instalments.js";
 export { BillingService } from "./billing-service.js";
+export { StubPaymentGateway, type PaymentGatewayPort, type GatewayChargeRequest, type GatewayOutcome } from "./gateway.js";
+export { GatewayPaymentService } from "./gateway-payment-service.js";
 export { PackageService, type SellResult, type CaptureResult, type ComponentRecognition } from "./package-service.js";
 export { InstalmentService, type CreatePlanInput, type FinanceGate } from "./instalment-service.js";
 export { type BillingStore, InMemoryBillingStore } from "./store.js";
