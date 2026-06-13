@@ -14,7 +14,7 @@ import { I18n, coreMessages, type Catalog } from "@oxford/i18n";
 import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
 import { FacilityService, FlowService, PgFacilityStore, PgFlowStore, type PatientFlowStatus } from "@oxford/facility";
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
-import { BillingService, PgBillingStore, PackageService, PgPackageStore } from "@oxford/billing";
+import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
 import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, type WitnessPort } from "@oxford/embryology";
@@ -59,6 +59,7 @@ export interface Services {
   readonly notifications: NotificationService;
   readonly billing: BillingService;
   readonly packages: PackageService;
+  readonly instalments: InstalmentService;
   readonly clinical: ClinicalService;
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
@@ -132,6 +133,9 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // Packages & cycle bundles (ADR-0037): versioned config; selling raises the
   // package-price invoice via billing and tracks per-component recognition.
   const packages = new PackageService(new PgPackageStore(pool), billing, audit, events, clock);
+  // Deposits & instalment plans + the cycle-progression FinanceGate (ADR-0038).
+  // Grace days before an overdue instalment counts as arrears is config (default 0).
+  const instalments = new InstalmentService(new PgInstalmentStore(pool), billing, audit, events, clock);
   const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock);
 
   // Witnessing: RI Witness is authoritative (ADR-0018). A stub provider stands in
@@ -266,5 +270,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, pharmacyStub, notificationOutbox, witnessProvider };
 }

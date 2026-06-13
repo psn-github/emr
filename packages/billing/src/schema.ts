@@ -46,6 +46,21 @@ export const patientPackage = billingSchema.table(
   (t) => ({ byPatient: index("patient_package_patient_idx").on(t.patientId) }),
 );
 
+export const instalmentPlan = billingSchema.table(
+  "instalment_plan",
+  {
+    id: text("id").primaryKey(),
+    patientId: text("patient_id").notNull(),
+    invoiceId: text("invoice_id").notNull(),
+    totalFils: bigint("total_fils", { mode: "number" }).notNull(),
+    depositFils: bigint("deposit_fils", { mode: "number" }).notNull(),
+    instalments: jsonb("instalments").notNull().default([]),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ byPatient: index("instalment_plan_patient_idx").on(t.patientId) }),
+);
+
 export const payment = billingSchema.table(
   "payment",
   {

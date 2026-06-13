@@ -9,6 +9,7 @@ export type InvoiceId = Id<"Invoice">;
 export type PaymentId = Id<"Payment">;
 export type PackageId = Id<"Package">;
 export type PatientPackageId = Id<"PatientPackage">;
+export type InstalmentPlanId = Id<"InstalmentPlan">;
 
 export type InvoiceStatus = "open" | "paid";
 
@@ -103,4 +104,21 @@ export interface PatientPackage {
   readonly components: readonly PatientPackageComponent[];
   readonly status: "active" | "cancelled";
   readonly soldAt: string;
+}
+
+// Deposits & instalment plans (ADR-0038). A plan pays down an invoice; the
+// invoice's net payments are the source of truth for "paid".
+export interface Instalment {
+  readonly dueDate: string;
+  readonly amountFils: Fils;
+}
+export interface InstalmentPlan {
+  readonly id: InstalmentPlanId;
+  readonly patientId: string;
+  readonly invoiceId: string;
+  readonly totalFils: Fils;
+  readonly depositFils: Fils;
+  readonly instalments: readonly Instalment[];
+  readonly status: "active" | "cancelled";
+  readonly createdAt: string;
 }
