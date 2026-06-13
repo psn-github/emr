@@ -120,13 +120,13 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 
 ## ADR-0015 — Single-person fertility preservation is permitted; treatment/embryo creation stays couple-gated
 - **Date:** 2026-06-12
-- **Status:** accepted (supersedes the over-broad "all fertility requires marriage" reading; resolves AMD-0002)
-- **Context:** the spec gated **any** fertility workflow on a verified marriage. The product owner clarified that **fertility preservation** for an unmarried individual is permitted under Kuwaiti practice; only **treatment and embryo creation** require a couple.
+- **Status:** accepted (supersedes the over-broad "all fertility requires marriage" reading; resolves AMD-0002). **Legality + clinic-practice confirmed by the Medical Director, 2026-06-13 — closed, no legal-counsel gate remains.**
+- **Context:** the spec gated **any** fertility workflow on a verified marriage. The Medical Director confirmed that **fertility preservation** for an unmarried individual (oocyte/ovarian-tissue for single women; sperm/testicular-tissue for single men) is **legal in Kuwait and standard practice at the clinic**; only **treatment and embryo creation** require a couple.
 - **Decision:**
   - **Couple-gated (unchanged):** insemination, IUI, IVF/ICSI, embryo culture, embryo transfer, FET, and **embryo** storage require a verified `Couple` (the marriage hard-gate).
   - **Person-scoped (new, permitted unmarried):** oocyte / ovarian-tissue freezing (single woman) and sperm / testicular-tissue freezing (single man). A **fertility-preservation cycle type linked to a `Person`** — the only cycle type that may be person-scoped. `CryoSpecimen.owner` becomes `person_id` OR `couple_id`. Witnessing, chain-of-custody, consent-to-store, and storage-expiry apply identically.
   - **HARD INVARIANT:** person-owned gametes may never be used in treatment directly. **Thaw-for-treatment** of a person-owned specimen requires, at time of use: a verified `Couple` including that person, **current** marriage verification, and own-gametes-only resolution. Bypass attempts via the API must be server-rejected (adversarial test, Phase 2). **No posthumous-use pathway — not built.**
-  - Permitted single-woman-oocyte-freezing **indications** are a **configurable coded field** (medical vs elective/social), so clinic policy restricts without code. **[CONFIRM WITH CLINIC LEGAL COUNSEL]** — tracked in STATE.
+  - The **indication** (medical vs elective) is a **configurable coded field captured on every preservation cycle as clinical-governance data — NOT a legal gate** (the practice itself is confirmed legal). Configurable so the clinic can analyse/segment without code change.
 - **Consequences:** the model stays legally correct and least-permissive (treatment still requires a couple; preservation is the narrow, person-scoped exception with a use-time re-gate). Registry gating gains a treatment-vs-preservation distinction; full build lands in Phase 2 (cryostore/cycle). Detailed docs/01 §E3/§E6 + docs/04 edits accompany that build; docs/03 §1 updated now.
 
 ## ADR-0016 — Canonical om-software design system (supersedes docs/02 §2 fonts)
