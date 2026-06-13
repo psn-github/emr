@@ -819,6 +819,27 @@ export const appRouter = router({
         return r.value;
       }),
   }),
+
+  // KPI & outcome reporting (docs/01 §E12, ADR-0039) — read models over lab/outcome
+  // data; Vienna-consensus lab KPIs with competency/benchmark bands. Clinical
+  // reporting domain (MFA-gated). De-identifiable aggregates.
+  analytics: router({
+    cycleLabKpis: protectedProcedure("clinical:reports.read")
+      .input((v: unknown) => v as { cycleId: string })
+      .query(async ({ ctx, input }) => {
+        const counts = await ctx.services.embryology.labCounts(input.cycleId);
+        return { counts, kpis: ctx.services.analytics.labKpis(counts) };
+      }),
+    cycleOutcome: protectedProcedure("clinical:reports.read")
+      .input((v: unknown) => v as { cycleId: string })
+      .query(async ({ ctx, input }) => {
+        const k = await ctx.services.outcomes.kpiInputs(input.cycleId);
+        return ctx.services.analytics.outcomeReport({ cycles: 1, clinicalPregnancies: k.clinicalPregnancy ? 1 : 0, liveBirths: k.liveBirth ? 1 : 0 });
+      }),
+    labKpis: protectedProcedure("clinical:reports.read")
+      .input((v: unknown) => v as { oocytesRetrieved: number; maturedOocytes: number; inseminated: number; twoPn: number; blastocysts: number })
+      .query(({ ctx, input }) => ({ kpis: ctx.services.analytics.labKpis(input) })),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

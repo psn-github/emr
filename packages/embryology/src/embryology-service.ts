@@ -80,6 +80,16 @@ export interface CheckResult {
   readonly embryo: Embryo | null;
 }
 
+/** Aggregate per-cycle lab counts (the inputs to the lab KPIs in @oxford/analytics;
+ *  structurally matches its LabCounts — no cross-module dependency). */
+export interface LabCounts {
+  readonly oocytesRetrieved: number;
+  readonly maturedOocytes: number;
+  readonly inseminated: number;
+  readonly twoPn: number;
+  readonly blastocysts: number;
+}
+
 export interface EmbryoLifeHistory {
   readonly embryo: Embryo;
   readonly oocyte: Oocyte | undefined;
@@ -307,6 +317,29 @@ export class EmbryologyService {
   }
   transfers(cycleId: string): Promise<readonly EmbryoTransfer[]> {
     return this.store.transfersForCycle(cycleId);
+  }
+
+  /** Aggregate lab counts for a cycle — the inputs to the Vienna-consensus lab
+   *  KPIs (docs/01 §E12). A blastocyst is an embryo with a Gardner-graded entry. */
+  async labCounts(cycleId: string): Promise<LabCounts> {
+    const [oocytes, inseminations, checks, embryos] = await Promise.all([
+      this.store.oocytesForCycle(cycleId),
+      this.store.inseminationsForCycle(cycleId),
+      this.store.checksForCycle(cycleId),
+      this.store.embryosForCycle(cycleId),
+    ]);
+    let blastocysts = 0;
+    for (const e of embryos) {
+      const gradings = await this.store.gradingsForEmbryo(e.id);
+      if (gradings.some((g) => g.gardner !== null)) blastocysts += 1;
+    }
+    return {
+      oocytesRetrieved: oocytes.length,
+      maturedOocytes: oocytes.filter((o) => o.maturity === "MII").length,
+      inseminated: inseminations.length,
+      twoPn: checks.filter((c) => c.pn === "2PN").length,
+      blastocysts,
+    };
   }
 
   /** Reconstruct an embryo's life history from the lab records. */

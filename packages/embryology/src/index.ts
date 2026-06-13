@@ -51,6 +51,7 @@ export {
   type RecordTransferInput,
   type CheckResult,
   type EmbryoLifeHistory,
+  type LabCounts,
 } from "./embryology-service.js";
 export {
   embryologySchema,

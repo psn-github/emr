@@ -35,6 +35,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@oxford/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@oxford/andrology':
         specifier: workspace:*
         version: link:../../packages/andrology
@@ -120,6 +123,12 @@ importers:
       '@oxford/core':
         specifier: workspace:*
         version: link:../../packages/core
+
+  packages/analytics:
+    dependencies:
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/andrology:
     dependencies:
