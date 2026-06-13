@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { asId } from "@oxford/core";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
-import type { InvoiceLine, PaymentMethod, PackageInput } from "@oxford/billing";
+import type { InvoiceLine, PaymentMethod, PackageInput, ChargeSource } from "@oxford/billing";
 import type { SemenParameters } from "@oxford/andrology";
 import type { OutcomeType } from "@oxford/outcomes";
 import type { SpecimenKind, SpecimenOwner, CryoPosition, EngagementAction, ReviewOutcome } from "@oxford/cryostore";
@@ -789,6 +789,34 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const r = await ctx.services.instalments.assertProgressionAllowed(input.patientId, new Date(input.asOf));
         return { allowed: r.ok, reason: r.ok ? null : r.error.detailKey };
+      }),
+  }),
+
+  // Item-level charge capture (docs/01 §E11). Priced from the charge master (no
+  // free-text); captured charges (clinical/lab/theatre/pharmacy) recognise against
+  // packages and batch into invoices. Financial domain (MFA-gated).
+  charges: router({
+    defineCode: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { code: string; description: { ar: string; en: string }; unitAmountFils: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.charges.defineChargeCode(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invalid charge code" });
+        return { code: r.value.code };
+      }),
+    listCodes: protectedProcedure("financial:invoice.read").query(async ({ ctx }) => ({ codes: await ctx.services.charges.listChargeCodes() })),
+    capture: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { patientId: string; chargeCode: string; quantity: number; source: ChargeSource; occurredAt: string; patientPackageId?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.charges.capture(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "capture failed" });
+        return r.value;
+      }),
+    invoicePatient: protectedProcedure("financial:invoice.write")
+      .input((v: unknown) => v as { patientId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.charges.invoicePatient(ctx.session.subject.staffId, input.patientId);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "invoice failed" });
+        return r.value;
       }),
   }),
 });

@@ -10,6 +10,7 @@ export type PaymentId = Id<"Payment">;
 export type PackageId = Id<"Package">;
 export type PatientPackageId = Id<"PatientPackage">;
 export type InstalmentPlanId = Id<"InstalmentPlan">;
+export type ChargeId = Id<"Charge">;
 
 export type InvoiceStatus = "open" | "paid";
 
@@ -123,4 +124,35 @@ export interface InstalmentPlan {
   readonly instalments: readonly Instalment[];
   readonly status: "active" | "cancelled";
   readonly createdAt: string;
+}
+
+// Item-level charge capture (docs/01 §E11). Charges are priced from a CHARGE
+// MASTER (no free-text charges — like the drug formulary); captured charges from
+// clinical/lab/theatre/pharmacy events are later batched into an invoice. A charge
+// recognised against a package inclusion is recorded but not separately billable.
+
+export type ChargeSource = "clinical" | "lab" | "theatre" | "pharmacy";
+
+/** A priceable charge code (config; no free-text). */
+export interface ChargeMasterItem {
+  readonly code: string;
+  readonly description: BilingualText;
+  readonly unitAmountFils: Fils;
+  readonly active: boolean;
+}
+
+export interface Charge {
+  readonly id: ChargeId;
+  readonly patientId: string;
+  readonly chargeCode: string;
+  readonly description: BilingualText;
+  readonly quantity: number;
+  readonly unitAmountFils: Fils;
+  readonly source: ChargeSource;
+  readonly occurredAt: string;
+  /** Covered by a package inclusion → recorded for traceability, not billable. */
+  readonly recognised: boolean;
+  readonly patientPackageId: string | null;
+  /** Set once the (billable) charge has been rolled into an invoice. */
+  readonly invoiceId: string | null;
 }
