@@ -203,4 +203,39 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** model discharge-prescription fulfilment behind a **`PharmacyPort` seam** (a stub marks fulfilment now; the real pharmacy adapter is wired with E8). Discharge from L2 is **blocked** until the port reports the prescription fulfilled/handed over and a follow-up is booked — enforced server-side, adversarially tested.
 - **Consequences:** the discharge gate (a patient-safety control) is built and proven now; the real pharmacy integration slots in behind the seam without changing the gate.
 
-_(Claude Code: continue numbering from ADR-0026.)_
+## ADR-0026 — Real `@oxford/inventory` behind the Phase-3 InventoryPort seam
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director — "approved as proposed")
+- **Context:** Phase 3 captured theatre consumables/implants behind an `InventoryPort` stub (ADR-0024). Phase 4 builds the real inventory.
+- **Decision:** a new `@oxford/inventory` domain module provides multi-location stock with **lot + expiry tracking, FEFO issue, cold-chain logging, and min/max/par + critical-stock/expiry-imminent alerts**. It is wired behind the existing `InventoryPort` (the app adapter swaps the stub for the real `deduct`), so the Phase-3 theatre flow now deducts real stock with no change to the perioperative module. Inventory locations map onto the Phase-1 facility levels (Ground pharmacy / L1 / L2 / L3 / stores).
+- **Consequences:** consumable burn is real and lot-traced; the seam pattern means Phase 3 is unchanged; FEFO/alert logic is held to 100%.
+
+## ADR-0027 — Procurement accounts-payable money is separate from patient billing
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director)
+- **Context:** procurement involves supplier invoices (accounts payable); `@oxford/billing` is patient accounts-receivable.
+- **Decision:** procurement keeps its **own integer-fils AP money** (PO / GRN / supplier-invoice totals + the 3-way match) in the procurement module — NOT in `@oxford/billing`. Same money discipline (integer fils, no float, 100% on match logic); the two ledgers stay distinct and reconcile to finance separately (Phase 5).
+- **Consequences:** clean separation of AR (patient) and AP (supplier); no accidental cross-contamination of patient invoices with supplier costs.
+
+## ADR-0028 — Controlled-drugs register: generic + configurable Kuwaiti schedule
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director) — Kuwait schedule/reporting is a pending config/counsel value
+- **Context:** controlled substances need a reconciling register; the exact Kuwaiti controlled-substance schedule + MOH reporting format are not yet confirmed.
+- **Decision:** build a **generic controlled-drugs register** — receipts / issues / wastage with a **running balance that must reconcile and can never go negative** (100%, adversarial). Which items are controlled, and the regulatory reporting format, are **configuration** (a schedule list) populated when the clinic confirms with counsel. Do not hardcode a schedule.
+- **Consequences:** the safety/reconciliation mechanism ships now; the Kuwaiti schedule + reporting format drop into config later (logged as an open item).
+
+## ADR-0029 — Asset calibration blocking keyed off a per-asset criticality flag
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director)
+- **Context:** docs/01 §E10 requires **blocking** overdue-calibration alerts for critical equipment (e.g. incubators), and alert-only for the rest.
+- **Decision:** each asset carries a **criticality flag** (configuration). An overdue PPM/calibration on a **critical** asset **blocks its use** (a server-side gate, adversarially tested) and raises a lab-visible alert; non-critical overdue raises an alert only. Default use-blocking classes: incubators + anything flagged critical (clinic-configurable).
+- **Consequences:** the patient-safety control (no unsafe critical device in use) is enforced, not advisory; the blocking set is data, not code.
+
+## ADR-0030 — IVF media-lot ↔ embryo traceability via a lot id on culture records
+- **Date:** 2026-06-13
+- **Status:** accepted (Medical Director)
+- **Context:** a media lot used in culture must be traceable to the embryos cultured in it (docs/01 §E9 acceptance; E4 P1 lab-QC media-lot tracking) — for recall.
+- **Decision:** embryology records the **inventory media-lot id** on its culture/grading records; the traceability link is that lot id (no cross-module table access — embryology stores the string the inventory module issued). A **lot-recall query** answers "given a media lot → which embryos were cultured in it." Module boundaries preserved; the lot id is the join.
+- **Consequences:** a media-lot recall enumerates affected embryos directly; inventory and embryology stay decoupled (linked only by the lot id).
+
+_(Claude Code: continue numbering from ADR-0031.)_
