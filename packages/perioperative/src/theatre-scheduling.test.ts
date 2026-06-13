@@ -78,6 +78,18 @@ describe("TheatreSchedulingService", () => {
     expect(day.bedReservation.exceedsBeds).toBe(true);
   });
 
+  it("computes per-theatre utilisation for a day (only that theatre's cases)", async () => {
+    const { svc } = build();
+    await svc.scheduleCase("coord-1", caseInput({ patientId: "p1", start: "2026-06-25T09:00:00Z", end: "2026-06-25T10:00:00Z" }));
+    await svc.scheduleCase("coord-1", caseInput({ patientId: "p2", start: "2026-06-25T10:30:00Z", end: "2026-06-25T11:30:00Z" }));
+    // a case in a different theatre is excluded
+    await svc.scheduleCase("coord-1", caseInput({ patientId: "p3", theatreResourceId: "theatre-2", start: "2026-06-25T09:00:00Z", end: "2026-06-25T12:00:00Z" }));
+    const u = await svc.utilisation("theatre-1", "2026-06-25", 480);
+    expect(u.caseCount).toBe(2);
+    expect(u.bookedMinutes).toBe(120);
+    expect(u.turnaroundMinutes).toBe(30);
+  });
+
   it("cancels a case (and rejects a missing one)", async () => {
     const { svc } = build();
     const r = await svc.scheduleCase("coord-1", caseInput());

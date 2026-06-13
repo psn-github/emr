@@ -44,6 +44,29 @@ describe("FacilityService.setBedStatus", () => {
   });
 });
 
+describe("FacilityService.completeTurnaround", () => {
+  it("frees a cleaning bed; lists beds awaiting turnaround; rejects non-cleaning + missing", async () => {
+    const { svc } = build();
+    const loc = await svc.addLocation("L2", "inpatient_bed", { ar: "سرير", en: "Bed" }, 1);
+    const bed = await svc.addBed(loc.id, "L2-1");
+    // free → occupied → cleaning
+    await svc.setBedStatus("n", bed.id, "occupied");
+    await svc.setBedStatus("n", bed.id, "cleaning");
+    expect(await svc.bedsAwaitingTurnaround()).toHaveLength(1);
+
+    const done = await svc.completeTurnaround("housekeeping", bed.id);
+    expect(done.ok && done.value.status).toBe("free");
+    expect(await svc.bedsAwaitingTurnaround()).toHaveLength(0);
+
+    // a free bed can't be "turned around"
+    const notCleaning = await svc.completeTurnaround("housekeeping", bed.id);
+    expect(notCleaning.ok).toBe(false);
+    if (!notCleaning.ok) expect(notCleaning.error.detailKey).toBe("facility.bed.not_cleaning");
+    // unknown bed
+    expect((await svc.completeTurnaround("housekeeping", "nope" as never)).ok).toBe(false);
+  });
+});
+
 describe("seedFacility", () => {
   it("builds the real four-level layout: 9 beds (3 recovery + 6 inpatient), 19 locations", async () => {
     const { svc } = build();

@@ -320,6 +320,9 @@ export const appRouter = router({
     dayList: protectedProcedure("clinical:encounter.write")
       .input((v: unknown) => v as { scheduledDate: string })
       .query(async ({ ctx, input }) => ctx.services.theatreScheduling.dayList(input.scheduledDate)),
+    theatreUtilisation: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { theatreResourceId: string; scheduledDate: string; availableMinutes: number })
+      .query(async ({ ctx, input }) => ctx.services.theatreScheduling.utilisation(input.theatreResourceId, input.scheduledDate, input.availableMinutes)),
 
     // Pre-operative assessment (anaesthetic hx, airway, ASA, fasting, consent).
     recordPreOp: protectedProcedure("clinical:encounter.write")
@@ -436,6 +439,17 @@ export const appRouter = router({
         if (!placed.ok) throw new TRPCError({ code: "BAD_REQUEST", message: placed.error.detailKey ?? "placement failed" });
         return { checkedIn: true };
       }),
+
+    // Bed turnaround (housekeeping): return a vacated (cleaning) bed to the pool.
+    completeTurnaround: protectedProcedure("scheduling:appointment.checkin")
+      .input((v: unknown) => v as { bedId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.facility.completeTurnaround(ctx.session.subject.staffId, asId<"Bed">(input.bedId));
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "turnaround failed" });
+        return { status: r.value.status };
+      }),
+    bedsAwaitingTurnaround: protectedProcedure("scheduling:appointment.checkin")
+      .query(async ({ ctx }) => ({ beds: (await ctx.services.facility.bedsAwaitingTurnaround()).map((b) => ({ bedId: b.id, label: b.label })) })),
   }),
 
   // Staff scheduling (books on a patient's behalf at reception).
