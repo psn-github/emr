@@ -4,7 +4,7 @@
 
 ## Current status
 - **Phase:** **Phase 2 — Fertility EMR & IVF laboratory (in progress).** Phases 0 + 1 complete on `main` (232 tests). Phase 2 approved (10-PR plan, 2.0→2.9). Decisions: RI Witness built behind a stub now, CooperSurgical scoping in parallel (ADR-0018); no time-lapse device — vendor-neutral import seam only (ADR-0019); annual cryo-storage billing + non-engagement pathway (AMD-0003); the three cryostore/PGT legal items deferred to counsel (built configurable, cutover blocked).
-- **Last updated:** 2026-06-13 — Phase 2 PR 2.0 (spec/data-model alignment + decisions).
+- **Last updated:** 2026-06-13 — Phase 2 PR 2.2 (stimulation charting + controlled formulary; follitropin-delta dropped, om-software dosing-calculator port pending access).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -38,6 +38,13 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Stimulation charting + controlled formulary (PR 2.2)
+**Shipped:** `@oxford/fertility` stimulation charting — controlled **formulary** of stim drugs (no free-text prescribing; bilingual; fixed unit per item), `StimulationDay` (day-by-day grid: formulary drug doses, per-ovary follicle measurements, endometrium, endocrine E2/LH/P4/FSH), `StimulationService.recordDay` (validates every drug against the formulary + positive dose + matching unit; audited; upserts per day) and `chart` (ordered, for trend). Drizzle schema + migration; Postgres store, integration-tested. **100% coverage** (the dose-affecting validation logic) (26 tests total).
+**Drug-dose decision (Medical Director):** **follitropin-delta is NOT used in Kuwait — dropped.** Stimulation **dosing calculator** is to be ported from the **om-software** tool/logic. **I cannot access `om-software` from this session** (scope = psn-github/emr only), so I did **not** invent a dosing algorithm. This PR ships the safe part — controlled formulary + clinician-entered dose **validation** (no free text, positive, unit-matched) + the chart. The dosing **calculator** is deferred.
+**Adversarial self-review (drugs):** `[validate]` free-text/unknown drug → REJECTED (`fertility.stim.unknown_drug`); non-positive dose → REJECTED; unit mismatch → REJECTED. No invented dose maths shipped.
+**Open / needs product owner [assigned: PO/MD]:** **provide om-software access (or the stim dosing-tool logic/spec)** so I can port the stimulation **dosing calculator** faithfully (the formulary + manual-entry validation are in place; only the auto-calculator is pending).
+**Next:** PR 2.3 — monitoring-visit workflow + trigger calculator + procedure scheduling (retrieval/transfer into the theatre calendar).
 
 ## 2026-06-13 — Cycle engine + protocol library + consent gating (PR 2.1)
 **Shipped:** `@oxford/fertility` — `Cycle` (IUI/IVF/ICSI/FET/IVM/preservation/ovulation-induction) with **couple-scoped treatment vs person-scoped preservation** owner; status lifecycle (planned→…→outcome, + preservation's retrieval→outcome, + cancel); protocol library (config seed); **per-cycle consent gating** (progression out of `planned` blocked until required consents signed). `CycleService` (createTreatmentCycle/createPreservationCycle/recordConsent/advanceStatus/cancel), all audited + events. The **marriage hard-gate** is enforced via an injected `FertilityGate` seam (wired to `registry.canStartFertility` in the app layer — keeps `fertility` decoupled from `registry`). Drizzle schema + migration; Postgres store, integration-tested. **100% coverage** (17 tests).
