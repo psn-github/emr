@@ -308,4 +308,18 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** a **staff registry** with **credential/licence + competency records carrying expiry**, with due/overdue alerting; **rota/shift planning feeds resource availability** in scheduling (via the existing scheduling seam, not a direct table reach). **Full payroll is out of scope** (external). Competency expiry MAY inform (not silently block) witnessing eligibility — any hard gate is an explicit, configured rule.
 - **Consequences:** licence lapses are visible/alertable; rota integrates with scheduling; HR stays "light" and bounded.
 
-_(Claude Code: continue numbering from ADR-0041.)_
+## ADR-0041 — Patient experience delivered as a bilingual PWA over the tRPC API
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** docs/01 §E13 leaves the patient app as "PWA vs React Native, decided by ADR." The clinic needs a bilingual (en/ar, RTL) mobile-first experience; the team already ships a TypeScript/tRPC monorepo with an `@oxford/ui` token set.
+- **Decision:** build the patient experience as a **bilingual mobile-first PWA** consuming the **same tRPC API** (one type-safe contract, one codebase, instant updates, installable, push-capable via web-push). React Native is **not** adopted now (it would fork the client, the build, and the i18n/RTL work for marginal benefit pre-launch). The server stays the enforcement point; the PWA never decides access. Revisit RN only if a native-only capability becomes required.
+- **Consequences:** the portal is server-driven and reuses i18n/RTL + the design tokens; this phase focuses on the **patient-facing API surface + read models** (the PWA shell/build is a thin client over them). All patient routes go through `patientProcedure` + `assertOwnData`.
+
+## ADR-0042 — Portal data exposure: own-data-only, clinician-released results, no PHI in notifications
+- **Date:** 2026-06-13
+- **Status:** accepted
+- **Context:** the portal exposes clinical/financial data directly to patients — the highest-risk surface. docs/01 §E13 requires released results, balances, consents, messaging; docs/03 governs privacy.
+- **Decision:** (1) **Own-data only** — every patient route is scoped by `PatientPrincipal` + `assertOwnData` (already adversarially tested); cross-patient access is structurally impossible. (2) **Results are clinician-released** — a result is invisible in the portal until a clinician explicitly releases it (a release gate; unreleased results never appear). (3) **No PHI in notifications** — push/SMS/email carry only discreet, non-clinical prompts ("a new result is available", "an instalment is due"), never content (reuses the Phase-1 notification discretion). (4) **Consent-gated partner access** — a second person sees a patient's data only with an explicit, revocable, audited consent grant (own-data-only by default). (5) Portal **payments are KNET/card via the gateway**, own invoices only (no cash, ADR-0034).
+- **Consequences:** the patient surface is least-privilege by construction; release-gating and consent grants are server-enforced and audited; notifications stay safe to receive on a shared device.
+
+_(Claude Code: continue numbering from ADR-0043.)_
