@@ -3,8 +3,8 @@
 > Living file. Claude Code updates this **every session**: what was built, what changed, what's open. Newest entry at the top. This is the first thing to read when starting a session.
 
 ## Current status
-- **Phase:** **Phase 1 — Cliniko parity (in progress).** Phase 0 complete on `main`. Phase 1 approved; Cliniko migration = Option B (ADR-0017). Building the stacked PRs: facility (1.1) → scheduling → flow-board → clinical EMR → invoicing → portal+reminders → Cliniko migration → closeout e2e.
-- **Last updated:** 2026-06-13 — Phase 1 PR 1.1 (facility/building model).
+- **Phase:** **Phase 1 — Cliniko parity COMPLETE** (pending merge of the closeout PR). All eight PRs (1.1 facility → 1.2 scheduling → 1.3 flow board → 1.4 clinical EMR → 1.5 invoicing → 1.6 portal+reminders → 1.7 Cliniko migration → 1.8 closeout) built, CI-gated, with adversarial self-reviews on every PHI/money/identity surface. Exit gate met: a full simulated outpatient day (book → remind → check-in → consult/note → order → letter → invoice → pay) runs end-to-end through the API against real Postgres. **232 tests.** Awaiting product-owner go-ahead before Phase 2.
+- **Last updated:** 2026-06-13 — Phase 1 closeout: full outpatient-day e2e (PR 1.8).
 
 ## How to use this file
 Each session, prepend an entry in this format:
@@ -38,6 +38,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-06-13 — Phase 1 closeout: full outpatient-day e2e (PR 1.8)
+**Shipped:** the remaining tRPC surface — staff `scheduling.book`, `clinical.*` (encounter / note / order / e-signed letter, MFA-gated) and `billing.*` (invoice / payment, MFA-gated) — all behind the deny-by-default auth middleware; clinical service wired into the composition root. **The Phase 1 exit-gate e2e**: a full simulated outpatient day through the API against real Postgres — register → **book → remind → check-in → consult/note → order → letter → invoice → pay** — ending paid, on the flow board, audit-chain verified; plus a deny-by-default check (reception cannot write clinical notes or post payments). **232 tests, all gates green.**
+**Decisions:** none new.
+**Open / needs product owner:** thin REST/FHIR surface + real HTTP server + the actual web/portal UIs are layered on next (Phase 1 had no UI requirement beyond portal booking; the React app is Phase 6 foundations). Parallel-run reconciliation uses the generic `reconcile` engine (PR 1.7).
+**Next:** await go-ahead, then propose Phase 2 (Fertility EMR & IVF laboratory) — including the AMD-0002 person-scoped preservation cycle + cryostore thaw-for-treatment invariant + RI Witness integration.
 
 ## 2026-06-13 — Cliniko migration tooling — Option B cutover + reconciliation (PR 1.7)
 **Shipped:** `@oxford/migration` (leaf package — pure shapes, no domain imports): Cliniko export model, **active-slice** filters (non-archived patients, open-balance invoices), pure mappers (bilingual name fallback), a generic **reconciliation** engine (`clean` = every source record imported, nothing extra = "zero unexplained discrepancies"), and an idempotency **`ImportLedger`** (in-memory + Postgres) making the migration **re-runnable**. Schema + migration `0001_migration` (the ledger). **100% coverage** (8 tests). App-layer `ClinikoMigrationRunner` (`apps/api`) orchestrates the import into registry (patients) + billing (open balances), audited; cross-cutting e2e against real Postgres.
