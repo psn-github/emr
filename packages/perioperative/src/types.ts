@@ -17,6 +17,30 @@ export type JourneyStage =
   | "discharged"
   | "cancelled";
 
+export type TheatreCaseId = Id<"TheatreCase">;
+export type TheatreCaseStatus = "scheduled" | "cancelled";
+
+/** A booked theatre case. The theatre + staff are booked on the SHARED resource
+ *  calendar via the scheduling seam (conflict-aware); each case provisionally
+ *  reserves an L2 bed for its day. */
+export interface TheatreCase {
+  readonly id: TheatreCaseId;
+  readonly patientId: string;
+  readonly encounterId: string | null;
+  readonly procedure: string;
+  readonly theatreResourceId: string;
+  readonly surgeonResourceId: string;
+  readonly supportResourceIds: readonly string[];
+  readonly equipment: readonly string[];
+  /** The calendar day (YYYY-MM-DD) the case is listed — drives bed reservation. */
+  readonly scheduledDate: string;
+  readonly start: string;
+  readonly end: string;
+  readonly status: TheatreCaseStatus;
+  /** Logical link to the scheduling appointment that holds the resources. */
+  readonly appointmentRef: string;
+}
+
 export interface SurgicalEncounter {
   readonly id: SurgicalEncounterId;
   readonly patientId: string;

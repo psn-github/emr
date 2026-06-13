@@ -21,7 +21,14 @@ import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, type Witn
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
-import { PerioperativeService, PgPerioperativeStore, type FacilityFlowPort } from "@oxford/perioperative";
+import {
+  PerioperativeService,
+  PgPerioperativeStore,
+  TheatreSchedulingService,
+  PgTheatreCaseStore,
+  type FacilityFlowPort,
+  type SchedulingPort,
+} from "@oxford/perioperative";
 
 // Composition root: wire the real Postgres-backed stores + services. Host-touching
 // choices (pool, key provider, notification provider) are config so the in-region
@@ -45,6 +52,7 @@ export interface Services {
   readonly outcomes: OutcomesService;
   readonly cryostore: CryostoreService;
   readonly perioperative: PerioperativeService;
+  readonly theatreScheduling: TheatreSchedulingService;
   /** Dev/test stub outbox (records messages; no real provider wired yet). */
   readonly notificationOutbox: RecordingNotificationProvider;
   /** RI Witness stub provider (ADR-0018) until CooperSurgical scoping. Exposed
@@ -56,6 +64,10 @@ export interface Services {
  *  the clinic confirms its permitted set with legal counsel — PGT orders are
  *  rejected until then (conservative; AMD-0004 open item). Configuration, not code. */
 const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
+
+/** L2 inpatient bed count — the seeded topology (ADR-0023). A day's theatre list
+ *  reserving more than this is flagged (not blocked). Configuration, not code. */
+const L2_BED_CAPACITY = 6;
 
 function mergedCatalog(): Catalog {
   return {
@@ -157,5 +169,27 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   };
   const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, notificationOutbox, witnessProvider };
+  // Two-theatre case scheduling on the SHARED scheduling calendar (conflict-aware),
+  // provisionally reserving an L2 bed per case-day (capacity 6 → ADR-0023).
+  const theatreScheduling = new TheatreSchedulingService(
+    new PgTheatreCaseStore(pool),
+    {
+      async bookTheatreSlot(actorId, input) {
+        const r = await scheduling.book(actorId, {
+          typeId: asId<"AppointmentType">(input.typeId),
+          patientId: input.patientId,
+          practitionerId: asId<"Resource">(input.surgeonResourceId),
+          resourceIds: input.resourceIds.map((id) => asId<"Resource">(id)),
+          start: input.start,
+          end: input.end,
+        });
+        return r.ok ? ok({ appointmentId: r.value.id }) : err(r.error);
+      },
+    } satisfies SchedulingPort,
+    audit,
+    events,
+    L2_BED_CAPACITY,
+  );
+
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, notificationOutbox, witnessProvider };
 }

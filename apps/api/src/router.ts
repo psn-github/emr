@@ -300,6 +300,25 @@ export const appRouter = router({
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "cancel failed" });
         return { stage: r.value.stage };
       }),
+
+    // Two-theatre case scheduling (shared calendar; provisional L2 bed reservation).
+    scheduleCase: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { typeId: string; patientId: string; encounterId?: string; procedure: string; theatreResourceId: string; surgeonResourceId: string; supportResourceIds?: string[]; equipment?: string[]; scheduledDate: string; start: string; end: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.theatreScheduling.scheduleCase(ctx.session.subject.staffId, input);
+        if (!r.ok) throw new TRPCError({ code: "CONFLICT", message: r.error.detailKey ?? "scheduling conflict" });
+        return { caseId: r.value.theatreCase.id, bedReservation: r.value.bedReservation };
+      }),
+    cancelCase: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { caseId: string; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.theatreScheduling.cancelCase(ctx.session.subject.staffId, asId<"TheatreCase">(input.caseId), input.reason);
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "cancel failed" });
+        return { status: r.value.status };
+      }),
+    dayList: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { scheduledDate: string })
+      .query(async ({ ctx, input }) => ctx.services.theatreScheduling.dayList(input.scheduledDate)),
   }),
 
   // Patient-portal self-service booking. The patient principal may ONLY act on
