@@ -50,6 +50,9 @@ importers:
       '@oxford/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
+      '@oxford/embryology':
+        specifier: workspace:*
+        version: link:../../packages/embryology
       '@oxford/facility':
         specifier: workspace:*
         version: link:../../packages/facility
@@ -71,6 +74,9 @@ importers:
       '@oxford/scheduling':
         specifier: workspace:*
         version: link:../../packages/scheduling
+      '@oxford/witnessing':
+        specifier: workspace:*
+        version: link:../../packages/witnessing
       '@trpc/server':
         specifier: ^11.0.0
         version: 11.17.0(typescript@5.9.3)
@@ -173,6 +179,28 @@ importers:
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+
+  packages/embryology:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@oxford/witnessing':
+        specifier: workspace:*
+        version: link:../witnessing
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
 
   packages/facility:
     dependencies:
