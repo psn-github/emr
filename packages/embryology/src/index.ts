@@ -65,4 +65,13 @@ export {
   mediaApplication,
   pgtOrder,
   pgtResult,
+  qcParameter,
+  qcReading,
 } from "./schema.js";
+
+// Lab QC log (docs/01 §E5 P1).
+export type { LabQcParameter, LabQcReading, LabQcReadingId, LabQcStatus } from "./types.js";
+export { SEED_QC_PARAMETERS, evaluateReading, type QcParameterStore, InMemoryQcParameterStore } from "./qc.js";
+export { type QcReadingStore, type QcReadingFilter, InMemoryQcReadingStore } from "./qc-store.js";
+export { LabQcService, type RecordQcInput } from "./qc-service.js";
+export { PgQcParameterStore, PgQcReadingStore, seedQcParameters } from "./qc-pg-store.js";
