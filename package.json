@@ -21,7 +21,8 @@
     "build": "pnpm -r build",
     "secret-scan": "node scripts/secret-scan.mjs",
     "boundaries": "node scripts/check-boundaries.mjs",
-    "check-migrations-safe": "node scripts/check-migrations-safe.mjs"
+    "check-migrations-safe": "node scripts/check-migrations-safe.mjs",
+    "check-cutover-invariants": "node scripts/check-cutover-invariants.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
