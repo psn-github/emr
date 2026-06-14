@@ -30,7 +30,25 @@
 
 ## How to restore a backup
 
-*(Populated in Phase 0 once the backup job exists. Will document: locate the backup, restore to a fresh instance, verify audit-chain integrity, point the app at it.)*
+The restore is **tested mechanically** by the drill `apps/api/src/restore-drill.e2e.test.ts`
+(GO_LIVE_CHECKLIST A5): it seeds audited data, `pg_dump`s the source, restores into a
+**fresh** database, then proves the restored **audit hash-chain verifies intact**
+(`AuditLog.verifyIntegrity`) and the clinical/financial rows survived.
+
+Production procedure:
+1. **Locate** the latest nightly backup (encrypted, in-region — inherits the residency rules).
+2. **Restore to a fresh instance** — never over the live DB:
+   `pg_restore -d "<fresh-in-region-db-url>" --no-owner <backup-file>`
+3. **Verify audit-chain integrity** on the restored instance before trusting it — run the
+   drill / `runChainIntegrityCheck` against it (a break means the backup is compromised — stop).
+4. **Point the app at it** by swapping the connection string (the DB lives outside the
+   deployed code — invariant 1 — so this is a config change, no redeploy of data).
+
+To run the drill locally against a Postgres: `DATABASE_URL=… pnpm --filter @oxford/api test src/restore-drill.e2e.test.ts`
+(skips if `pg_dump`/`pg_restore` are absent).
+
+**Still infra (go-live blocker):** the *nightly encrypted backup job itself* on the in-region
+host — the restore + verification path is proven; scheduling/encryption is provisioned with the production DB (ADR-0007).
 
 ## Hard rules that keep this safe
 
