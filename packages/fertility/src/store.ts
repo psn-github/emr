@@ -1,4 +1,11 @@
-import type { Cycle, CycleId } from "./types.js";
+import type { Cycle, CycleId, CycleStatus } from "./types.js";
+
+/** Filter for the clinician cohort view (e.g. "all patients stimulating this week"). */
+export interface CohortFilter {
+  readonly status?: CycleStatus;
+  readonly createdAfter?: string; // ISO, inclusive
+  readonly createdBefore?: string; // ISO, inclusive
+}
 
 /** Cycle disposition counts for the KPI read-model (cancellation/conversion rates).
  *  `cancelled` EXCLUDES conversions (those carry the reserved `converted` category);
@@ -16,6 +23,8 @@ export interface CycleStore {
   listForOwner(ownerId: string): Promise<readonly Cycle[]>;
   /** Aggregate disposition counts across all cycles (own-module table only). */
   dispositionCounts(): Promise<DispositionCounts>;
+  /** Bulk cohort view: cycles matching status / creation window, oldest first. */
+  cohort(filter: CohortFilter): Promise<readonly Cycle[]>;
 }
 
 export class InMemoryCycleStore implements CycleStore {
@@ -46,5 +55,14 @@ export class InMemoryCycleStore implements CycleStore {
       }
     }
     return { started: all.length, cancelled, converted, cancelledByCategory };
+  }
+  async cohort(filter: CohortFilter): Promise<readonly Cycle[]> {
+    return [...this.cycles.values()]
+      .filter((c) =>
+        (filter.status === undefined || c.status === filter.status) &&
+        (filter.createdAfter === undefined || c.createdAt >= filter.createdAfter) &&
+        (filter.createdBefore === undefined || c.createdAt <= filter.createdBefore),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 }

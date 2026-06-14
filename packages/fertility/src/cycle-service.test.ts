@@ -4,17 +4,18 @@ import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type D
 import { CycleService } from "./cycle-service.js";
 import { InMemoryCycleStore } from "./store.js";
 import { InMemoryReasonCodeStore } from "./reason-codes.js";
+import { InMemoryCycleTemplateStore } from "./cycle-template.js";
 import type { FertilityGate } from "./gate.js";
 import type { CycleId } from "./types.js";
 
 const allowGate: FertilityGate = { assertMayTreat: async (): Promise<Result<void, AppError>> => ({ ok: true, value: undefined }) };
 const denyGate: FertilityGate = { assertMayTreat: async (): Promise<Result<void, AppError>> => ({ ok: false, error: preconditionFailed("no verified marriage", "registry.marriage.unverified") }) };
 
-function build(gate: FertilityGate = allowGate, reasons = new InMemoryReasonCodeStore()) {
+function build(gate: FertilityGate = allowGate, reasons = new InMemoryReasonCodeStore(), templates = new InMemoryCycleTemplateStore()) {
   const clock = fixedClock(new Date("2026-06-13T08:00:00.000Z"));
   const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock);
   const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
-  return { svc: new CycleService(new InMemoryCycleStore(), audit, events, clock, gate, reasons), audit, events };
+  return { svc: new CycleService(new InMemoryCycleStore(), audit, events, clock, gate, reasons, templates), audit, events };
 }
 
 describe("CycleService.createTreatmentCycle", () => {
@@ -173,5 +174,81 @@ describe("CycleService consent + lifecycle", () => {
     const notConvertible = await svc.convertCycle("doc-1", r.value.id, "iui", "converted_to_iui");
     expect(notConvertible.ok).toBe(false);
     if (!notConvertible.ok) expect(notConvertible.error.detailKey).toBe("fertility.convert.not_convertible");
+  });
+});
+
+describe("CycleService cycle templates", () => {
+  it("lists templates for a consultant and starts a treatment cycle from one", async () => {
+    const { svc } = build();
+    expect((await svc.listTemplates("doc-1")).some((t) => t.id === "antagonist_icsi")).toBe(true);
+    const r = await svc.createCycleFromTemplate("doc-1", "antagonist_icsi", { kind: "couple", coupleId: "couple-1" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.type).toBe("icsi");
+      expect(r.value.protocolId).toBe("antagonist"); // template's protocol applied
+    }
+  });
+
+  it("starts a preservation cycle from a person-scoped template", async () => {
+    const { svc } = build();
+    const r = await svc.createCycleFromTemplate("doc-1", "mild_preservation", { kind: "person", personId: "person-1" });
+    expect(r.ok && r.value.type).toBe("fertility_preservation");
+    expect(r.ok && r.value.owner.kind).toBe("person");
+  });
+
+  it("respects the marriage gate when a treatment template is used", async () => {
+    const { svc } = build(denyGate);
+    const r = await svc.createCycleFromTemplate("doc-1", "antagonist_icsi", { kind: "couple", coupleId: "couple-1" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.detailKey).toBe("registry.marriage.unverified");
+  });
+
+  it("rejects unknown/inactive templates and owner-scope mismatches", async () => {
+    const templates = new InMemoryCycleTemplateStore([
+      { id: "retired", name: { ar: "ق", en: "Retired" }, cycleType: "ivf", protocolId: null, ownerStaffId: null, active: false },
+      { id: "treat", name: { ar: "ع", en: "Treat" }, cycleType: "ivf", protocolId: null, ownerStaffId: null, active: true },
+      { id: "preserve", name: { ar: "ح", en: "Preserve" }, cycleType: "fertility_preservation", protocolId: null, ownerStaffId: null, active: true },
+    ]);
+    const { svc } = build(allowGate, new InMemoryReasonCodeStore(), templates);
+    expect((await svc.createCycleFromTemplate("doc-1", "nope", { kind: "couple", coupleId: "c1" })).ok).toBe(false);
+    const inactive = await svc.createCycleFromTemplate("doc-1", "retired", { kind: "couple", coupleId: "c1" });
+    expect(inactive.ok).toBe(false);
+    if (!inactive.ok) expect(inactive.error.detailKey).toBe("fertility.template.unknown");
+    // treatment template with a person owner → mismatch
+    const wrong1 = await svc.createCycleFromTemplate("doc-1", "treat", { kind: "person", personId: "p1" });
+    expect(wrong1.ok).toBe(false);
+    if (!wrong1.ok) expect(wrong1.error.detailKey).toBe("fertility.template.owner_mismatch");
+    // preservation template with a couple owner → mismatch
+    const wrong2 = await svc.createCycleFromTemplate("doc-1", "preserve", { kind: "couple", coupleId: "c1" });
+    expect(wrong2.ok).toBe(false);
+    if (!wrong2.ok) expect(wrong2.error.detailKey).toBe("fertility.template.owner_mismatch");
+    // successful starts from null-protocol templates (treatment + preservation)
+    const treat = await svc.createCycleFromTemplate("doc-1", "treat", { kind: "couple", coupleId: "c1" });
+    expect(treat.ok && treat.value.protocolId).toBe(null);
+    const preserve = await svc.createCycleFromTemplate("doc-1", "preserve", { kind: "person", personId: "p1" });
+    expect(preserve.ok && preserve.value.protocolId).toBe(null);
+  });
+});
+
+describe("CycleService.cohort", () => {
+  it("filters by status and creation window (the 'stimulating this week' view)", async () => {
+    const { svc } = build();
+    const a = await svc.createTreatmentCycle("doc-1", "ivf", "couple-1");
+    const b = await svc.createTreatmentCycle("doc-1", "ivf", "couple-2");
+    if (!a.ok || !b.ok) throw new Error("setup");
+    for (const k of ["consent.ivf", "consent.anaesthesia", "consent.data_processing"]) {
+      await svc.recordConsent("doc-1", a.value.id, k);
+    }
+    await svc.advanceStatus("doc-1", a.value.id, "stimulating");
+
+    const stimulating = await svc.cohort({ status: "stimulating" });
+    expect(stimulating.map((c) => c.id)).toEqual([a.value.id]);
+
+    const planned = await svc.cohort({ status: "planned" });
+    expect(planned.map((c) => c.id)).toEqual([b.value.id]);
+
+    // window: the fixed clock puts everything on 2026-06-13
+    expect((await svc.cohort({ createdAfter: "2026-06-13T00:00:00.000Z", createdBefore: "2026-06-14T00:00:00.000Z" })).length).toBe(2);
+    expect((await svc.cohort({ createdAfter: "2026-06-20T00:00:00.000Z" })).length).toBe(0);
   });
 });
