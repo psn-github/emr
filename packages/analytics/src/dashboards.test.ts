@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageingBuckets, revenueByLine, instalmentRisk } from "./dashboards.js";
+import { ageingBuckets, revenueByLine, instalmentRisk, cycleDisposition } from "./dashboards.js";
 import { AnalyticsService } from "./analytics-service.js";
 
 describe("financial dashboard shaping (pure)", () => {
@@ -29,10 +29,25 @@ describe("financial dashboard shaping (pure)", () => {
     expect(instalmentRisk([0, 200000, 0, 400000])).toEqual({ plansInArrears: 2, totalArrearsFils: 600000 });
     expect(instalmentRisk([])).toEqual({ plansInArrears: 0, totalArrearsFils: 0 });
   });
+  it("computes cycle disposition: cancellation rate (by category) + conversion rate", () => {
+    const report = cycleDisposition({ started: 10, cancelled: 2, converted: 3, cancelledByCategory: { poor_response: 1, patient_choice: 1 } });
+    expect(report).toEqual({
+      started: 10,
+      cancellationRate: 0.2,
+      conversionRate: 0.3,
+      cancelledByCategory: { poor_response: 1, patient_choice: 1 },
+    });
+  });
+  it("guards divide-by-zero when no cycles started", () => {
+    expect(cycleDisposition({ started: 0, cancelled: 0, converted: 0, cancelledByCategory: {} })).toEqual({
+      started: 0, cancellationRate: 0, conversionRate: 0, cancelledByCategory: {},
+    });
+  });
   it("is exposed via AnalyticsService", () => {
     const svc = new AnalyticsService();
     expect(svc.ageing([{ balanceFils: 100, ageDays: 10 }]).current).toBe(100);
     expect(svc.revenue([{ line: "x", amountFils: 5 }])).toEqual([{ line: "x", amountFils: 5 }]);
     expect(svc.instalmentRisk([0, 5]).plansInArrears).toBe(1);
+    expect(svc.disposition({ started: 4, cancelled: 1, converted: 1, cancelledByCategory: { clinical: 1 } }).cancellationRate).toBe(0.25);
   });
 });

@@ -7,6 +7,7 @@ import { fixedClock, preconditionFailed, type Result, type AppError } from "@oxf
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { CycleService } from "./cycle-service.js";
 import { InMemoryCycleStore } from "./store.js";
+import { InMemoryReasonCodeStore } from "./reason-codes.js";
 import type { FertilityGate } from "./gate.js";
 
 const unverified: FertilityGate = {
@@ -21,6 +22,7 @@ function svc(gate: FertilityGate) {
     new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock),
     clock,
     gate,
+    new InMemoryReasonCodeStore(),
   );
 }
 

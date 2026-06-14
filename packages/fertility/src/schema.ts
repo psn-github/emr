@@ -1,7 +1,7 @@
 // Drizzle schema for the `fertility` domain (ADR-0008). Owner is person OR couple
 // (preservation vs treatment). Protocols are config (seeded). Stimulation
 // charting / dosing tables land in PR 2.2.
-import { pgSchema, integer, jsonb, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgSchema, integer, jsonb, text, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 
 export const fertilitySchema = pgSchema("fertility");
 
@@ -15,10 +15,14 @@ export const cycle = fertilitySchema.table(
     protocolId: text("protocol_id"),
     status: text("status").notNull().default("planned"),
     signedConsents: jsonb("signed_consents").$type<string[]>().notNull().default([]),
-    cancellationReason: text("cancellation_reason"),
+    cancellationReason: text("cancellation_reason"), // deprecated (free text); kept for back-compat, no longer written
+    cancellationReasonCode: text("cancellation_reason_code"),
+    cancellationCategory: text("cancellation_category"),
+    cancellationNote: text("cancellation_note"),
+    convertedFromId: text("converted_from_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
-  (t) => ({ byOwner: index("cycle_owner_idx").on(t.ownerId) }),
+  (t) => ({ byOwner: index("cycle_owner_idx").on(t.ownerId), byConvertedFrom: index("cycle_converted_from_idx").on(t.convertedFromId) }),
 );
 
 export const protocol = fertilitySchema.table("protocol", {
@@ -26,6 +30,15 @@ export const protocol = fertilitySchema.table("protocol", {
   nameAr: text("name_ar").notNull(),
   nameEn: text("name_en").notNull(),
   appliesTo: jsonb("applies_to").$type<string[]>().notNull().default([]),
+});
+
+/** Cancellation reason codes (versioned config; bilingual; never free text). */
+export const cancellationReason = fertilitySchema.table("cancellation_reason", {
+  code: text("code").primaryKey(),
+  category: text("category").notNull(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  active: boolean("active").notNull().default(true),
 });
 
 export const monitoringVisit = fertilitySchema.table(
