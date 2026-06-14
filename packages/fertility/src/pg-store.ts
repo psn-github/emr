@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { asId } from "@oxford/core";
 import type { CancellationCategory, Cycle, CycleId, CycleOwner } from "./types.js";
-import type { CycleStore, DispositionCounts } from "./store.js";
+import type { CohortFilter, CycleStore, DispositionCounts } from "./store.js";
 
 /** Postgres-backed CycleStore. */
 export class PgCycleStore implements CycleStore {
@@ -50,6 +50,18 @@ export class PgCycleStore implements CycleStore {
     for (const row of byCat.rows) cancelledByCategory[row.category ?? "uncoded"] = Number(row.n);
     const t = totals.rows[0]!;
     return { started: Number(t.started), cancelled: Number(t.cancelled), converted: Number(t.converted), cancelledByCategory };
+  }
+
+  async cohort(filter: CohortFilter): Promise<readonly Cycle[]> {
+    const r = await this.pool.query<CycleRow>(
+      `SELECT * FROM fertility.cycle
+       WHERE ($1::text IS NULL OR status = $1)
+         AND ($2::timestamptz IS NULL OR created_at >= $2)
+         AND ($3::timestamptz IS NULL OR created_at <= $3)
+       ORDER BY created_at`,
+      [filter.status ?? null, filter.createdAfter ?? null, filter.createdBefore ?? null],
+    );
+    return r.rows.map(fromRow);
   }
 }
 

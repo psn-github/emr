@@ -41,6 +41,17 @@ export const cancellationReason = fertilitySchema.table("cancellation_reason", {
   active: boolean("active").notNull().default(true),
 });
 
+/** Cycle templates (versioned config; per-consultant or clinic-wide; bilingual). */
+export const cycleTemplate = fertilitySchema.table("cycle_template", {
+  id: text("id").primaryKey(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  cycleType: text("cycle_type").notNull(),
+  protocolId: text("protocol_id"),
+  ownerStaffId: text("owner_staff_id"), // null = clinic-wide
+  active: boolean("active").notNull().default(true),
+});
+
 export const monitoringVisit = fertilitySchema.table(
   "monitoring_visit",
   {

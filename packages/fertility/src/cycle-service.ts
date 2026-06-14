@@ -4,9 +4,10 @@ import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import { assertAdvance } from "./lifecycle.js";
 import { assertConsentsComplete } from "./consent.js";
 import type { FertilityGate } from "./gate.js";
-import type { CycleStore } from "./store.js";
+import type { CohortFilter, CycleStore } from "./store.js";
 import type { ReasonCodeStore } from "./reason-codes.js";
-import { PERSON_SCOPED_TYPES, type Cycle, type CycleId, type CycleStatus, type CycleType } from "./types.js";
+import { InMemoryCycleTemplateStore, type CycleTemplate, type CycleTemplateStore } from "./cycle-template.js";
+import { PERSON_SCOPED_TYPES, type Cycle, type CycleId, type CycleOwner, type CycleStatus, type CycleType } from "./types.js";
 
 /** Statuses a cycle can be converted from — before retrieval, while a change of
  *  approach (e.g. IVF→IUI on poor response) is still clinically meaningful. */
@@ -33,7 +34,31 @@ export class CycleService {
     private readonly clock: Clock,
     private readonly gate: FertilityGate,
     private readonly reasons: ReasonCodeStore,
+    private readonly templates: CycleTemplateStore = new InMemoryCycleTemplateStore(),
   ) {}
+
+  /** Templates available to a consultant (their own + clinic-wide), for one-step starts. */
+  listTemplates(staffId: string): Promise<readonly CycleTemplate[]> {
+    return this.templates.listFor(staffId);
+  }
+
+  /** Start a cycle from a consultant template (applies its type + protocol). The owner
+   *  must match the template's scope: person for preservation, couple otherwise. */
+  async createCycleFromTemplate(actorId: string, templateId: string, owner: CycleOwner): Promise<Result<Cycle, AppError>> {
+    const t = await this.templates.get(templateId);
+    if (t === null || !t.active) return err(validationError(`unknown or inactive cycle template '${templateId}'`, "fertility.template.unknown"));
+    if (PERSON_SCOPED_TYPES.has(t.cycleType)) {
+      if (owner.kind !== "person") return err(validationError("a preservation template needs a person owner", "fertility.template.owner_mismatch"));
+      return ok(await this.persist(actorId, t.cycleType, owner, t.protocolId ?? undefined));
+    }
+    if (owner.kind !== "couple") return err(validationError("a treatment template needs a couple owner", "fertility.template.owner_mismatch"));
+    return this.createTreatmentCycle(actorId, t.cycleType, owner.coupleId, t.protocolId ?? undefined);
+  }
+
+  /** Bulk cohort view for clinicians (e.g. "all patients stimulating this week"). */
+  cohort(filter: CohortFilter): Promise<readonly Cycle[]> {
+    return this.store.cohort(filter);
+  }
 
   /** Create a treatment cycle — requires a verified couple (marriage gate). */
   async createTreatmentCycle(actorId: string, type: CycleType, coupleId: string, protocolId?: string): Promise<Result<Cycle, AppError>> {
