@@ -7,6 +7,7 @@ import type { Id } from "@oxford/core";
 export type StaffId = Id<"Staff">;
 export type CredentialId = Id<"Credential">;
 export type ShiftId = Id<"Shift">;
+export type LeaveId = Id<"Leave">;
 
 export interface Staff {
   readonly id: StaffId;
@@ -39,4 +40,17 @@ export interface Shift {
   readonly start: string;
   readonly end: string;
   readonly role: string;
+}
+
+/** Practitioner leave (docs/01 §E2 P1). A staff member on leave is unavailable
+ *  even when rostered — `availability`/`capacity` exclude them for the window. */
+export type LeaveType = "annual" | "sick" | "study" | "unpaid" | "other";
+
+export interface Leave {
+  readonly id: LeaveId;
+  readonly staffId: string;
+  readonly type: LeaveType;
+  readonly start: string;
+  readonly end: string;
+  readonly note: string | null;
 }

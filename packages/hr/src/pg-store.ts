@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { asId } from "@oxford/core";
-import type { Staff, StaffId, Credential, Shift } from "./types.js";
+import type { Staff, StaffId, Credential, Shift, Leave } from "./types.js";
 import type { HrStore } from "./store.js";
 
 /** Postgres-backed HrStore. */
@@ -47,11 +47,22 @@ export class PgHrStore implements HrStore {
     const r = await this.pool.query<ShiftRow>('SELECT * FROM hr.shift WHERE resource_id = $1 ORDER BY start', [resourceId]);
     return r.rows.map(shiftFrom);
   }
+  async saveLeave(l: Leave): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO hr.leave (id, staff_id, type, start, "end", note) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+      [l.id, l.staffId, l.type, l.start, l.end, l.note],
+    );
+  }
+  async leaveForStaff(staffId: string): Promise<readonly Leave[]> {
+    const r = await this.pool.query<LeaveRow>('SELECT * FROM hr.leave WHERE staff_id = $1 ORDER BY start', [staffId]);
+    return r.rows.map(leaveFrom);
+  }
 }
 
 interface StaffRow { id: string; name: string; role: string; professional_id: string | null; active: boolean }
 interface CredRow { id: string; staff_id: string; type: string; name: string; authority: string | null; issued_at: Date; expires_at: Date }
 interface ShiftRow { id: string; staff_id: string; resource_id: string; start: Date; end: Date; role: string }
+interface LeaveRow { id: string; staff_id: string; type: string; start: Date; end: Date; note: string | null }
 
 const iso = (d: Date): string => new Date(d).toISOString();
 function staffFrom(r: StaffRow): Staff {
@@ -62,4 +73,7 @@ function credFrom(r: CredRow): Credential {
 }
 function shiftFrom(r: ShiftRow): Shift {
   return { id: asId<"Shift">(r.id), staffId: r.staff_id, resourceId: r.resource_id, start: iso(r.start), end: iso(r.end), role: r.role };
+}
+function leaveFrom(r: LeaveRow): Leave {
+  return { id: asId<"Leave">(r.id), staffId: r.staff_id, type: r.type as Leave["type"], start: iso(r.start), end: iso(r.end), note: r.note };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixedClock } from "@oxford/core";
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
-import { credentialStatus, validateCredentialDates, validateShift, overlaps } from "./hr.js";
+import { credentialStatus, validateCredentialDates, validateShift, validateLeave, overlaps } from "./hr.js";
 import { HrService } from "./hr-service.js";
 import { InMemoryHrStore } from "./store.js";
 
@@ -18,6 +18,8 @@ describe("HR logic (pure)", () => {
     expect(detail(validateCredentialDates("2027-01-01T00:00:00Z", "2026-01-01T00:00:00Z"))).toBe("hr.credential.bad_dates");
     expect(validateShift("2026-06-20T08:00:00Z", "2026-06-20T16:00:00Z").ok).toBe(true);
     expect(detail(validateShift("2026-06-20T16:00:00Z", "2026-06-20T08:00:00Z"))).toBe("hr.shift.bad_window");
+    expect(validateLeave("2026-06-20T00:00:00Z", "2026-06-25T00:00:00Z").ok).toBe(true);
+    expect(detail(validateLeave("2026-06-25T00:00:00Z", "2026-06-20T00:00:00Z"))).toBe("hr.leave.bad_window");
     expect(overlaps("2026-06-20T08:00:00Z", "2026-06-20T12:00:00Z", "2026-06-20T11:00:00Z", "2026-06-20T14:00:00Z")).toBe(true);
     expect(overlaps("2026-06-20T08:00:00Z", "2026-06-20T10:00:00Z", "2026-06-20T10:00:00Z", "2026-06-20T12:00:00Z")).toBe(false);
   });
@@ -71,6 +73,43 @@ describe("HrService", () => {
     const st = await svc.registerStaff("hr-1", { name: "X", role: "tech" });
     expect(detail(await svc.addCredential("hr-1", { staffId: st.id, type: "licence", name: "x", issuedAt: "2027-01-01T00:00:00Z", expiresAt: "2026-01-01T00:00:00Z" }))).toBe("hr.credential.bad_dates");
     expect(detail(await svc.planShift("hr-1", { staffId: st.id, resourceId: "r", start: "2026-06-20T16:00:00Z", end: "2026-06-20T08:00:00Z", role: "x" }))).toBe("hr.shift.bad_window");
+  });
+
+  it("practitioner leave overrides the rota for availability + capacity", async () => {
+    const { svc } = build();
+    const a = await svc.registerStaff("hr-1", { name: "Dr A", role: "consultant" });
+    const b = await svc.registerStaff("hr-1", { name: "Dr B", role: "consultant" });
+    const day = { start: "2026-06-20T08:00:00Z", end: "2026-06-20T16:00:00Z" };
+    await svc.planShift("hr-1", { staffId: a.id, resourceId: "clinic-1", role: "lead", ...day });
+    await svc.planShift("hr-1", { staffId: b.id, resourceId: "clinic-1", role: "lead", ...day });
+
+    // both rostered → capacity 2
+    expect(await svc.capacity("clinic-1", "2026-06-20T09:00:00Z", "2026-06-20T10:00:00Z")).toBe(2);
+
+    // Dr A takes annual leave that day
+    const lv = await svc.recordLeave("hr-1", { staffId: a.id, type: "annual", start: "2026-06-20T00:00:00Z", end: "2026-06-21T00:00:00Z", note: "family" });
+    expect(lv.ok).toBe(true);
+    expect(await svc.isOnLeave(a.id, "2026-06-20T09:00:00Z", "2026-06-20T10:00:00Z")).toBe(true);
+    expect(await svc.isOnLeave(b.id, "2026-06-20T09:00:00Z", "2026-06-20T10:00:00Z")).toBe(false);
+
+    // availability now excludes Dr A; only Dr B remains → capacity 1
+    const avail = await svc.availability("clinic-1", "2026-06-20T09:00:00Z", "2026-06-20T10:00:00Z");
+    expect(avail.map((s) => s.staffId)).toEqual([b.id]);
+    expect(await svc.capacity("clinic-1", "2026-06-20T09:00:00Z", "2026-06-20T10:00:00Z")).toBe(1);
+
+    // leaveFor only returns periods overlapping the queried window
+    expect((await svc.leaveFor(a.id, "2026-06-20T00:00:00Z", "2026-06-21T00:00:00Z")).map((l) => l.type)).toEqual(["annual"]);
+    expect(await svc.leaveFor(a.id, "2026-07-01T00:00:00Z", "2026-07-02T00:00:00Z")).toEqual([]);
+  });
+
+  it("guards leave for unknown staff and a bad window", async () => {
+    const { svc } = build();
+    expect(detail(await svc.recordLeave("hr-1", { staffId: "ghost", type: "sick", start: "2026-06-20T00:00:00Z", end: "2026-06-21T00:00:00Z" }))).toBe("hr.staff.not_found");
+    const st = await svc.registerStaff("hr-1", { name: "Y", role: "nurse" });
+    expect(detail(await svc.recordLeave("hr-1", { staffId: st.id, type: "annual", start: "2026-06-21T00:00:00Z", end: "2026-06-20T00:00:00Z" }))).toBe("hr.leave.bad_window");
+    // a valid leave with no note stores note as null
+    const ok = await svc.recordLeave("hr-1", { staffId: st.id, type: "study", start: "2026-06-20T00:00:00Z", end: "2026-06-21T00:00:00Z" });
+    expect(ok.ok && ok.value.note).toBe(null);
   });
 });
 

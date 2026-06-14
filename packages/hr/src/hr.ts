@@ -31,6 +31,14 @@ export function validateShift(start: string, end: string): Result<void, AppError
   return ok(undefined);
 }
 
+/** A leave period must end after it starts. */
+export function validateLeave(start: string, end: string): Result<void, AppError> {
+  if (new Date(end).getTime() <= new Date(start).getTime()) {
+    return err(validationError("leave end must be after its start", "hr.leave.bad_window"));
+  }
+  return ok(undefined);
+}
+
 /** True when two [start,end) windows overlap (used for availability lookups). */
 export function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return new Date(aStart).getTime() < new Date(bEnd).getTime() && new Date(bStart).getTime() < new Date(aEnd).getTime();
