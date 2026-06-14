@@ -17,7 +17,7 @@ import { NotificationService, RecordingNotificationProvider, notificationMessage
 import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore, GatewayPaymentService, StubPaymentGateway, ChargeCaptureService, PgChargeMasterStore, PgChargeStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
-import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, type WitnessPort } from "@oxford/embryology";
+import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
@@ -73,6 +73,7 @@ export interface Services {
   readonly clinical: ClinicalService;
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
+  readonly labQc: LabQcService;
   readonly pgt: PgtService;
   readonly andrology: AndrologyService;
   readonly outcomes: OutcomesService;
@@ -174,6 +175,10 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     assertCycleStepSignOff: (cycleId) => witnessing.assertCycleStepSignOff(cycleId),
   };
   const embryology = new EmbryologyService(new PgEmbryologyStore(pool), witnessPort, audit, events);
+  // Lab QC log (ADR-0046): incubator gas/temp + media pH/osmolality readings vs
+  // configured ranges; out-of-range raises a breach event. Equipment + media lots
+  // are referenced by id (no cross-module table access).
+  const labQc = new LabQcService(new PgQcParameterStore(pool), new PgQcReadingStore(pool), audit, events);
   // PGT capture (genetics lab stays external). Permitted indications are CONFIG,
   // bounded by clinic counsel — EMPTY by default, so PGT orders are blocked until
   // the clinic configures its counsel-confirmed permitted set (no permissive default).
@@ -317,5 +322,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, labQc, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

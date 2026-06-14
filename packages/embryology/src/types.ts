@@ -162,3 +162,34 @@ export interface EmbryoTransfer {
   readonly transferredAt: string;
   readonly witnessKey: string;
 }
+
+// Lab QC log (docs/01 §E5 P1): periodic quality readings — incubator gas/temp,
+// media pH/osmolality — evaluated against configured acceptable ranges. References
+// equipment (assetRef) and media lots (lotNo) by reference; no cross-module access.
+export type LabQcReadingId = Id<"LabQcReading">;
+export type LabQcStatus = "pass" | "fail";
+
+/** A QC parameter with its acceptable range (versioned config; bilingual). */
+export interface LabQcParameter {
+  readonly code: string;
+  readonly name: { readonly ar: string; readonly en: string };
+  readonly unit: string;
+  readonly min: number;
+  readonly max: number;
+  readonly active: boolean;
+}
+
+export interface LabQcReading {
+  readonly id: LabQcReadingId;
+  readonly parameterCode: string;
+  readonly value: number;
+  readonly unit: string;
+  /** Equipment this reading was taken on (e.g. an incubator), or null. */
+  readonly assetRef: string | null;
+  /** Media lot this reading relates to (links to an inventory lot by ref), or null. */
+  readonly lotNo: string | null;
+  readonly status: LabQcStatus;
+  readonly recordedBy: string;
+  readonly recordedAt: string;
+  readonly note: string | null;
+}

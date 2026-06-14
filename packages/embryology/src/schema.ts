@@ -1,9 +1,38 @@
 // Drizzle schema for the `embryology` domain (docs/01 §E4). Lab records only —
 // witnessing lives in the witnessing schema, reconciled against RI Witness.
-import { pgSchema, text, integer, boolean, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgSchema, text, integer, boolean, jsonb, timestamp, index, numeric } from "drizzle-orm/pg-core";
 import type { GardnerGrade } from "./types.js";
 
 export const embryologySchema = pgSchema("embryology");
+
+/** Lab QC parameters (versioned config; bilingual; acceptable [min, max] range). */
+export const qcParameter = embryologySchema.table("qc_parameter", {
+  code: text("code").primaryKey(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  unit: text("unit").notNull(),
+  minValue: numeric("min_value").notNull(),
+  maxValue: numeric("max_value").notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
+/** Lab QC readings (incubator gas/temp, media pH/osmolality), pass/fail vs range. */
+export const qcReading = embryologySchema.table(
+  "qc_reading",
+  {
+    id: text("id").primaryKey(),
+    parameterCode: text("parameter_code").notNull(),
+    value: numeric("value").notNull(),
+    unit: text("unit").notNull(),
+    assetRef: text("asset_ref"),
+    lotNo: text("lot_no"),
+    status: text("status").notNull(),
+    recordedBy: text("recorded_by").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+  },
+  (t) => ({ byParam: index("qc_reading_param_idx").on(t.parameterCode), byAsset: index("qc_reading_asset_idx").on(t.assetRef) }),
+);
 
 export const oocyte = embryologySchema.table(
   "oocyte",
