@@ -15,9 +15,12 @@ export {
   ageingBuckets,
   revenueByLine,
   instalmentRisk,
+  cycleDisposition,
   type AgeingItem,
   type AgeingBuckets,
   type RevenueRow,
   type InstalmentRisk,
+  type DispositionCounts,
+  type DispositionReport,
 } from "./dashboards.js";
 export { AnalyticsService, type OutcomeReport } from "./analytics-service.js";

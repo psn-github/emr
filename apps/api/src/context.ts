@@ -45,7 +45,7 @@ import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, Pro
 import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
-import { CycleService, PgCycleStore, StimulationService, PgStimStore } from "@oxford/fertility";
+import { CycleService, PgCycleStore, StimulationService, PgStimStore, PgReasonCodeStore } from "@oxford/fertility";
 import { MessagingService, PgMessagingStore } from "@oxford/messaging";
 import { ConsentService, PgConsentStore } from "@oxford/consent";
 import { PushService, PgPushStore, RecordingPushProvider } from "@oxford/push";
@@ -267,7 +267,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // hard-gate is wired to the registry (fertility never imports registry directly).
   const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
     assertMayTreat: (coupleId) => registry.canStartFertility(asId<"Couple">(coupleId)),
-  });
+  }, new PgReasonCodeStore(pool));
   // Stimulation chart — read surface for the patient medication schedule.
   const stim = new StimulationService(new PgStimStore(pool), audit, events, clock);
   // Secure patient↔clinic messaging (read/write surface for the portal).

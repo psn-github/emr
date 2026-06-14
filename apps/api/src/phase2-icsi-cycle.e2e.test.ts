@@ -20,6 +20,7 @@ import {
   PgCycleStore,
   PgStimStore,
   PgMonitoringStore,
+  InMemoryReasonCodeStore,
   type FertilityGate,
 } from "@oxford/fertility";
 import { createPool, runMigrations } from "./db.js";
@@ -47,7 +48,7 @@ describe.skipIf(!DATABASE_URL)("Phase 2 exit gate — complete antagonist ICSI c
     // The cycle engine / stim / monitoring services share the one audit + event
     // chain. The marriage hard-gate is wired to the registry (no domain coupling).
     const gate: FertilityGate = { assertMayTreat: (coupleId) => services.registry.canStartFertility(asId<"Couple">(coupleId)) };
-    cycles = new CycleService(new PgCycleStore(pool), services.audit, services.events, clock, gate);
+    cycles = new CycleService(new PgCycleStore(pool), services.audit, services.events, clock, gate, new InMemoryReasonCodeStore());
     stim = new StimulationService(new PgStimStore(pool), services.audit, services.events, clock);
     monitoring = new MonitoringService(new PgMonitoringStore(pool), services.audit, services.events);
   });

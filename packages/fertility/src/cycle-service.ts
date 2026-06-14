@@ -5,13 +5,25 @@ import { assertAdvance } from "./lifecycle.js";
 import { assertConsentsComplete } from "./consent.js";
 import type { FertilityGate } from "./gate.js";
 import type { CycleStore } from "./store.js";
+import type { ReasonCodeStore } from "./reason-codes.js";
 import { PERSON_SCOPED_TYPES, type Cycle, type CycleId, type CycleStatus, type CycleType } from "./types.js";
+
+/** Statuses a cycle can be converted from — before retrieval, while a change of
+ *  approach (e.g. IVF→IUI on poor response) is still clinically meaningful. */
+const CONVERTIBLE_STATUSES: ReadonlySet<CycleStatus> = new Set<CycleStatus>(["planned", "stimulating"]);
+
+/** The source + the newly created cycle produced by a conversion. */
+export interface ConversionResult {
+  readonly source: Cycle;
+  readonly created: Cycle;
+}
 
 /**
  * Cycle engine. Treatment/embryo-creation cycles are couple-scoped and pass the
  * marriage hard-gate (via the injected FertilityGate); fertility-preservation is
  * person-scoped and needs no couple (ADR-0015). Progression out of `planned` is
- * blocked until required consents are signed. Every mutation is audited.
+ * blocked until required consents are signed. Cancellation/conversion reasons are
+ * CODED (config, never free text) so KPIs can aggregate. Every mutation is audited.
  */
 export class CycleService {
   constructor(
@@ -20,6 +32,7 @@ export class CycleService {
     private readonly events: DomainEventLog,
     private readonly clock: Clock,
     private readonly gate: FertilityGate,
+    private readonly reasons: ReasonCodeStore,
   ) {}
 
   /** Create a treatment cycle — requires a verified couple (marriage gate). */
@@ -45,7 +58,10 @@ export class CycleService {
       protocolId: protocolId ?? null,
       status: "planned",
       signedConsents: [],
-      cancellationReason: null,
+      cancellationReasonCode: null,
+      cancellationCategory: null,
+      cancellationNote: null,
+      convertedFromId: null,
       createdAt: this.clock.now().toISOString(),
     };
     await this.store.save(cycle);
@@ -81,16 +97,63 @@ export class CycleService {
     return ok(updated);
   }
 
-  async cancel(actorId: string, id: CycleId, reason: string): Promise<Result<Cycle, AppError>> {
+  /** Cancel a cycle with a CODED reason (config, never free text). An optional free-text
+   *  note may accompany it. A `converted`-category reason is rejected — use convertCycle. */
+  async cancel(actorId: string, id: CycleId, reasonCode: string, note?: string): Promise<Result<Cycle, AppError>> {
     const cycle = await this.store.get(id);
     if (cycle === null) return err(notFound("cycle not found", "fertility.cycle.not_found"));
     const transition = assertAdvance(cycle.status, "cancelled");
     if (!transition.ok) return err(transition.error);
-    const updated: Cycle = { ...cycle, status: "cancelled", cancellationReason: reason };
+    const reason = await this.reasons.get(reasonCode);
+    if (reason === null || !reason.active) return err(validationError(`unknown or inactive cancellation reason '${reasonCode}'`, "fertility.cancellation.unknown_reason"));
+    if (reason.category === "converted") return err(validationError("a conversion reason must be applied via convertCycle, not cancel", "fertility.cancellation.use_convert"));
+    const updated: Cycle = { ...cycle, status: "cancelled", cancellationReasonCode: reason.code, cancellationCategory: reason.category, cancellationNote: note ?? null };
     await this.store.save(updated);
-    await this.audit.record({ actorId, entityType: "Cycle", entityId: id, action: "UPDATE", before: { status: cycle.status }, after: { status: "cancelled", reason } });
-    await this.events.emit({ type: "CycleCancelled", aggregateType: "Cycle", aggregateId: id, data: { reason } });
+    await this.audit.record({ actorId, entityType: "Cycle", entityId: id, action: "UPDATE", before: { status: cycle.status }, after: { status: "cancelled", reasonCode: reason.code, category: reason.category } });
+    await this.events.emit({ type: "CycleCancelled", aggregateType: "Cycle", aggregateId: id, data: { reasonCode: reason.code, category: reason.category } });
     return ok(updated);
+  }
+
+  /** Convert a cycle to a different treatment type (e.g. IVF→IUI). The source cycle is
+   *  cancelled with a `converted`-category reason and a NEW linked cycle of `toType` is
+   *  created (carrying owner + signed consents), so KPIs can track the conversion rate
+   *  distinctly from true cancellations. Only allowed pre-retrieval, between treatment
+   *  types (never to/from person-scoped preservation), and to a different type. */
+  async convertCycle(actorId: string, id: CycleId, toType: CycleType, reasonCode: string, note?: string): Promise<Result<ConversionResult, AppError>> {
+    const cycle = await this.store.get(id);
+    if (cycle === null) return err(notFound("cycle not found", "fertility.cycle.not_found"));
+    if (!CONVERTIBLE_STATUSES.has(cycle.status)) return err(validationError(`cycle in '${cycle.status}' cannot be converted (pre-retrieval only)`, "fertility.convert.not_convertible"));
+    if (PERSON_SCOPED_TYPES.has(cycle.type) || PERSON_SCOPED_TYPES.has(toType)) return err(validationError("preservation cycles cannot be converted", "fertility.convert.preservation_not_convertible"));
+    if (toType === cycle.type) return err(validationError("conversion target must differ from the current type", "fertility.convert.same_type"));
+    const reason = await this.reasons.get(reasonCode);
+    if (reason === null || !reason.active) return err(validationError(`unknown or inactive cancellation reason '${reasonCode}'`, "fertility.cancellation.unknown_reason"));
+    if (reason.category !== "converted") return err(validationError("convertCycle requires a conversion-category reason", "fertility.convert.reason_not_conversion"));
+
+    const source: Cycle = { ...cycle, status: "cancelled", cancellationReasonCode: reason.code, cancellationCategory: reason.category, cancellationNote: note ?? null };
+    const created: Cycle = {
+      id: newId<"Cycle">(),
+      type: toType,
+      owner: cycle.owner,
+      protocolId: null, // a new approach needs its own protocol selection
+      status: "planned",
+      signedConsents: [...cycle.signedConsents],
+      cancellationReasonCode: null,
+      cancellationCategory: null,
+      cancellationNote: null,
+      convertedFromId: cycle.id,
+      createdAt: this.clock.now().toISOString(),
+    };
+    await this.store.save(source);
+    await this.store.save(created);
+    await this.audit.record({ actorId, entityType: "Cycle", entityId: id, action: "UPDATE", before: { status: cycle.status, type: cycle.type }, after: { status: "cancelled", convertedToId: created.id, reasonCode: reason.code } });
+    await this.audit.record({ actorId, entityType: "Cycle", entityId: created.id, action: "CREATE", after: { type: toType, convertedFromId: cycle.id } });
+    await this.events.emit({ type: "CycleConverted", aggregateType: "Cycle", aggregateId: id, data: { fromId: cycle.id, toId: created.id, fromType: cycle.type, toType, reasonCode: reason.code } });
+    return ok({ source, created });
+  }
+
+  /** Disposition counts (cancellation/conversion) for the KPI read-model. */
+  dispositionCounts(): ReturnType<CycleStore["dispositionCounts"]> {
+    return this.store.dispositionCounts();
   }
 
   get(id: CycleId): Promise<Cycle | null> {

@@ -1,6 +1,7 @@
 // Financial-dashboard read-model shaping (docs/01 §E12, ADR-0039). Pure: shapes
 // supplied rows into ageing buckets, revenue-by-line, and instalment-risk
 // summaries. Money is integer fils. No domain imports. 100% coverage.
+import { rate } from "./kpi.js";
 
 export interface AgeingItem {
   readonly balanceFils: number;
@@ -55,4 +56,29 @@ export function instalmentRisk(arrears: readonly number[]): InstalmentRisk {
     }
   }
   return { plansInArrears, totalArrearsFils };
+}
+
+/** Cycle disposition counts (from the fertility read-model). `cancelled` excludes
+ *  conversions; `converted` counts new cycles created by a conversion. */
+export interface DispositionCounts {
+  readonly started: number;
+  readonly cancelled: number;
+  readonly converted: number;
+  readonly cancelledByCategory: Readonly<Record<string, number>>;
+}
+export interface DispositionReport {
+  readonly started: number;
+  readonly cancellationRate: number; // true cancellations / started (conversions excluded)
+  readonly conversionRate: number; // conversions / started
+  readonly cancelledByCategory: Readonly<Record<string, number>>;
+}
+
+/** Cancellation rate (conversions excluded) and conversion rate from cycle counts. */
+export function cycleDisposition(c: DispositionCounts): DispositionReport {
+  return {
+    started: c.started,
+    cancellationRate: rate(c.cancelled, c.started),
+    conversionRate: rate(c.converted, c.started),
+    cancelledByCategory: c.cancelledByCategory,
+  };
 }

@@ -1,5 +1,5 @@
 import { rate, bandFor, DEFAULT_LAB_KPI_THRESHOLDS, type KpiThreshold, type LabCounts, type OutcomeCounts, type KpiResult } from "./kpi.js";
-import { ageingBuckets, revenueByLine, instalmentRisk, type AgeingItem, type AgeingBuckets, type RevenueRow, type InstalmentRisk } from "./dashboards.js";
+import { ageingBuckets, revenueByLine, instalmentRisk, cycleDisposition, type AgeingItem, type AgeingBuckets, type RevenueRow, type InstalmentRisk, type DispositionCounts, type DispositionReport } from "./dashboards.js";
 
 export interface OutcomeReport {
   readonly cycles: number;
@@ -49,6 +49,10 @@ export class AnalyticsService {
   /** Financial dashboard: instalment-plan arrears risk. */
   instalmentRisk(arrears: readonly number[]): InstalmentRisk {
     return instalmentRisk(arrears);
+  }
+  /** Clinical dashboard: cycle cancellation rate (by category) + conversion rate. */
+  disposition(counts: DispositionCounts): DispositionReport {
+    return cycleDisposition(counts);
   }
 
   private kpi(key: string, numerator: number, denominator: number): KpiResult {

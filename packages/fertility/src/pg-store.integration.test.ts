@@ -7,10 +7,12 @@ import { fixedClock, type Result, type AppError } from "@oxford/core";
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { CycleService } from "./cycle-service.js";
 import { PgCycleStore } from "./pg-store.js";
+import { InMemoryReasonCodeStore } from "./reason-codes.js";
 import type { FertilityGate } from "./gate.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const migration = readFileSync(new URL("../migrations/0001_fertility.sql", import.meta.url), "utf8");
+const cancellationMigration = readFileSync(new URL("../migrations/0004_fertility_cancellation_coding.sql", import.meta.url), "utf8");
 const allowGate: FertilityGate = { assertMayTreat: async (): Promise<Result<void, AppError>> => ({ ok: true, value: undefined }) };
 
 describe.skipIf(!DATABASE_URL)("PgCycleStore", () => {
@@ -19,6 +21,7 @@ describe.skipIf(!DATABASE_URL)("PgCycleStore", () => {
 
   beforeAll(async () => {
     await pool.query(migration);
+    await pool.query(cancellationMigration);
   });
   beforeEach(async () => {
     await pool.query("TRUNCATE fertility.cycle, fertility.protocol");
@@ -30,7 +33,7 @@ describe.skipIf(!DATABASE_URL)("PgCycleStore", () => {
   it("persists a treatment cycle, consents, and an advance", async () => {
     const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock);
     const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
-    const svc = new CycleService(new PgCycleStore(pool), audit, events, clock, allowGate);
+    const svc = new CycleService(new PgCycleStore(pool), audit, events, clock, allowGate, new InMemoryReasonCodeStore());
 
     const r = await svc.createTreatmentCycle("doc-1", "icsi", "couple-1", "antagonist");
     if (!r.ok) throw new Error("setup");

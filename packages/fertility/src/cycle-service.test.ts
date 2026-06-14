@@ -3,17 +3,18 @@ import { fixedClock, asId, preconditionFailed, type Result, type AppError } from
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { CycleService } from "./cycle-service.js";
 import { InMemoryCycleStore } from "./store.js";
+import { InMemoryReasonCodeStore } from "./reason-codes.js";
 import type { FertilityGate } from "./gate.js";
 import type { CycleId } from "./types.js";
 
 const allowGate: FertilityGate = { assertMayTreat: async (): Promise<Result<void, AppError>> => ({ ok: true, value: undefined }) };
 const denyGate: FertilityGate = { assertMayTreat: async (): Promise<Result<void, AppError>> => ({ ok: false, error: preconditionFailed("no verified marriage", "registry.marriage.unverified") }) };
 
-function build(gate: FertilityGate = allowGate) {
+function build(gate: FertilityGate = allowGate, reasons = new InMemoryReasonCodeStore()) {
   const clock = fixedClock(new Date("2026-06-13T08:00:00.000Z"));
   const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock);
   const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
-  return { svc: new CycleService(new InMemoryCycleStore(), audit, events, clock, gate), audit, events };
+  return { svc: new CycleService(new InMemoryCycleStore(), audit, events, clock, gate, reasons), audit, events };
 }
 
 describe("CycleService.createTreatmentCycle", () => {
@@ -89,14 +90,88 @@ describe("CycleService consent + lifecycle", () => {
     expect((await svc.get(r.value.id)) !== null).toBe(true);
   });
 
-  it("cancels with a reason and rejects cancel from a terminal/missing cycle", async () => {
+  it("cancels with a CODED reason (+ note) and rejects cancel from a terminal/missing cycle", async () => {
     const { svc } = build();
     const r = await svc.createTreatmentCycle("doc-1", "ivf", "couple-1");
     if (!r.ok) throw new Error("setup");
-    const c = await svc.cancel("doc-1", r.value.id, "patient withdrew");
-    expect(c.ok && c.value.cancellationReason).toBe("patient withdrew");
-    const again = await svc.cancel("doc-1", r.value.id, "x"); // already cancelled → illegal
+    const c = await svc.cancel("doc-1", r.value.id, "patient_withdrew", "called in");
+    expect(c.ok && c.value.cancellationReasonCode).toBe("patient_withdrew");
+    expect(c.ok && c.value.cancellationCategory).toBe("patient_choice");
+    expect(c.ok && c.value.cancellationNote).toBe("called in");
+    const again = await svc.cancel("doc-1", r.value.id, "patient_withdrew"); // already cancelled → illegal
     expect(again.ok).toBe(false);
-    expect((await svc.cancel("doc-1", asId<"Cycle">("ghost") as CycleId, "x")).ok).toBe(false);
+    expect((await svc.cancel("doc-1", asId<"Cycle">("ghost") as CycleId, "patient_withdrew")).ok).toBe(false);
+  });
+
+  it("rejects an unknown/inactive cancellation reason and a conversion reason via cancel", async () => {
+    const { svc } = build();
+    const r = await svc.createTreatmentCycle("doc-1", "ivf", "couple-1");
+    if (!r.ok) throw new Error("setup");
+    const unknown = await svc.cancel("doc-1", r.value.id, "not_a_code");
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.error.detailKey).toBe("fertility.cancellation.unknown_reason");
+    const conv = await svc.cancel("doc-1", r.value.id, "converted_to_iui");
+    expect(conv.ok).toBe(false);
+    if (!conv.ok) expect(conv.error.detailKey).toBe("fertility.cancellation.use_convert");
+  });
+
+  it("rejects an INACTIVE reason on cancel and on convert, and an unknown reason on convert", async () => {
+    const reasons = new InMemoryReasonCodeStore([
+      { code: "retired", category: "clinical", name: { ar: "ملغى", en: "Retired" }, active: false },
+      { code: "retired_conv", category: "converted", name: { ar: "تحويل ملغى", en: "Retired conversion" }, active: false },
+    ]);
+    const { svc } = build(allowGate, reasons);
+    const r = await svc.createTreatmentCycle("doc-1", "ivf", "couple-1");
+    if (!r.ok) throw new Error("setup");
+    expect((await svc.cancel("doc-1", r.value.id, "retired")).ok).toBe(false); // inactive → unknown_reason
+    expect((await svc.convertCycle("doc-1", r.value.id, "iui", "nope")).ok).toBe(false); // unknown → reason null
+    const inactiveConv = await svc.convertCycle("doc-1", r.value.id, "iui", "retired_conv");
+    expect(inactiveConv.ok).toBe(false);
+    if (!inactiveConv.ok) expect(inactiveConv.error.detailKey).toBe("fertility.cancellation.unknown_reason");
+  });
+
+  it("converts a cycle: source cancelled (converted) + new linked cycle created", async () => {
+    const { svc } = build();
+    const r = await svc.createTreatmentCycle("doc-1", "ivf", "couple-1");
+    if (!r.ok) throw new Error("setup");
+    await svc.recordConsent("doc-1", r.value.id, "shared");
+    const conv = await svc.convertCycle("doc-1", r.value.id, "iui", "converted_to_iui");
+    expect(conv.ok).toBe(true);
+    if (!conv.ok) return;
+    expect(conv.value.source.status).toBe("cancelled");
+    expect(conv.value.source.cancellationCategory).toBe("converted");
+    expect(conv.value.created.type).toBe("iui");
+    expect(conv.value.created.status).toBe("planned");
+    expect(conv.value.created.convertedFromId).toBe(r.value.id);
+    expect(conv.value.created.signedConsents).toEqual(["shared"]); // consents carried over
+    // disposition: 2 cycles started, 0 true cancellations (the source is a conversion), 1 converted
+    const d = await svc.dispositionCounts();
+    expect(d).toMatchObject({ started: 2, cancelled: 0, converted: 1 });
+  });
+
+  it("rejects illegal conversions (post-retrieval, same type, preservation, bad reason)", async () => {
+    const { svc } = build();
+    const r = await svc.createTreatmentCycle("doc-1", "ivf", "couple-1");
+    if (!r.ok) throw new Error("setup");
+    // same type
+    expect((await svc.convertCycle("doc-1", r.value.id, "ivf", "converted_to_ivf")).ok).toBe(false);
+    // non-conversion reason category
+    const badReason = await svc.convertCycle("doc-1", r.value.id, "iui", "patient_withdrew");
+    expect(badReason.ok).toBe(false);
+    if (!badReason.ok) expect(badReason.error.detailKey).toBe("fertility.convert.reason_not_conversion");
+    // to preservation (person-scoped)
+    expect((await svc.convertCycle("doc-1", r.value.id, "fertility_preservation", "converted_to_iui")).ok).toBe(false);
+    // missing cycle
+    expect((await svc.convertCycle("doc-1", asId<"Cycle">("ghost") as CycleId, "iui", "converted_to_iui")).ok).toBe(false);
+    // source preservation (person-scoped) cannot be converted
+    const preservation = await svc.createPreservationCycle("doc-1", "person-1");
+    const fromPres = await svc.convertCycle("doc-1", preservation.id, "iui", "converted_to_iui");
+    expect(fromPres.ok).toBe(false);
+    if (!fromPres.ok) expect(fromPres.error.detailKey).toBe("fertility.convert.preservation_not_convertible");
+    // a cancelled cycle is out of the convertible window
+    await svc.cancel("doc-1", r.value.id, "patient_withdrew");
+    const notConvertible = await svc.convertCycle("doc-1", r.value.id, "iui", "converted_to_iui");
+    expect(notConvertible.ok).toBe(false);
+    if (!notConvertible.ok) expect(notConvertible.error.detailKey).toBe("fertility.convert.not_convertible");
   });
 });
