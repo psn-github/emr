@@ -1,9 +1,9 @@
 import type { Result, AppError } from "@oxford/core";
 import { ok, err, newId, asId, notFound } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
-import type { Staff, Credential, CredentialType, Shift } from "./types.js";
+import type { Staff, Credential, CredentialType, Shift, Leave, LeaveType } from "./types.js";
 import type { HrStore } from "./store.js";
-import { credentialStatus, validateCredentialDates, validateShift, overlaps, type CredentialStatus } from "./hr.js";
+import { credentialStatus, validateCredentialDates, validateShift, validateLeave, overlaps, type CredentialStatus } from "./hr.js";
 
 export interface RegisterStaffInput {
   readonly name: string;
@@ -36,6 +36,13 @@ export interface CredentialAlert {
 export interface CredentialAlerts {
   readonly expired: readonly CredentialAlert[];
   readonly expiring: readonly CredentialAlert[];
+}
+export interface RecordLeaveInput {
+  readonly staffId: string;
+  readonly type: LeaveType;
+  readonly start: string;
+  readonly end: string;
+  readonly note?: string;
 }
 
 /**
@@ -104,10 +111,46 @@ export class HrService {
     return ok(s);
   }
 
-  /** Rota → scheduling: the shifts staffing a resource that overlap a window. */
+  /** Record a leave period for a practitioner (annual/sick/study/…). */
+  async recordLeave(actorId: string, input: RecordLeaveInput): Promise<Result<Leave, AppError>> {
+    const staff = await this.store.getStaff(asId<"Staff">(input.staffId));
+    if (staff === null) return err(notFound("staff not found", "hr.staff.not_found"));
+    const valid = validateLeave(input.start, input.end);
+    if (!valid.ok) return err(valid.error);
+    const l: Leave = { id: newId<"Leave">(), staffId: input.staffId, type: input.type, start: input.start, end: input.end, note: input.note ?? null };
+    await this.store.saveLeave(l);
+    await this.audit.record({ actorId, entityType: "Leave", entityId: l.id, action: "CREATE", after: { staffId: input.staffId, type: input.type, start: input.start, end: input.end } });
+    await this.events.emit({ type: "LeaveRecorded", aggregateType: "Staff", aggregateId: input.staffId, data: { type: input.type } });
+    return ok(l);
+  }
+
+  /** Leave periods for a staff member that overlap a window. */
+  async leaveFor(staffId: string, from: string, to: string): Promise<readonly Leave[]> {
+    const all = await this.store.leaveForStaff(staffId);
+    return all.filter((l) => overlaps(l.start, l.end, from, to));
+  }
+
+  /** Whether a staff member is on leave at any point in a window. */
+  async isOnLeave(staffId: string, from: string, to: string): Promise<boolean> {
+    return (await this.leaveFor(staffId, from, to)).length > 0;
+  }
+
+  /** Rota → scheduling: shifts staffing a resource that overlap a window, EXCLUDING
+   *  any whose staff is on leave for that window (leave overrides the rota). */
   async availability(resourceId: string, from: string, to: string): Promise<readonly Shift[]> {
-    const shifts = await this.store.shiftsForResource(resourceId);
-    return shifts.filter((s) => overlaps(s.start, s.end, from, to));
+    const shifts = (await this.store.shiftsForResource(resourceId)).filter((s) => overlaps(s.start, s.end, from, to));
+    const available: Shift[] = [];
+    for (const s of shifts) {
+      if (!(await this.isOnLeave(s.staffId, from, to))) available.push(s);
+    }
+    return available;
+  }
+
+  /** Effective capacity for a resource/window: the count of distinct available
+   *  (rostered and not on leave) practitioners. */
+  async capacity(resourceId: string, from: string, to: string): Promise<number> {
+    const available = await this.availability(resourceId, from, to);
+    return new Set(available.map((s) => s.staffId)).size;
   }
 
   listStaff(): Promise<readonly Staff[]> {

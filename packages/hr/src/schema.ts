@@ -38,3 +38,17 @@ export const shift = hrSchema.table(
   },
   (t) => ({ byResource: index("shift_resource_idx").on(t.resourceId) }),
 );
+
+/** Practitioner leave (docs/01 §E2 P1) — overrides the rota for availability. */
+export const leave = hrSchema.table(
+  "leave",
+  {
+    id: text("id").primaryKey(),
+    staffId: text("staff_id").notNull(),
+    type: text("type").notNull(),
+    start: timestamp("start", { withTimezone: true }).notNull(),
+    end: timestamp("end", { withTimezone: true }).notNull(),
+    note: text("note"),
+  },
+  (t) => ({ byStaff: index("leave_staff_idx").on(t.staffId) }),
+);
