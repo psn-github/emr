@@ -15,7 +15,7 @@
 | 2 | Deploys additive; destructive migrations blocked | Forward-only `*.sql`; `scripts/check-migrations-safe.mjs` in CI before deploy | `pnpm` CI runs it (40+ migrations, all additive) | ✅ automated |
 | 3 | Clinical data append-only / soft-delete only | Stores insert/soft-delete; no hard deletes in domain code; retention is a documented audited job | adversarial + integration tests per module; manual review of each migration | ✅ tests / ⏳ retention job (docs/03 §3) |
 | 4 | Patient & clinical history survives every deploy | Follows from 1–3 | the additive-migrations gate + closeout e2es (each phase) | ✅ |
-| 5 | Backups nightly, encrypted, tested restore | **Not yet built** — go-live blocker | `docs/PATIENT-DATA.md §restore` to be populated; verify a real restore + audit-chain re-verify | ⏳ **BLOCKER** |
+| 5 | Backups nightly, encrypted, tested restore | **Restore proven** by the drill (`restore-drill.e2e.test.ts`: dump → fresh DB → audit-chain re-verify + data survival). Nightly encrypted backup *job* is infra | restore: ✅ automated drill (`docs/PATIENT-DATA.md §restore`). nightly job: ⏳ provision with the in-region DB | ⏳ restore ✅ / nightly job **BLOCKER** |
 | 6 | Every mutation in the immutable hash-chained audit log | `@oxford/audit` (AuditLog.record on every mutation); `verifyIntegrity`; scheduled chain check | `audit` package 100%; closeout e2es assert `verifyIntegrity().ok`; `runChainIntegrityCheck` job | ✅ automated |
 
 ## B. Hard rules (CLAUDE.md) — structural guarantees
