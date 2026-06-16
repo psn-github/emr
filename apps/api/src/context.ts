@@ -15,7 +15,7 @@ import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
 import { FacilityService, FlowService, PgFacilityStore, PgFlowStore, type PatientFlowStatus } from "@oxford/facility";
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
 import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore, GatewayPaymentService, StubPaymentGateway, ChargeCaptureService, PgChargeMasterStore, PgChargeStore } from "@oxford/billing";
-import { ClinicalService, PgClinicalStore, PgOrderSetStore } from "@oxford/clinical";
+import { ClinicalService, PgClinicalStore, PgOrderSetStore, AntenatalService, PgAntenatalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
 import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore, PgAdvancedTestSpecStore } from "@oxford/andrology";
@@ -71,6 +71,7 @@ export interface Services {
   readonly paymentGateway: StubPaymentGateway;
   readonly charges: ChargeCaptureService;
   readonly clinical: ClinicalService;
+  readonly antenatal: AntenatalService;
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
   readonly labQc: LabQcService;
@@ -164,6 +165,9 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // free-text charges), recognised against packages, batched into invoices.
   const charges = new ChargeCaptureService(new PgChargeMasterStore(pool), new PgChargeStore(pool), packages, billing, audit, events);
   const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock, new PgOrderSetStore(pool));
+  // Antenatal record / obstetric continuum (ADR-0050): dates a pregnancy (EDD),
+  // generates a visit schedule, and derives per-visit risk flags.
+  const antenatal = new AntenatalService(new PgAntenatalStore(pool), audit, events, clock);
 
   // Witnessing: RI Witness is authoritative (ADR-0018). A stub provider stands in
   // until the CooperSurgical integration is scoped + residency-reviewed. The
@@ -322,5 +326,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, witnessing, embryology, labQc, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }
