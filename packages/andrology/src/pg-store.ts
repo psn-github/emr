@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { asId } from "@oxford/core";
-import type { SemenAnalysis, SpermPrep, SpermFreeze, SurgicalRetrieval, SemenParameters, SemenFlags } from "./types.js";
+import type { SemenAnalysis, SpermPrep, SpermFreeze, SurgicalRetrieval, SemenParameters, SemenFlags, AdvancedSpermTest } from "./types.js";
 import type { AndrologyStore } from "./store.js";
 
 /** Postgres-backed AndrologyStore. Clinical lab data is append-only; inserts only. */
@@ -51,12 +51,24 @@ export class PgAndrologyStore implements AndrologyStore {
     const r = await this.pool.query<RetrievalRow>("SELECT * FROM andrology.surgical_retrieval WHERE patient_id = $1 ORDER BY performed_at", [patientId]);
     return r.rows.map(retrievalFrom);
   }
+  async saveAdvancedTest(t: AdvancedSpermTest): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO andrology.advanced_sperm_test (id, patient_id, code, value, unit, interpretation, method, performed_by, performed_at, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+      [t.id, t.patientId, t.code, t.value, t.unit, t.interpretation, t.method, t.performedBy, t.performedAt, t.note],
+    );
+  }
+  async advancedTestsForPatient(patientId: string): Promise<readonly AdvancedSpermTest[]> {
+    const r = await this.pool.query<AdvancedRow>("SELECT * FROM andrology.advanced_sperm_test WHERE patient_id = $1 ORDER BY performed_at", [patientId]);
+    return r.rows.map(advancedFrom);
+  }
 }
 
 interface AnalysisRow { id: string; patient_id: string; collected_at: Date; parameters: SemenParameters; flags: SemenFlags; all_within_reference: boolean; recorded_by: string }
 interface PrepRow { id: string; patient_id: string; method: string; post_prep_concentration: number; post_prep_progressive_motility: number; prepared_by: string; prepared_at: Date }
 interface FreezeRow { id: string; patient_id: string; cryo_specimen_ref: string; straws: number; frozen_by: string; frozen_at: Date; witness_key: string }
 interface RetrievalRow { id: string; patient_id: string; method: string; theatre_booking_ref: string; sperm_found: boolean; performed_by: string; performed_at: Date }
+interface AdvancedRow { id: string; patient_id: string; code: string; value: string; unit: string; interpretation: string; method: string | null; performed_by: string; performed_at: Date; note: string | null }
 
 const iso = (d: Date): string => new Date(d).toISOString();
 
@@ -71,4 +83,7 @@ function freezeFrom(r: FreezeRow): SpermFreeze {
 }
 function retrievalFrom(r: RetrievalRow): SurgicalRetrieval {
   return { id: asId<"SurgicalRetrieval">(r.id), patientId: r.patient_id, method: r.method as SurgicalRetrieval["method"], theatreBookingRef: r.theatre_booking_ref, spermFound: r.sperm_found, performedBy: r.performed_by, performedAt: iso(r.performed_at) };
+}
+function advancedFrom(r: AdvancedRow): AdvancedSpermTest {
+  return { id: asId<"AdvancedSpermTest">(r.id), patientId: r.patient_id, code: r.code, value: Number(r.value), unit: r.unit, interpretation: r.interpretation as AdvancedSpermTest["interpretation"], method: r.method, performedBy: r.performed_by, performedAt: iso(r.performed_at), note: r.note };
 }

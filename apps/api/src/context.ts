@@ -18,7 +18,7 @@ import { BillingService, PgBillingStore, PackageService, PgPackageStore, Instalm
 import { ClinicalService, PgClinicalStore, PgOrderSetStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
 import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, type WitnessPort } from "@oxford/embryology";
-import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
+import { AndrologyService, PgAndrologyStore, PgAdvancedTestSpecStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
 import {
@@ -184,7 +184,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // the clinic configures its counsel-confirmed permitted set (no permissive default).
   const pgt = new PgtService(new PgPgtStore(pool), audit, events, PGT_PERMITTED_INDICATIONS);
   // Andrology shares the witnessing seam (its sperm freeze is a witnessed event).
-  const andrology = new AndrologyService(new PgAndrologyStore(pool), witnessPort, audit, events);
+  const andrology = new AndrologyService(new PgAndrologyStore(pool), witnessPort, audit, events, new PgAdvancedTestSpecStore(pool));
   // Outcome continuum (fertility → pregnancy → live birth), linked back to the cycle.
   const outcomes = new OutcomesService(new PgOutcomesStore(pool), audit, events);
 
