@@ -85,3 +85,19 @@ export interface Letter {
   readonly signedBy: string | null;
   readonly signedAt: string | null;
 }
+
+// Clinical pathways / order sets (docs/01 §E13 P1): a named, versioned bundle of
+// orders for a scenario (e.g. "early pregnancy", "recurrent miscarriage workup").
+// Applying a set places all its orders at once. Config — bilingual, no free text.
+export interface OrderSetItem {
+  readonly kind: OrderKind;
+  readonly code: string;
+  readonly label: { readonly ar: string; readonly en: string };
+}
+
+export interface OrderSet {
+  readonly id: string;
+  readonly name: { readonly ar: string; readonly en: string };
+  readonly items: readonly OrderSetItem[];
+  readonly active: boolean;
+}

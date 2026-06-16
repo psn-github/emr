@@ -3,6 +3,7 @@ import { fixedClock, asId } from "@oxford/core";
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { ClinicalService } from "./clinical-service.js";
 import { InMemoryClinicalStore } from "./store.js";
+import { InMemoryOrderSetStore } from "./order-sets.js";
 import type { EncounterId, LetterId, NoteId, OrderId, ResultId } from "./types.js";
 
 function build() {
@@ -116,5 +117,34 @@ describe("ClinicalService letters", () => {
     const again = await svc.signLetter("doc-1", letter.id);
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.error.detailKey).toBe("clinical.letter.signed");
+  });
+});
+
+describe("ClinicalService clinical pathways / order sets", () => {
+  it("lists order sets and applies one, placing all its orders on the encounter", async () => {
+    const { svc, events } = build();
+    expect((await svc.listOrderSets()).some((s) => s.id === "early_pregnancy")).toBe(true);
+    const enc = await svc.openEncounter("doc-1", "pat-1", "antenatal", "doc-1");
+    const r = await svc.applyOrderSet("doc-1", enc.id, "pat-1", "early_pregnancy");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.map((o) => o.code)).toEqual(["BHCG", "PROG", "US_EARLY_VIABILITY"]);
+      expect(r.value.every((o) => o.status === "ordered" && o.encounterId === enc.id)).toBe(true);
+    }
+    const emitted = await events.events();
+    expect(emitted.some((e) => e.payload.type === "OrderSetApplied")).toBe(true);
+  });
+
+  it("rejects an unknown or inactive order set", async () => {
+    const sets = new InMemoryOrderSetStore([
+      { id: "retired", name: { ar: "ق", en: "Retired" }, items: [], active: false },
+    ]);
+    const clock = fixedClock(new Date("2026-06-13T08:00:00.000Z"));
+    const svc = new ClinicalService(new InMemoryClinicalStore(), new AuditLog(new InMemoryChainStore<AuditPayload>(), clock), new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock), clock, sets);
+    const enc = await svc.openEncounter("doc-1", "pat-1", "gynae", "doc-1");
+    const unknown = await svc.applyOrderSet("doc-1", enc.id, "pat-1", "nope");
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.error.detailKey).toBe("clinical.order_set.unknown");
+    expect((await svc.applyOrderSet("doc-1", enc.id, "pat-1", "retired")).ok).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ import { SchedulingService, PgSchedulingStore } from "@oxford/scheduling";
 import { FacilityService, FlowService, PgFacilityStore, PgFlowStore, type PatientFlowStatus } from "@oxford/facility";
 import { NotificationService, RecordingNotificationProvider, notificationMessages } from "@oxford/notifications";
 import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore, GatewayPaymentService, StubPaymentGateway, ChargeCaptureService, PgChargeMasterStore, PgChargeStore } from "@oxford/billing";
-import { ClinicalService, PgClinicalStore } from "@oxford/clinical";
+import { ClinicalService, PgClinicalStore, PgOrderSetStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
 import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore } from "@oxford/andrology";
@@ -163,7 +163,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // Item-level charge capture (ADR-0037): priced from the charge master (no
   // free-text charges), recognised against packages, batched into invoices.
   const charges = new ChargeCaptureService(new PgChargeMasterStore(pool), new PgChargeStore(pool), packages, billing, audit, events);
-  const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock);
+  const clinical = new ClinicalService(new PgClinicalStore(pool), audit, events, clock, new PgOrderSetStore(pool));
 
   // Witnessing: RI Witness is authoritative (ADR-0018). A stub provider stands in
   // until the CooperSurgical integration is scoped + residency-reviewed. The
