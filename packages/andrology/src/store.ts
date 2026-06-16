@@ -1,4 +1,4 @@
-import type { SemenAnalysis, SpermPrep, SpermFreeze, SurgicalRetrieval } from "./types.js";
+import type { SemenAnalysis, SpermPrep, SpermFreeze, SurgicalRetrieval, AdvancedSpermTest } from "./types.js";
 
 export interface AndrologyStore {
   saveAnalysis(a: SemenAnalysis): Promise<void>;
@@ -9,6 +9,8 @@ export interface AndrologyStore {
   freezesForPatient(patientId: string): Promise<readonly SpermFreeze[]>;
   saveRetrieval(r: SurgicalRetrieval): Promise<void>;
   retrievalsForPatient(patientId: string): Promise<readonly SurgicalRetrieval[]>;
+  saveAdvancedTest(t: AdvancedSpermTest): Promise<void>;
+  advancedTestsForPatient(patientId: string): Promise<readonly AdvancedSpermTest[]>;
 }
 
 export class InMemoryAndrologyStore implements AndrologyStore {
@@ -16,6 +18,7 @@ export class InMemoryAndrologyStore implements AndrologyStore {
   private readonly preps: SpermPrep[] = [];
   private readonly freezes: SpermFreeze[] = [];
   private readonly retrievals: SurgicalRetrieval[] = [];
+  private readonly advancedTests: AdvancedSpermTest[] = [];
 
   async saveAnalysis(a: SemenAnalysis): Promise<void> {
     this.analyses.push(a);
@@ -40,5 +43,11 @@ export class InMemoryAndrologyStore implements AndrologyStore {
   }
   async retrievalsForPatient(patientId: string): Promise<readonly SurgicalRetrieval[]> {
     return this.retrievals.filter((r) => r.patientId === patientId);
+  }
+  async saveAdvancedTest(t: AdvancedSpermTest): Promise<void> {
+    this.advancedTests.push(t);
+  }
+  async advancedTestsForPatient(patientId: string): Promise<readonly AdvancedSpermTest[]> {
+    return this.advancedTests.filter((t) => t.patientId === patientId);
   }
 }

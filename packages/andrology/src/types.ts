@@ -8,6 +8,7 @@ export type SemenAnalysisId = Id<"SemenAnalysis">;
 export type SpermPrepId = Id<"SpermPrep">;
 export type SpermFreezeId = Id<"SpermFreeze">;
 export type SurgicalRetrievalId = Id<"SurgicalRetrieval">;
+export type AdvancedSpermTestId = Id<"AdvancedSpermTest">;
 
 /** The measured WHO 6th-ed semen parameters. Counts/percentages; no PHI. */
 export interface SemenParameters {
@@ -78,4 +79,36 @@ export interface SurgicalRetrieval {
   readonly spermFound: boolean;
   readonly performedBy: string;
   readonly performedAt: string;
+}
+
+// Advanced sperm tests (docs/01 §E5 P1): DNA fragmentation (DFI) + other advanced
+// assays, captured with a configured reference threshold and an interpretation.
+export type SpermTestInterpretation = "normal" | "borderline" | "abnormal";
+/** Whether a higher value is worse (DFI, ROS, aneuploidy) or better (HBA binding). */
+export type AdvancedTestDirection = "higher_worse" | "higher_better";
+
+/** Reference spec for an advanced sperm test (versioned config; bilingual). */
+export interface AdvancedTestSpec {
+  readonly code: string;
+  readonly name: { readonly ar: string; readonly en: string };
+  readonly unit: string;
+  readonly direction: AdvancedTestDirection;
+  /** Boundary between normal and borderline. */
+  readonly normalThreshold: number;
+  /** Boundary between borderline and abnormal. */
+  readonly borderlineThreshold: number;
+  readonly active: boolean;
+}
+
+export interface AdvancedSpermTest {
+  readonly id: AdvancedSpermTestId;
+  readonly patientId: string;
+  readonly code: string;
+  readonly value: number;
+  readonly unit: string;
+  readonly interpretation: SpermTestInterpretation;
+  readonly method: string | null;
+  readonly performedBy: string;
+  readonly performedAt: string;
+  readonly note: string | null;
 }

@@ -79,3 +79,35 @@ describe("AndrologyService — prep, freeze, retrieval", () => {
     expect(await svc.retrievals(PATIENT)).toHaveLength(1);
   });
 });
+
+describe("AndrologyService — advanced sperm tests (DNA fragmentation etc.)", () => {
+  it("records a normal DFI result with the configured unit + interpretation", async () => {
+    const { svc } = build();
+    expect((await svc.listAdvancedTestSpecs()).some((s) => s.code === "dfi")).toBe(true);
+    const r = await svc.recordAdvancedTest("andro-1", { patientId: PATIENT, code: "dfi", value: 10, method: "SCSA", performedAt: "2026-06-22T09:00:00Z" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.interpretation).toBe("normal");
+      expect(r.value.unit).toBe("%");
+      expect(r.value.method).toBe("SCSA");
+      expect(r.value.note).toBe(null);
+    }
+    expect(await svc.advancedTests(PATIENT)).toHaveLength(1);
+  });
+
+  it("flags an abnormal result and emits an abnormal event", async () => {
+    const { svc, events } = build();
+    const r = await svc.recordAdvancedTest("andro-1", { patientId: PATIENT, code: "dfi", value: 42, performedAt: "2026-06-22T09:00:00Z", note: "repeat advised" });
+    expect(r.ok && r.value.interpretation).toBe("abnormal");
+    expect(r.ok && r.value.note).toBe("repeat advised");
+    const emitted = await events.events();
+    expect(emitted.some((e) => e.payload.type === "AdvancedSpermTestAbnormal")).toBe(true);
+  });
+
+  it("rejects an unknown or inactive advanced test", async () => {
+    const { svc } = build();
+    const unknown = await svc.recordAdvancedTest("andro-1", { patientId: PATIENT, code: "nope", value: 1, performedAt: "2026-06-22T09:00:00Z" });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) expect(unknown.error.detailKey).toBe("andrology.advanced_test.unknown");
+  });
+});

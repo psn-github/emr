@@ -61,3 +61,33 @@ export const surgicalRetrieval = andrologySchema.table(
   },
   (t) => ({ byPatient: index("surgical_retrieval_patient_idx").on(t.patientId) }),
 );
+
+/** Advanced sperm test specs (versioned config; bilingual; thresholds + direction). */
+export const advancedTestSpec = andrologySchema.table("advanced_test_spec", {
+  code: text("code").primaryKey(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  unit: text("unit").notNull(),
+  direction: text("direction").notNull(),
+  normalThreshold: doublePrecision("normal_threshold").notNull(),
+  borderlineThreshold: doublePrecision("borderline_threshold").notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
+/** Advanced sperm test results (DNA fragmentation etc.) with interpretation. */
+export const advancedSpermTest = andrologySchema.table(
+  "advanced_sperm_test",
+  {
+    id: text("id").primaryKey(),
+    patientId: text("patient_id").notNull(),
+    code: text("code").notNull(),
+    value: doublePrecision("value").notNull(),
+    unit: text("unit").notNull(),
+    interpretation: text("interpretation").notNull(),
+    method: text("method"),
+    performedBy: text("performed_by").notNull(),
+    performedAt: timestamp("performed_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+  },
+  (t) => ({ byPatient: index("advanced_sperm_test_patient_idx").on(t.patientId) }),
+);

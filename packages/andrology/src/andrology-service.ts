@@ -1,5 +1,5 @@
 import type { Result, AppError } from "@oxford/core";
-import { ok, err, newId } from "@oxford/core";
+import { ok, err, newId, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type {
   SemenAnalysis,
@@ -9,10 +9,13 @@ import type {
   SurgicalRetrieval,
   PrepMethod,
   RetrievalMethod,
+  AdvancedSpermTest,
+  AdvancedTestSpec,
 } from "./types.js";
 import type { AndrologyStore } from "./store.js";
 import type { WitnessPort } from "./witness-port.js";
 import { validateSemenParameters, flagSemen, allWithinReference, type ReferenceLimits } from "./semen-analysis.js";
+import { interpret, InMemoryAdvancedTestSpecStore, type AdvancedTestSpecStore } from "./advanced-tests.js";
 
 export interface RecordAnalysisInput {
   readonly patientId: string;
@@ -42,6 +45,14 @@ export interface RecordRetrievalInput {
   readonly spermFound: boolean;
   readonly performedAt: string;
 }
+export interface RecordAdvancedTestInput {
+  readonly patientId: string;
+  readonly code: string;
+  readonly value: number;
+  readonly method?: string;
+  readonly performedAt: string;
+  readonly note?: string;
+}
 
 /**
  * Andrology lab service. Semen analysis is flagged against WHO 6th-edition
@@ -56,7 +67,47 @@ export class AndrologyService {
     private readonly witness: WitnessPort,
     private readonly audit: AuditLog,
     private readonly events: DomainEventLog,
+    private readonly advancedSpecs: AdvancedTestSpecStore = new InMemoryAdvancedTestSpecStore(),
   ) {}
+
+  /** Available advanced sperm test specs (config) for the entry UI. */
+  listAdvancedTestSpecs(): Promise<readonly AdvancedTestSpec[]> {
+    return this.advancedSpecs.listActive();
+  }
+
+  /** Record an advanced sperm test (e.g. DNA fragmentation), interpreting the value
+   *  against its configured spec. An `abnormal` result emits a flag event. */
+  async recordAdvancedTest(actorId: string, input: RecordAdvancedTestInput): Promise<Result<AdvancedSpermTest, AppError>> {
+    const spec = await this.advancedSpecs.get(input.code);
+    if (spec === null || !spec.active) return err(validationError(`unknown or inactive advanced sperm test '${input.code}'`, "andrology.advanced_test.unknown"));
+    const interpretation = interpret(spec, input.value);
+    const test: AdvancedSpermTest = {
+      id: newId<"AdvancedSpermTest">(),
+      patientId: input.patientId,
+      code: spec.code,
+      value: input.value,
+      unit: spec.unit,
+      interpretation,
+      method: input.method ?? null,
+      performedBy: actorId,
+      performedAt: input.performedAt,
+      note: input.note ?? null,
+    };
+    await this.store.saveAdvancedTest(test);
+    await this.audit.record({ actorId, entityType: "AdvancedSpermTest", entityId: test.id, action: "CREATE", after: { code: spec.code, value: input.value, interpretation } });
+    await this.events.emit({
+      type: interpretation === "abnormal" ? "AdvancedSpermTestAbnormal" : "AdvancedSpermTestRecorded",
+      aggregateType: "Patient",
+      aggregateId: input.patientId,
+      data: { code: spec.code, interpretation },
+    });
+    return ok(test);
+  }
+
+  /** A patient's advanced sperm test history. */
+  advancedTests(patientId: string): Promise<readonly AdvancedSpermTest[]> {
+    return this.store.advancedTestsForPatient(patientId);
+  }
 
   async recordSemenAnalysis(actorId: string, input: RecordAnalysisInput): Promise<Result<SemenAnalysis, AppError>> {
     const valid = validateSemenParameters(input.parameters);

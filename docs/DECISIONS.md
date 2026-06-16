@@ -352,4 +352,10 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** add order sets to `@oxford/clinical` as **versioned config** — a bilingual `clinical.order_set` table (items stored as JSON: `{kind, code, label}`), seeded with "early pregnancy" and "recurrent miscarriage workup". `ClinicalService.applyOrderSet(encounterId, patientId, orderSetId)` validates the set is active and **places each item as a normal `Order`** (reusing `placeOrder`, so each order is audited + emits `OrderPlaced`), then records an `OrderSetApplied` event. `listOrderSets()` serves the picker. Order sets are pure config (add/edit without code); applying one produces ordinary orders that flow through the existing results/acknowledge/release pipeline unchanged.
 - **Consequences:** faster, consistent ordering for common pathways; sets are clinic-tunable config; no new order lifecycle (sets are a convenience over `placeOrder`); boundaries unchanged.
 
-_(Claude Code: continue numbering from ADR-0048.)_
+## ADR-0049 — Advanced sperm tests / DNA fragmentation (P1)
+- **Status:** accepted (2026-06-16)
+- **Context:** docs/01 §E5 P1 calls for "DNA fragmentation and advanced sperm tests capture." The andrology module captured WHO semen analysis but not DFI/ROS/aneuploidy/HBA, which need their own reference cut-offs and (unlike WHO lower limits) can be higher-is-worse or higher-is-better.
+- **Decision:** add advanced sperm tests to `@oxford/andrology` as **versioned config + capture**: (1) an `andrology.advanced_test_spec` table (bilingual; `unit`, `direction` higher_worse|higher_better, two thresholds), seeded with **DFI, ROS, sperm aneuploidy (FISH), and HBA**; (2) `interpret(spec, value)` → normal/borderline/abnormal honouring direction; (3) `AndrologyService.recordAdvancedTest()` interprets, stores an `andrology.advanced_sperm_test` row, audits it, and emits `AdvancedSpermTestAbnormal` on an abnormal result (`AdvancedSpermTestRecorded` otherwise); `advancedTests()` / `listAdvancedTestSpecs()` read. Additive migration `0002`; thresholds are clinic-tunable config.
+- **Consequences:** DFI and other advanced assays are captured + interpreted + auditable; cut-offs are config; consistent with the WHO-analysis pattern; boundaries unchanged.
+
+_(Claude Code: continue numbering from ADR-0049.)_
