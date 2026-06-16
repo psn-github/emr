@@ -1,7 +1,7 @@
 // Drizzle schema for the `clinical` domain (ADR-0008). All PHI. Notes keep full
 // version history (jsonb array of versions — append-only). "order" is a SQL
 // keyword, so the table is `clinical_order`.
-import { pgSchema, boolean, jsonb, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgSchema, boolean, jsonb, text, timestamp, index, integer, numeric, date } from "drizzle-orm/pg-core";
 
 export const clinicalSchema = pgSchema("clinical");
 
@@ -74,3 +74,43 @@ export const orderSet = clinicalSchema.table("order_set", {
   items: jsonb("items").$type<{ kind: string; code: string; label: { ar: string; en: string } }[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
 });
+
+/** Antenatal record (docs/01 §E2 P1): a dated pregnancy with booking data + EDD. */
+export const pregnancy = clinicalSchema.table(
+  "pregnancy",
+  {
+    id: text("id").primaryKey(),
+    patientId: text("patient_id").notNull(),
+    lmp: date("lmp").notNull(),
+    edd: date("edd").notNull(),
+    gravida: integer("gravida").notNull(),
+    para: integer("para").notNull(),
+    riskFactors: jsonb("risk_factors").$type<string[]>().notNull().default([]),
+    status: text("status").notNull().default("active"),
+    bookedBy: text("booked_by").notNull(),
+    bookedAt: timestamp("booked_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({ byPatient: index("pregnancy_patient_idx").on(t.patientId) }),
+);
+
+/** Serial antenatal visits: vitals + growth + derived risk flags. */
+export const antenatalVisit = clinicalSchema.table(
+  "antenatal_visit",
+  {
+    id: text("id").primaryKey(),
+    pregnancyId: text("pregnancy_id").notNull(),
+    patientId: text("patient_id").notNull(),
+    visitAt: timestamp("visit_at", { withTimezone: true }).notNull(),
+    gestationWeeks: integer("gestation_weeks").notNull(),
+    bpSystolic: integer("bp_systolic").notNull(),
+    bpDiastolic: integer("bp_diastolic").notNull(),
+    fundalHeightCm: numeric("fundal_height_cm"),
+    proteinuria: boolean("proteinuria").notNull().default(false),
+    presentation: text("presentation"),
+    fetalHeartRate: integer("fetal_heart_rate"),
+    riskFlags: jsonb("risk_flags").$type<string[]>().notNull().default([]),
+    note: text("note"),
+    recordedBy: text("recorded_by").notNull(),
+  },
+  (t) => ({ byPregnancy: index("antenatal_visit_pregnancy_idx").on(t.pregnancyId) }),
+);
