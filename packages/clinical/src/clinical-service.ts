@@ -16,6 +16,8 @@ import type {
   ResultId,
 } from "./types.js";
 import type { ClinicalStore } from "./store.js";
+import { InMemoryOrderSetStore, type OrderSetStore } from "./order-sets.js";
+import type { OrderSet } from "./types.js";
 
 /**
  * Clinical EMR core. Encounter notes are append-only (amendments add a version,
@@ -28,7 +30,27 @@ export class ClinicalService {
     private readonly audit: AuditLog,
     private readonly events: DomainEventLog,
     private readonly clock: Clock,
+    private readonly orderSets: OrderSetStore = new InMemoryOrderSetStore(),
   ) {}
+
+  /** Available clinical pathways / order sets (config) for the order-entry UI. */
+  listOrderSets(): Promise<readonly OrderSet[]> {
+    return this.orderSets.listActive();
+  }
+
+  /** Apply a clinical pathway / order set to an encounter, placing all its orders
+   *  at once (each a normal Order; audited individually + as a set application). */
+  async applyOrderSet(actorId: string, encounterId: EncounterId, patientId: string, orderSetId: string): Promise<R<readonly Order[], AppError>> {
+    const set = await this.orderSets.get(orderSetId);
+    if (set === null || !set.active) return err(validationError(`unknown or inactive order set '${orderSetId}'`, "clinical.order_set.unknown"));
+    const placed: Order[] = [];
+    for (const item of set.items) {
+      placed.push(await this.placeOrder(actorId, encounterId, patientId, item.kind, item.code));
+    }
+    await this.audit.record({ actorId, entityType: "Encounter", entityId: encounterId, action: "UPDATE", after: { orderSet: set.id, placed: placed.length } });
+    await this.events.emit({ type: "OrderSetApplied", aggregateType: "Encounter", aggregateId: encounterId, data: { orderSet: set.id, count: placed.length } });
+    return ok(placed);
+  }
 
   async openEncounter(actorId: string, patientId: string, type: EncounterType, practitionerId: string): Promise<Encounter> {
     const enc: Encounter = {

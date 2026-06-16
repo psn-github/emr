@@ -65,3 +65,12 @@ export const letter = clinicalSchema.table("letter", {
   signedBy: text("signed_by"),
   signedAt: timestamp("signed_at", { withTimezone: true }),
 });
+
+/** Clinical pathways / order sets (versioned config; bilingual; items as JSON). */
+export const orderSet = clinicalSchema.table("order_set", {
+  id: text("id").primaryKey(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  items: jsonb("items").$type<{ kind: string; code: string; label: { ar: string; en: string } }[]>().notNull().default([]),
+  active: boolean("active").notNull().default(true),
+});

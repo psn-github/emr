@@ -346,4 +346,10 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** extend `@oxford/hr` (it already owns the rota→availability feed): (1) **Leave records** — `hr.leave` (type annual/sick/study/unpaid/other + window), recorded via `HrService.recordLeave()`, audited, emitting `LeaveRecorded`. (2) **Leave overrides the rota** — `availability(resourceId, from, to)` now EXCLUDES shifts whose staff is on leave for the window; `isOnLeave()` / `leaveFor()` expose the lookups. (3) **Capacity** — `capacity(resourceId, from, to)` returns the count of distinct available (rostered, not on leave) practitioners. Additive migration `0002`; no scheduling-module change needed (it consumes the same HR availability seam, which now nets out leave).
 - **Consequences:** scheduling availability and capacity automatically account for leave; HR remains the single owner of staff time; module boundaries preserved.
 
-_(Claude Code: continue numbering from ADR-0047.)_
+## ADR-0048 — Clinical pathways / order sets (P1)
+- **Status:** accepted (2026-06-14)
+- **Context:** docs/01 §E13 P1 calls for "clinical pathways / order sets (e.g. 'early pregnancy' set, 'recurrent miscarriage workup')." Clinicians placed orders one at a time; common scenarios repeat the same bundle.
+- **Decision:** add order sets to `@oxford/clinical` as **versioned config** — a bilingual `clinical.order_set` table (items stored as JSON: `{kind, code, label}`), seeded with "early pregnancy" and "recurrent miscarriage workup". `ClinicalService.applyOrderSet(encounterId, patientId, orderSetId)` validates the set is active and **places each item as a normal `Order`** (reusing `placeOrder`, so each order is audited + emits `OrderPlaced`), then records an `OrderSetApplied` event. `listOrderSets()` serves the picker. Order sets are pure config (add/edit without code); applying one produces ordinary orders that flow through the existing results/acknowledge/release pipeline unchanged.
+- **Consequences:** faster, consistent ordering for common pathways; sets are clinic-tunable config; no new order lifecycle (sets are a convenience over `placeOrder`); boundaries unchanged.
+
+_(Claude Code: continue numbering from ADR-0048.)_
