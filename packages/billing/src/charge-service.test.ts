@@ -74,6 +74,13 @@ describe("ChargeCaptureService", () => {
     const charges = await svc.chargesForPatient("pat-1");
     expect(charges.filter((c) => c.recognised)).toHaveLength(1);
     expect(charges.filter((c) => !c.recognised)).toHaveLength(1);
+
+    // a fresh billable charge that is never invoiced surfaces as leakage; the
+    // recognised + already-invoiced charges do NOT.
+    await svc.capture("doc-1", { patientId: "pat-2", chargeCode: "SCAN", quantity: 1, source: "clinical", occurredAt: T });
+    const leaked = await svc.uninvoicedBillable();
+    expect(leaked).toHaveLength(1);
+    expect(leaked[0]!.patientId).toBe("pat-2");
   });
 
   it("guards: free-text/unknown code, bad quantity, bad definition, package error", async () => {

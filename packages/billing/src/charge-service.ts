@@ -98,6 +98,10 @@ export class ChargeCaptureService {
   chargesForPatient(patientId: string): Promise<readonly Charge[]> {
     return this.charges.chargesForPatient(patientId);
   }
+  /** Uninvoiced billable charges across patients — revenue-leakage candidates. */
+  uninvoicedBillable(): Promise<readonly Charge[]> {
+    return this.charges.uninvoicedBillable();
+  }
   /** Revenue rows (one per invoiced charge) for the revenue-by-line dashboard. */
   async revenueRows(): Promise<readonly { line: string; amountFils: number }[]> {
     const charges = await this.charges.invoicedCharges();
