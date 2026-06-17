@@ -6,20 +6,24 @@ import { InMemoryImplantUsageStore } from "./device-registry-store.js";
 import { DeviceRegistryService } from "./device-registry-service.js";
 import type { ConsumableUse } from "./types.js";
 
-const use = (over: Partial<ConsumableUse>): ConsumableUse => ({
-  id: asId<"ConsumableUse">(over.id ?? "cu-1"),
-  encounterId: "enc-1",
-  patientId: "pat-1",
-  code: "surgical_mesh",
-  description: "Surgical mesh",
-  lotNo: "LOT-9",
-  quantity: 1,
-  unitPriceFils: 1000,
-  invoiceRef: "inv-1",
-  recordedBy: "surgeon-1",
-  recordedAt: "2026-06-10T10:00:00.000Z",
-  ...over,
-});
+type UseOver = Partial<Omit<ConsumableUse, "id">> & { id?: string };
+const use = (over: UseOver = {}): ConsumableUse => {
+  const { id, ...rest } = over;
+  return {
+    id: asId<"ConsumableUse">(id ?? "cu-1"),
+    encounterId: "enc-1",
+    patientId: "pat-1",
+    code: "surgical_mesh",
+    description: "Surgical mesh",
+    lotNo: "LOT-9",
+    quantity: 1,
+    unitPriceFils: 1000,
+    invoiceRef: "inv-1",
+    recordedBy: "surgeon-1",
+    recordedAt: "2026-06-10T10:00:00.000Z",
+    ...rest,
+  };
+};
 
 function build(uses: readonly ConsumableUse[]) {
   const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), fixedClock(new Date("2026-06-17T08:00:00.000Z")));
