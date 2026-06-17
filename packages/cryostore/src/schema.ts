@@ -9,7 +9,22 @@ export const cryostoreSchema = pgSchema("cryostore");
 export const tank = cryostoreSchema.table("tank", {
   id: text("id").primaryKey(),
   label: text("label").notNull(),
+  /** Logical link to the tank's Asset record (assets module) for PPM linkage. */
+  assetRef: text("asset_ref"),
 });
+
+/** LN₂ top-ups per tank (docs/01 §E6 P2) — litres added; consumption is read back. */
+export const lnFill = cryostoreSchema.table(
+  "ln_fill",
+  {
+    id: text("id").primaryKey(),
+    tankId: text("tank_id").notNull(),
+    litresAdded: doublePrecision("litres_added").notNull(),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    filledBy: text("filled_by").notNull(),
+  },
+  (t) => ({ byTank: index("ln_fill_tank_idx").on(t.tankId) }),
+);
 
 export const cryoSpecimen = cryostoreSchema.table(
   "cryo_specimen",

@@ -8,6 +8,7 @@ export type CustodyEventId = Id<"CustodyEvent">;
 export type TankId = Id<"Tank">;
 export type StorageConsentId = Id<"StorageConsent">;
 export type TankReadingId = Id<"TankReading">;
+export type LnFillId = Id<"LnFill">;
 
 export type SpecimenKind = "oocyte" | "embryo" | "sperm" | "tissue";
 export type SpecimenStatus = "stored" | "thawed" | "discarded" | "transferred";
@@ -31,6 +32,8 @@ export interface CryoPosition {
 export interface Tank {
   readonly id: TankId;
   readonly label: string;
+  /** Logical link to this tank's Asset record (assets module) for PPM/calibration. */
+  readonly assetRef: string | null;
 }
 
 export interface CryoSpecimen {
@@ -74,6 +77,33 @@ export interface TankReading {
   readonly temperatureC: number;
   readonly nitrogenLevelPct: number;
   readonly recordedAt: string;
+}
+
+// LN₂ consumption (docs/01 §E6 P2): each top-up records the litres added to refill
+// a tank; litres added over a window ≈ LN₂ consumed (evaporated) in that window.
+export interface LnFill {
+  readonly id: LnFillId;
+  readonly tankId: string;
+  readonly litresAdded: number;
+  readonly filledAt: string;
+  readonly filledBy: string;
+}
+
+/** LN₂ consumption summary for a tank over a window (litres + fill count). */
+export interface LnConsumption {
+  readonly tankId: string;
+  readonly since: string;
+  readonly until: string;
+  readonly litres: number;
+  readonly fills: number;
+}
+
+/** A tank's PPM status, resolved via its linked Asset (or unlinked). */
+export interface TankPpmStatus {
+  readonly tankId: string;
+  readonly assetRef: string | null;
+  readonly nextDueDate: string | null;
+  readonly overdue: boolean;
 }
 
 /** Non-engagement / non-payment pathway (AMD-0003). Strictly graduated; there is

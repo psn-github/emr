@@ -32,6 +32,7 @@ export {
   type RecordMaintenanceInput,
   type ReportFaultInput,
   type AssetStatus,
+  type PpmStatus,
   type CalibrationAlert,
   type AssetAlerts,
 } from "./asset-service.js";
