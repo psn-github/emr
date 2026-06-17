@@ -45,4 +45,22 @@ describe("StimulationService.recordDay", () => {
     expect(chart.map((d) => d.day)).toEqual([1, 3]);
     expect(chart[0]!.drugs[0]!.dose).toBe(200); // updated, not duplicated
   });
+
+  it("surfaces advisory predictive prompts from the latest charted day", async () => {
+    const { svc } = build();
+    const none = await svc.predict("cycle-1");
+    expect(none.ok).toBe(false);
+    if (!none.ok) expect(none.error.detailKey).toBe("fertility.stim.no_days");
+
+    await svc.recordDay("nurse-1", "cycle-1", { day: 6, drugs: [{ formularyItemId: "rfsh", dose: 225, unit: "IU" }], follicles: [{ ovary: "left", sizesMm: [12, 13] }], endocrine: { e2: 900 } });
+    // latest day (8) drives the prompt: 22 follicles + high E2 → high OHSS risk
+    await svc.recordDay("nurse-1", "cycle-1", { day: 8, drugs: [{ formularyItemId: "rfsh", dose: 225, unit: "IU" }], follicles: [{ ovary: "left", sizesMm: Array(22).fill(13) }], endocrine: { e2: 4000 } });
+    const p = await svc.predict("cycle-1");
+    expect(p.ok).toBe(true);
+    if (p.ok) {
+      expect(p.value.ohssRisk).toBe("high");
+      expect(p.value.leadFollicleCount).toBe(22);
+      expect(p.value.expectedOocyteRange.max).toBeGreaterThan(0);
+    }
+  });
 });
