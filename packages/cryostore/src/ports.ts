@@ -35,3 +35,10 @@ export interface StorageChargeLine {
 export interface BillingPort {
   raiseStorageCharge(actorId: string, patientId: string, line: StorageChargeLine): Promise<string>;
 }
+
+/** Asset seam — supplies a linked tank's PPM (preventive-maintenance) due status
+ *  from @oxford/assets. Returns null when the asset is unknown. Cryostore owns no
+ *  maintenance schedule itself; the asset module is authoritative (docs/01 §E6 P2). */
+export interface AssetPpmPort {
+  ppmStatus(assetRef: string): Promise<{ readonly nextDueDate: string | null; readonly overdue: boolean } | null>;
+}

@@ -1,5 +1,5 @@
 import type { Result, AppError, Clock } from "@oxford/core";
-import { ok, err, newId, conflict, notFound } from "@oxford/core";
+import { ok, err, newId, conflict, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type {
   CryoSpecimen,
@@ -13,13 +13,16 @@ import type {
   StorageConsent,
   Tank,
   TankReading,
+  LnFill,
+  LnConsumption,
+  TankPpmStatus,
   DispositionReview,
   ReviewReason,
   ReviewOutcome,
 } from "./types.js";
 import type { CryostoreStore } from "./store.js";
 import { positionKey } from "./store.js";
-import type { WitnessPort, UseGate, BillingPort, StorageChargeLine } from "./ports.js";
+import type { WitnessPort, UseGate, BillingPort, StorageChargeLine, AssetPpmPort } from "./ports.js";
 import { assertThawForTreatmentAllowed } from "./ownership.js";
 import { computeExpiry, isExpired, expiresWithin } from "./storage-period.js";
 import { nextEngagementState, type EngagementAction } from "./engagement.js";
@@ -72,17 +75,48 @@ export class CryostoreService {
     private readonly audit: AuditLog,
     private readonly events: DomainEventLog,
     private readonly clock: Clock,
+    /** Asset seam for tank PPM linkage (docs/01 §E6 P2). Defaults to "no asset". */
+    private readonly assetPpm: AssetPpmPort = { async ppmStatus() { return null; } },
   ) {}
 
-  async registerTank(actorId: string, label: string): Promise<Tank> {
-    const tank: Tank = { id: newId<"Tank">(), label };
+  async registerTank(actorId: string, label: string, assetRef: string | null = null): Promise<Tank> {
+    const tank: Tank = { id: newId<"Tank">(), label, assetRef };
     await this.store.saveTank(tank);
-    await this.audit.record({ actorId, entityType: "Tank", entityId: tank.id, action: "CREATE", after: { label } });
+    await this.audit.record({ actorId, entityType: "Tank", entityId: tank.id, action: "CREATE", after: { label, assetRef } });
     return tank;
   }
 
   tanks(): Promise<readonly Tank[]> {
     return this.store.tanks();
+  }
+
+  /** Record an LN₂ top-up (litres added to refill the tank). LN₂ consumption is
+   *  read back from these fills over a window. */
+  async recordLnFill(actorId: string, tankId: string, litresAdded: number, filledAt: string): Promise<Result<LnFill, AppError>> {
+    if (!(litresAdded > 0)) return err(validationError("litres added must be positive", "cryostore.ln_fill.bad_litres"));
+    const tank = await this.store.getTank(tankId);
+    if (tank === undefined) return err(notFound("tank not found", "cryostore.tank.not_found"));
+    const fill: LnFill = { id: newId<"LnFill">(), tankId, litresAdded, filledAt, filledBy: actorId };
+    await this.store.saveLnFill(fill);
+    await this.audit.record({ actorId, entityType: "LnFill", entityId: fill.id, action: "CREATE", after: { tankId, litresAdded } });
+    await this.events.emit({ type: "LnFillRecorded", aggregateType: "Tank", aggregateId: tankId, data: { litresAdded } });
+    return ok(fill);
+  }
+
+  /** LN₂ consumed by a tank over [since, until] ≈ total litres refilled in the window. */
+  async lnConsumption(tankId: string, since: string, until: string): Promise<LnConsumption> {
+    const fills = await this.store.lnFillsForTank(tankId, since, until);
+    const litres = fills.reduce((sum, f) => sum + f.litresAdded, 0);
+    return { tankId, since, until, litres, fills: fills.length };
+  }
+
+  /** A tank's PPM status, resolved via its linked Asset (or unlinked → null fields). */
+  async tankPpmStatus(tankId: string): Promise<Result<TankPpmStatus, AppError>> {
+    const tank = await this.store.getTank(tankId);
+    if (tank === undefined) return err(notFound("tank not found", "cryostore.tank.not_found"));
+    if (tank.assetRef === null) return ok({ tankId, assetRef: null, nextDueDate: null, overdue: false });
+    const ppm = await this.assetPpm.ppmStatus(tank.assetRef);
+    return ok({ tankId, assetRef: tank.assetRef, nextDueDate: ppm?.nextDueDate ?? null, overdue: ppm?.overdue ?? false });
   }
 
   /** Freeze material into an addressable, unoccupied position (witnessed). */

@@ -20,7 +20,7 @@ import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@ox
 import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, MorphokineticsService, PgMorphokineticRangeStore, PgMorphokineticAnnotationStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore, PgAdvancedTestSpecStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
-import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
+import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort, type AssetPpmPort } from "@oxford/cryostore";
 import {
   PerioperativeService,
   PgPerioperativeStore,
@@ -224,7 +224,19 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       return r.value.id;
     },
   };
-  const cryostore = new CryostoreService(new PgCryostoreStore(pool), witnessPort, cryoUseGate, cryoBilling, audit, events, clock);
+  // Asset & biomedical-equipment management (ADR-0029): asset register, PPM /
+  // calibration scheduling with due-date alerting and a use-blocking gate for
+  // critical equipment whose calibration is overdue/missing, plus fault logging.
+  const assets = new AssetService(new PgAssetStore(pool), audit, events);
+  // Cryostore tank PPM linkage (ADR-0053): a tank's preventive-maintenance status
+  // is read from its linked Asset record (the asset module is authoritative).
+  const cryoAssetPpm: AssetPpmPort = {
+    async ppmStatus(assetRef) {
+      const r = await assets.ppmStatus(assetRef, clock.now());
+      return r.ok ? r.value : null;
+    },
+  };
+  const cryostore = new CryostoreService(new PgCryostoreStore(pool), witnessPort, cryoUseGate, cryoBilling, audit, events, clock, cryoAssetPpm);
 
   // Perioperative journey drives bed/floor movement through the facility/flow
   // model (ADR-0023). The seam resolves a care-location KIND to a concrete node/
@@ -272,10 +284,6 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // reconcilable ledger for items flagged `controlled` in the catalogue. Its own
   // append-only book balance; a physical count reconciles against it.
   const controlledDrugs = new ControlledDrugsService(new PgControlledRegisterStore(pool), catalogueStore, audit, events);
-  // Asset & biomedical-equipment register (docs/01 §E10): PPM/calibration with
-  // due-date alerting and a use-blocking gate for critical equipment whose
-  // calibration is overdue/missing (ADR-0029), plus fault/downtime logging.
-  const assets = new AssetService(new PgAssetStore(pool), audit, events);
   // KPI/outcome read models (ADR-0039). Pure computation over counts gathered from
   // the lab/outcome services; Vienna-consensus thresholds are config (defaults).
   const analytics = new AnalyticsService();

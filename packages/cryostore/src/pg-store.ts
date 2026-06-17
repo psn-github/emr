@@ -11,6 +11,7 @@ import type {
   StorageConsent,
   Tank,
   TankReading,
+  LnFill,
 } from "./types.js";
 import type { CryostoreStore } from "./store.js";
 import { positionKey } from "./store.js";
@@ -22,11 +23,15 @@ export class PgCryostoreStore implements CryostoreStore {
   constructor(private readonly pool: Pool) {}
 
   async saveTank(t: Tank): Promise<void> {
-    await this.pool.query("INSERT INTO cryostore.tank (id, label) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [t.id, t.label]);
+    await this.pool.query("INSERT INTO cryostore.tank (id, label, asset_ref) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING", [t.id, t.label, t.assetRef]);
   }
   async tanks(): Promise<readonly Tank[]> {
-    const r = await this.pool.query<{ id: string; label: string }>("SELECT * FROM cryostore.tank ORDER BY label");
-    return r.rows.map((x) => ({ id: asId<"Tank">(x.id), label: x.label }));
+    const r = await this.pool.query<TankRow>("SELECT * FROM cryostore.tank ORDER BY label");
+    return r.rows.map(tankFrom);
+  }
+  async getTank(tankId: string): Promise<Tank | undefined> {
+    const r = await this.pool.query<TankRow>("SELECT * FROM cryostore.tank WHERE id = $1", [tankId]);
+    return r.rows[0] ? tankFrom(r.rows[0]) : undefined;
   }
 
   async saveSpecimen(s: CryoSpecimen): Promise<void> {
@@ -94,6 +99,21 @@ export class PgCryostoreStore implements CryostoreStore {
     return r.rows.map(readingFrom);
   }
 
+  async saveLnFill(f: LnFill): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO cryostore.ln_fill (id, tank_id, litres_added, filled_at, filled_by)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+      [f.id, f.tankId, f.litresAdded, f.filledAt, f.filledBy],
+    );
+  }
+  async lnFillsForTank(tankId: string, since: string, until: string): Promise<readonly LnFill[]> {
+    const r = await this.pool.query<LnFillRow>(
+      "SELECT * FROM cryostore.ln_fill WHERE tank_id = $1 AND filled_at >= $2 AND filled_at <= $3 ORDER BY filled_at DESC",
+      [tankId, since, until],
+    );
+    return r.rows.map(lnFillFrom);
+  }
+
   async saveEngagement(specimenId: CryoSpecimenId, state: EngagementState): Promise<void> {
     await this.pool.query(
       "INSERT INTO cryostore.engagement (specimen_id, state) VALUES ($1,$2) ON CONFLICT (specimen_id) DO UPDATE SET state=EXCLUDED.state",
@@ -127,6 +147,8 @@ interface SpecimenRow { id: string; kind: string; owner: SpecimenOwner; cycle_id
 interface CustodyRow { id: string; specimen_id: string; type: string; from_position: CryoPosition | null; to_position: CryoPosition | null; occurred_at: Date; operator: string; witness_key: string }
 interface ConsentRow { id: string; specimen_id: string; consented_at: Date; expires_at: Date; renewed_at: Date | null }
 interface ReadingRow { id: string; tank_id: string; temperature_c: number; nitrogen_level_pct: number; recorded_at: Date }
+interface TankRow { id: string; label: string; asset_ref: string | null }
+interface LnFillRow { id: string; tank_id: string; litres_added: string; filled_at: Date; filled_by: string }
 interface ReviewRow { id: string; specimen_id: string; reason: string; state: string; outcome: string | null; rationale: string | null; opened_by: string; opened_at: Date; resolved_by: string | null; resolved_at: Date | null }
 
 const iso = (d: Date): string => new Date(d).toISOString();
@@ -168,6 +190,12 @@ function consentFrom(r: ConsentRow): StorageConsent {
 }
 function readingFrom(r: ReadingRow): TankReading {
   return { id: asId<"TankReading">(r.id), tankId: r.tank_id, temperatureC: r.temperature_c, nitrogenLevelPct: r.nitrogen_level_pct, recordedAt: iso(r.recorded_at) };
+}
+function tankFrom(r: TankRow): Tank {
+  return { id: asId<"Tank">(r.id), label: r.label, assetRef: r.asset_ref };
+}
+function lnFillFrom(r: LnFillRow): LnFill {
+  return { id: asId<"LnFill">(r.id), tankId: r.tank_id, litresAdded: Number(r.litres_added), filledAt: iso(r.filled_at), filledBy: r.filled_by };
 }
 function reviewFrom(r: ReviewRow): DispositionReview {
   return {

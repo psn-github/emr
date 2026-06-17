@@ -8,6 +8,10 @@ export type {
   TankId,
   StorageConsentId,
   TankReadingId,
+  LnFillId,
+  LnFill,
+  LnConsumption,
+  TankPpmStatus,
   SpecimenKind,
   SpecimenStatus,
   OwnerKind,
@@ -29,7 +33,7 @@ export { assertThawForTreatmentAllowed, type ThawFacts } from "./ownership.js";
 export { computeExpiry, isExpired, expiresWithin } from "./storage-period.js";
 export { nextEngagementState, type EngagementAction } from "./engagement.js";
 export { assertResolveAllowed, outcomeRequiresDiscard } from "./disposition-review.js";
-export type { WitnessPort, UseGate, BillingPort, HandlingEventInput, StorageChargeLine } from "./ports.js";
+export type { WitnessPort, UseGate, BillingPort, HandlingEventInput, StorageChargeLine, AssetPpmPort } from "./ports.js";
 export { type CryostoreStore, InMemoryCryostoreStore, positionKey } from "./store.js";
 export { PgCryostoreStore } from "./pg-store.js";
 export {
@@ -48,5 +52,6 @@ export {
   custodyEvent,
   storageConsent,
   tankReading,
+  lnFill,
   engagement,
 } from "./schema.js";

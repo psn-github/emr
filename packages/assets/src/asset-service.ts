@@ -35,6 +35,10 @@ export interface AssetStatus {
   readonly calibrationDueDate: string | null;
   readonly usability: AssetUsability;
 }
+export interface PpmStatus {
+  readonly nextDueDate: string | null;
+  readonly overdue: boolean;
+}
 export interface CalibrationAlert {
   readonly assetId: string;
   readonly name: string;
@@ -133,6 +137,17 @@ export class AssetService {
     await this.audit.record({ actorId, entityType: "Fault", entityId: fault.id, action: "UPDATE", after: { resolvedAt, downtimeMinutes } });
     await this.events.emit({ type: "FaultResolved", aggregateType: "Asset", aggregateId: fault.assetId, data: { downtimeMinutes } });
     return ok(resolved);
+  }
+
+  /** PPM (planned preventive maintenance) due status for an asset as of a point
+   *  in time. Unlike calibration, PPM is not a use-blocking gate — this surfaces
+   *  the next-due date and whether it is overdue (e.g. for cryotank linkage). */
+  async ppmStatus(assetId: string, asOf: Date): Promise<Result<PpmStatus, AppError>> {
+    const asset = await this.store.getAsset(asId<"Asset">(assetId));
+    if (asset === undefined) return err(notFound("asset not found", "assets.asset.not_found"));
+    const nextDueDate = latestNextDue(await this.store.maintenanceForAsset(assetId), "ppm");
+    const overdue = nextDueDate !== null && asOf.getTime() > new Date(nextDueDate).getTime();
+    return ok({ nextDueDate, overdue });
   }
 
   /** Calibration + usability for an asset as of a point in time. */

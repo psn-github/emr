@@ -136,6 +136,29 @@ describe("AssetService — register, calibrate, gate, alerts, faults", () => {
   });
 });
 
+describe("AssetService — PPM status (for cryotank linkage)", () => {
+  it("reports next PPM due + overdue, and not-found for an unknown asset", async () => {
+    const { svc } = build();
+    const tank = await svc.registerAsset("eng-1", { name: "Cryotank 1", category: "cryotank", locationId: "lab", serialNumber: "CT-1", critical: true });
+
+    // no PPM yet → no due date, not overdue
+    const none = await svc.ppmStatus(tank.id, ASOF);
+    expect(none.ok && none.value).toEqual({ nextDueDate: null, overdue: false });
+
+    // PPM with a future due date → not overdue
+    await svc.recordMaintenance("eng-1", { assetId: tank.id, type: "ppm", performedAt: "2026-06-01T00:00:00Z", nextDueDate: "2026-12-01T00:00:00Z" });
+    const future = await svc.ppmStatus(tank.id, ASOF);
+    expect(future.ok && future.value.overdue).toBe(false);
+
+    // a later PPM with a past due date → overdue
+    await svc.recordMaintenance("eng-1", { assetId: tank.id, type: "ppm", performedAt: "2026-06-15T00:00:00Z", nextDueDate: "2026-06-19T00:00:00Z" });
+    const overdue = await svc.ppmStatus(tank.id, ASOF);
+    expect(overdue.ok && overdue.value).toEqual({ nextDueDate: "2026-06-19T00:00:00Z", overdue: true });
+
+    expect(detail(await svc.ppmStatus("ghost", ASOF))).toBe("assets.asset.not_found");
+  });
+});
+
 function maint(type: MaintenanceRecord["type"], performedAt: string, nextDueDate: string | null): MaintenanceRecord {
   return { id: "m" as MaintenanceRecord["id"], assetId: "a1", type, performedAt, performedBy: "eng-1", nextDueDate, notes: "" };
 }

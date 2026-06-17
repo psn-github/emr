@@ -1,8 +1,9 @@
-import type { CryoSpecimen, CryoSpecimenId, CustodyEvent, DispositionReview, EngagementState, StorageConsent, Tank, TankReading } from "./types.js";
+import type { CryoSpecimen, CryoSpecimenId, CustodyEvent, DispositionReview, EngagementState, LnFill, StorageConsent, Tank, TankReading } from "./types.js";
 
 export interface CryostoreStore {
   saveTank(t: Tank): Promise<void>;
   tanks(): Promise<readonly Tank[]>;
+  getTank(tankId: string): Promise<Tank | undefined>;
 
   saveSpecimen(s: CryoSpecimen): Promise<void>;
   specimenById(id: CryoSpecimenId): Promise<CryoSpecimen | undefined>;
@@ -19,6 +20,10 @@ export interface CryostoreStore {
 
   saveReading(r: TankReading): Promise<void>;
   readingsForTank(tankId: string): Promise<readonly TankReading[]>;
+
+  saveLnFill(f: LnFill): Promise<void>;
+  /** LN₂ fills for a tank within [since, until] (inclusive), newest first. */
+  lnFillsForTank(tankId: string, since: string, until: string): Promise<readonly LnFill[]>;
 
   saveEngagement(specimenId: CryoSpecimenId, state: EngagementState): Promise<void>;
   engagementFor(specimenId: CryoSpecimenId): Promise<EngagementState>;
@@ -38,6 +43,7 @@ export class InMemoryCryostoreStore implements CryostoreStore {
   private readonly custody: CustodyEvent[] = [];
   private readonly consents: StorageConsent[] = [];
   private readonly readings: TankReading[] = [];
+  private readonly lnFills: LnFill[] = [];
   private readonly engagement = new Map<string, EngagementState>();
   private readonly reviews: DispositionReview[] = [];
 
@@ -46,6 +52,9 @@ export class InMemoryCryostoreStore implements CryostoreStore {
   }
   async tanks(): Promise<readonly Tank[]> {
     return this.tankList;
+  }
+  async getTank(tankId: string): Promise<Tank | undefined> {
+    return this.tankList.find((t) => t.id === tankId);
   }
   async saveSpecimen(s: CryoSpecimen): Promise<void> {
     const idx = this.specimens.findIndex((x) => x.id === s.id);
@@ -83,6 +92,14 @@ export class InMemoryCryostoreStore implements CryostoreStore {
   }
   async readingsForTank(tankId: string): Promise<readonly TankReading[]> {
     return this.readings.filter((r) => r.tankId === tankId);
+  }
+  async saveLnFill(f: LnFill): Promise<void> {
+    this.lnFills.push(f);
+  }
+  async lnFillsForTank(tankId: string, since: string, until: string): Promise<readonly LnFill[]> {
+    return this.lnFills
+      .filter((f) => f.tankId === tankId && f.filledAt >= since && f.filledAt <= until)
+      .sort((a, b) => b.filledAt.localeCompare(a.filledAt));
   }
   async saveEngagement(specimenId: CryoSpecimenId, state: EngagementState): Promise<void> {
     this.engagement.set(specimenId, state);
