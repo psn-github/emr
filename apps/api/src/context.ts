@@ -32,6 +32,9 @@ import {
   PgWhoChecklistStore,
   IntraOpService,
   PgIntraOpStore,
+  DeviceRegistryService,
+  PgDeviceCatalogueStore,
+  PgImplantUsageStore,
   RecoveryService,
   PgRecoveryStore,
   CssdService,
@@ -85,6 +88,7 @@ export interface Services {
   readonly preOp: PreOpService;
   readonly whoChecklist: WhoChecklistService;
   readonly intraOp: IntraOpService;
+  readonly deviceRegistry: DeviceRegistryService;
   readonly recovery: RecoveryService;
   readonly cssd: CssdService;
   readonly catalogue: CatalogueService;
@@ -301,6 +305,10 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     },
   };
   const intraOp = new IntraOpService(new PgIntraOpStore(pool), inventory, perioperativeBilling, audit, events);
+  // Implant/device registry reporting (ADR-0052): reports registrable implants
+  // (config catalogue) from the lot-traced consumable lines — patient implant
+  // record, recall lookup, and periodic registry export (recall/export audited).
+  const deviceRegistry = new DeviceRegistryService(new PgDeviceCatalogueStore(pool), new PgImplantUsageStore(pool), audit);
   const cssd = new CssdService(new PgCssdStore(pool), audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
@@ -332,5 +340,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

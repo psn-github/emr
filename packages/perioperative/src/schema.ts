@@ -82,6 +82,7 @@ export const consumableUse = perioperativeSchema.table(
   {
     id: text("id").primaryKey(),
     encounterId: text("encounter_id").notNull(),
+    patientId: text("patient_id").notNull().default(""),
     code: text("code").notNull(),
     description: text("description").notNull(),
     lotNo: text("lot_no").notNull(),
@@ -91,8 +92,22 @@ export const consumableUse = perioperativeSchema.table(
     recordedBy: text("recorded_by").notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
   },
-  (t) => ({ byEncounter: index("consumable_use_encounter_idx").on(t.encounterId) }),
+  (t) => ({
+    byEncounter: index("consumable_use_encounter_idx").on(t.encounterId),
+    byPatient: index("consumable_use_patient_idx").on(t.patientId),
+    byCodeLot: index("consumable_use_code_lot_idx").on(t.code, t.lotNo),
+  }),
 );
+
+/** Implant/device registry catalogue (versioned config; bilingual). */
+export const deviceCatalogue = perioperativeSchema.table("device_catalogue", {
+  code: text("code").primaryKey(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  deviceType: text("device_type").notNull(),
+  manufacturer: text("manufacturer").notNull(),
+  active: boolean("active").notNull().default(true),
+});
 
 export const specimenRecord = perioperativeSchema.table(
   "specimen_record",

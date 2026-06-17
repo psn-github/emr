@@ -99,6 +99,8 @@ export interface IntraOpRecord {
 export interface ConsumableUse {
   readonly id: ConsumableUseId;
   readonly encounterId: string;
+  /** The patient the item was used on — kept for implant/device registry traceability. */
+  readonly patientId: string;
   readonly code: string;
   readonly description: string;
   readonly lotNo: string;
@@ -107,6 +109,33 @@ export interface ConsumableUse {
   readonly invoiceRef: string;
   readonly recordedBy: string;
   readonly recordedAt: string;
+}
+
+// Implant/device registry reporting (docs/01 §E7 P2). A registrable device is a
+// consumable whose code appears in the (config) device catalogue; reporting reads
+// the captured ConsumableUse lines and enriches them with catalogue metadata.
+export interface DeviceCatalogueEntry {
+  readonly code: string;
+  readonly name: { readonly ar: string; readonly en: string };
+  /** Coded device category (e.g. mesh, adhesion_barrier, tubal_occlusion). */
+  readonly deviceType: string;
+  readonly manufacturer: string;
+  readonly active: boolean;
+}
+
+/** A registrable device implanted in a patient (a ConsumableUse line enriched with catalogue metadata). */
+export interface ImplantRecord {
+  readonly consumableUseId: ConsumableUseId;
+  readonly patientId: string;
+  readonly encounterId: string;
+  readonly code: string;
+  readonly deviceType: string;
+  readonly deviceName: { readonly ar: string; readonly en: string };
+  readonly manufacturer: string;
+  readonly lotNo: string;
+  readonly quantity: number;
+  readonly implantedAt: string;
+  readonly recordedBy: string;
 }
 
 /** A specimen removed in theatre — captured with its source + lot for traceability. */
