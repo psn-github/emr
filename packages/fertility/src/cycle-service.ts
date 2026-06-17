@@ -7,6 +7,7 @@ import type { FertilityGate } from "./gate.js";
 import type { CohortFilter, CycleStore } from "./store.js";
 import type { ReasonCodeStore } from "./reason-codes.js";
 import { InMemoryCycleTemplateStore, type CycleTemplate, type CycleTemplateStore } from "./cycle-template.js";
+import { amhNomogram, type AmhCounselling } from "./amh-nomogram.js";
 import { PERSON_SCOPED_TYPES, type Cycle, type CycleId, type CycleOwner, type CycleStatus, type CycleType } from "./types.js";
 
 /** Statuses a cycle can be converted from — before retrieval, while a change of
@@ -183,5 +184,17 @@ export class CycleService {
 
   get(id: CycleId): Promise<Cycle | null> {
     return this.store.get(id);
+  }
+
+  /**
+   * AMH-nomogram decision support (docs/01 §E3 P2) — ADVISORY counselling surfaced
+   * at point of care from a patient's AMH (+ age): expected ovarian-response
+   * category, an oocyte-yield band, and counselling flags. It informs the
+   * conversation only; it never selects a protocol, dose, or any cycle decision.
+   */
+  amhCounselling(amhNgMl: number, ageYears: number): Result<AmhCounselling, AppError> {
+    if (!(amhNgMl >= 0)) return err(validationError("AMH must be a non-negative number", "fertility.amh.bad_value"));
+    if (!(ageYears > 0)) return err(validationError("age must be a positive number", "fertility.amh.bad_age"));
+    return ok(amhNomogram(amhNgMl, ageYears));
   }
 }

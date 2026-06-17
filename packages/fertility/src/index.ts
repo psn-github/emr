@@ -14,6 +14,13 @@ export { requiredConsents, assertConsentsComplete } from "./consent.js";
 export type { FertilityGate } from "./gate.js";
 export { SEED_PROTOCOLS } from "./protocols.js";
 export { CycleService, type ConversionResult } from "./cycle-service.js";
+export {
+  amhNomogram,
+  DEFAULT_AMH_BANDS,
+  type AmhBand,
+  type AmhCounselling,
+  type OvarianResponseCategory,
+} from "./amh-nomogram.js";
 export { type CycleStore, InMemoryCycleStore, type DispositionCounts, type CohortFilter } from "./store.js";
 export { PgCycleStore } from "./pg-store.js";
 export { fertilitySchema, cycle, protocol, cancellationReason, stimDay } from "./schema.js";
