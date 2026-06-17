@@ -67,6 +67,8 @@ export {
   pgtResult,
   qcParameter,
   qcReading,
+  morphokineticRange,
+  morphokineticAnnotation,
 } from "./schema.js";
 
 // Lab QC log (docs/01 §E5 P1).
@@ -75,3 +77,29 @@ export { SEED_QC_PARAMETERS, evaluateReading, type QcParameterStore, InMemoryQcP
 export { type QcReadingStore, type QcReadingFilter, InMemoryQcReadingStore } from "./qc-store.js";
 export { LabQcService, type RecordQcInput } from "./qc-service.js";
 export { PgQcParameterStore, PgQcReadingStore, seedQcParameters } from "./qc-pg-store.js";
+
+// Time-lapse morphokinetic analytics (docs/01 §E4 P2).
+export type {
+  MorphokineticAnnotation,
+  MorphokineticAnnotationId,
+  MorphokineticRange,
+  MorphokineticEventCode,
+  MorphokineticIntervalCode,
+  MorphokineticVarCode,
+  EventTimings,
+  IntervalTimings,
+} from "./types.js";
+export {
+  MORPHOKINETIC_RANGES,
+  EVENT_ORDER,
+  DIRECT_CLEAVAGE_MAX_HOURS,
+  computeIntervals,
+  validateEventOrder,
+  assessMorphokinetics,
+  type MorphokineticAssessment,
+  type MorphokineticRangeStore,
+  InMemoryMorphokineticRangeStore,
+} from "./morphokinetics.js";
+export { type MorphokineticAnnotationStore, InMemoryMorphokineticAnnotationStore } from "./morphokinetics-store.js";
+export { MorphokineticsService, type EmbryoLookup, type RecordAnnotationInput } from "./morphokinetics-service.js";
+export { PgMorphokineticRangeStore, PgMorphokineticAnnotationStore, seedMorphokineticRanges } from "./morphokinetics-pg-store.js";

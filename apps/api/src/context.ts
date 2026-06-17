@@ -17,7 +17,7 @@ import { NotificationService, RecordingNotificationProvider, notificationMessage
 import { BillingService, PgBillingStore, PackageService, PgPackageStore, InstalmentService, PgInstalmentStore, GatewayPaymentService, StubPaymentGateway, ChargeCaptureService, PgChargeMasterStore, PgChargeStore } from "@oxford/billing";
 import { ClinicalService, PgClinicalStore, PgOrderSetStore, AntenatalService, PgAntenatalStore } from "@oxford/clinical";
 import { WitnessingService, PgWitnessingStore, RiWitnessStubProvider } from "@oxford/witnessing";
-import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, type WitnessPort } from "@oxford/embryology";
+import { EmbryologyService, PgEmbryologyStore, PgtService, PgPgtStore, LabQcService, PgQcParameterStore, PgQcReadingStore, MorphokineticsService, PgMorphokineticRangeStore, PgMorphokineticAnnotationStore, type WitnessPort } from "@oxford/embryology";
 import { AndrologyService, PgAndrologyStore, PgAdvancedTestSpecStore } from "@oxford/andrology";
 import { OutcomesService, PgOutcomesStore } from "@oxford/outcomes";
 import { CryostoreService, PgCryostoreStore, type UseGate, type BillingPort } from "@oxford/cryostore";
@@ -75,6 +75,7 @@ export interface Services {
   readonly witnessing: WitnessingService;
   readonly embryology: EmbryologyService;
   readonly labQc: LabQcService;
+  readonly morphokinetics: MorphokineticsService;
   readonly pgt: PgtService;
   readonly andrology: AndrologyService;
   readonly outcomes: OutcomesService;
@@ -178,11 +179,16 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     registerHandlingEvent: (actorId, input) => witnessing.registerHandlingEvent(actorId, input).then(() => undefined),
     assertCycleStepSignOff: (cycleId) => witnessing.assertCycleStepSignOff(cycleId),
   };
-  const embryology = new EmbryologyService(new PgEmbryologyStore(pool), witnessPort, audit, events);
+  const embryologyStore = new PgEmbryologyStore(pool);
+  const embryology = new EmbryologyService(embryologyStore, witnessPort, audit, events);
   // Lab QC log (ADR-0046): incubator gas/temp + media pH/osmolality readings vs
   // configured ranges; out-of-range raises a breach event. Equipment + media lots
   // are referenced by id (no cross-module table access).
   const labQc = new LabQcService(new PgQcParameterStore(pool), new PgQcReadingStore(pool), audit, events);
+  // Time-lapse morphokinetic analytics (ADR-0051): per-embryo annotation imported
+  // from the time-lapse incubator, scored against config optimal ranges; analytics
+  // surfaced to embryologists (never an auto-select).
+  const morphokinetics = new MorphokineticsService(embryologyStore, new PgMorphokineticRangeStore(pool), new PgMorphokineticAnnotationStore(pool), audit, events);
   // PGT capture (genetics lab stays external). Permitted indications are CONFIG,
   // bounded by clinic counsel — EMPTY by default, so PGT orders are blocked until
   // the clinic configures its counsel-confirmed permitted set (no permissive default).
@@ -326,5 +332,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

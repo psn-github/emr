@@ -181,3 +181,31 @@ export const embryoTransfer = embryologySchema.table(
   },
   (t) => ({ byCycle: index("transfer_cycle_idx").on(t.cycleId) }),
 );
+
+// Time-lapse morphokinetic analytics (docs/01 §E4 P2).
+export const morphokineticRange = embryologySchema.table("morphokinetic_range", {
+  code: text("code").primaryKey(),
+  nameAr: text("name_ar").notNull(),
+  nameEn: text("name_en").notNull(),
+  optimalMin: numeric("optimal_min").notNull(),
+  optimalMax: numeric("optimal_max").notNull(),
+});
+
+export const morphokineticAnnotation = embryologySchema.table(
+  "morphokinetic_annotation",
+  {
+    id: text("id").primaryKey(),
+    embryoId: text("embryo_id").notNull(),
+    source: text("source").notNull(),
+    events: jsonb("events").$type<Record<string, number>>().notNull().default({}),
+    intervals: jsonb("intervals").$type<Record<string, number>>().notNull().default({}),
+    inRange: jsonb("in_range").$type<Record<string, boolean>>().notNull().default({}),
+    score: integer("score").notNull(),
+    monitored: integer("monitored").notNull(),
+    flags: jsonb("flags").$type<string[]>().notNull().default([]),
+    annotatedBy: text("annotated_by").notNull(),
+    annotatedAt: timestamp("annotated_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+  },
+  (t) => ({ byEmbryo: index("morphokinetic_annotation_embryo_idx").on(t.embryoId) }),
+);
