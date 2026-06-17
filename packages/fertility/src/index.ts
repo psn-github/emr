@@ -38,6 +38,16 @@ export type {
 export { StimulationService } from "./stim-service.js";
 export { type StimStore, InMemoryStimStore } from "./stim-store.js";
 export { PgStimStore } from "./stim-pg-store.js";
+export {
+  predictFromDay,
+  DEFAULT_YIELD_THRESHOLDS,
+  DEFAULT_OHSS_THRESHOLDS,
+  type PredictivePrompts,
+  type PredictInputs,
+  type YieldThresholds,
+  type OhssThresholds,
+  type OhssRisk,
+} from "./predictive-prompts.js";
 
 // Monitoring-visit workflow + trigger calculator + procedures.
 export { computeRetrievalTime, countdownHours, DEFAULT_TRIGGER_TO_RETRIEVAL_HOURS } from "./trigger.js";
