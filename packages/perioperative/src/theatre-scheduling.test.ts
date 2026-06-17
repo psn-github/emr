@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixedClock, ok, err, conflict, type Result, type AppError } from "@oxford/core";
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
-import { bedReservationStatus } from "./bed-reservation.js";
+import { bedReservationStatus, addDaysIso } from "./bed-reservation.js";
 import { TheatreSchedulingService } from "./theatre-scheduling-service.js";
 import { InMemoryTheatreCaseStore } from "./theatre-store.js";
 import type { SchedulingPort, BookTheatreSlotInput } from "./ports.js";
@@ -101,5 +101,42 @@ describe("TheatreSchedulingService", () => {
     const missing = await svc.cancelCase("coord-1", "nope" as never, "x");
     expect(missing.ok).toBe(false);
     if (!missing.ok) expect(missing.error.detailKey).toBe("perioperative.case.not_found");
+  });
+
+  it("forecasts L2 bed occupancy across the coming days and flags days over capacity", async () => {
+    const { svc } = build(2); // capacity 2 L2 beds
+    // day 0 (2026-06-25): 3 cases → exceeds; day 2 (2026-06-27): 1 case → ok
+    await svc.scheduleCase("c", caseInput({ patientId: "p1" }));
+    await svc.scheduleCase("c", caseInput({ patientId: "p2", start: "2026-06-25T11:00:00Z", end: "2026-06-25T12:00:00Z" }));
+    await svc.scheduleCase("c", caseInput({ patientId: "p3", start: "2026-06-25T13:00:00Z", end: "2026-06-25T14:00:00Z" }));
+    await svc.scheduleCase("c", caseInput({ patientId: "p4", scheduledDate: "2026-06-27", start: "2026-06-27T09:00:00Z", end: "2026-06-27T10:00:00Z" }));
+
+    const f = await svc.bedOccupancyForecast("2026-06-25", 3);
+    expect(f.ok).toBe(true);
+    if (f.ok) {
+      expect(f.value.capacity).toBe(2);
+      expect(f.value.entries.map((e) => e.date)).toEqual(["2026-06-25", "2026-06-26", "2026-06-27"]);
+      expect(f.value.entries.map((e) => e.reserved)).toEqual([3, 0, 1]);
+      expect(f.value.entries[0]!.exceedsBeds).toBe(true);
+      expect(f.value.entries[2]!.exceedsBeds).toBe(false);
+      expect(f.value.daysExceeding).toBe(1);
+    }
+  });
+
+  it("rejects an invalid forecast horizon", async () => {
+    const { svc } = build();
+    for (const bad of [0, -1, 91, 1.5]) {
+      const r = await svc.bedOccupancyForecast("2026-06-25", bad);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.detailKey).toBe("perioperative.forecast.bad_horizon");
+    }
+  });
+});
+
+describe("addDaysIso (pure)", () => {
+  it("adds calendar days across a month boundary (UTC), ignoring any time part", () => {
+    expect(addDaysIso("2026-06-25", 0)).toBe("2026-06-25");
+    expect(addDaysIso("2026-06-29", 3)).toBe("2026-07-02");
+    expect(addDaysIso("2026-06-25T23:30:00Z", 1)).toBe("2026-06-26");
   });
 });

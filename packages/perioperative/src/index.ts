@@ -10,7 +10,7 @@ export { ANAESTHESIA_FORMULARY, validateDrugAdministration, type FormularyDrug, 
 export { validateConsumableUse, lineTotalFils, type ConsumableUseInput } from "./consumables.js";
 export { validateAldrete, assertDischargeReady } from "./recovery.js";
 export { assertSetUsable, statusAfterSterilisation, type SetStatus, type SterilisationResult } from "./cssd.js";
-export { bedReservationStatus, type BedReservationStatus } from "./bed-reservation.js";
+export { bedReservationStatus, addDaysIso, type BedReservationStatus, type BedOccupancyDay, type BedOccupancyForecast } from "./bed-reservation.js";
 export { theatreUtilisation, type TheatreUtilisation, type CaseInterval } from "./analytics.js";
 export {
   WHO_REQUIRED_ITEMS,

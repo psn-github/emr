@@ -1,10 +1,10 @@
 import type { Result, AppError } from "@oxford/core";
-import { ok, err, newId, notFound } from "@oxford/core";
+import { ok, err, newId, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type { TheatreCase, TheatreCaseId } from "./types.js";
 import type { TheatreCaseStore } from "./theatre-store.js";
 import type { SchedulingPort } from "./ports.js";
-import { bedReservationStatus, type BedReservationStatus } from "./bed-reservation.js";
+import { bedReservationStatus, addDaysIso, type BedReservationStatus, type BedOccupancyDay, type BedOccupancyForecast } from "./bed-reservation.js";
 import { theatreUtilisation, type TheatreUtilisation } from "./analytics.js";
 
 export interface ScheduleCaseInput {
@@ -95,6 +95,23 @@ export class TheatreSchedulingService {
   async dayList(scheduledDate: string): Promise<{ cases: readonly TheatreCase[]; bedReservation: BedReservationStatus }> {
     const cases = await this.store.scheduledForDate(scheduledDate);
     return { cases, bedReservation: bedReservationStatus(cases.length, this.l2BedCapacity) };
+  }
+
+  /** L2 bed-occupancy forecast across the booked theatre list for the next `days`
+   *  days from `fromDate` — each scheduled case provisionally reserves a bed, so
+   *  this answers "will the six L2 beds cover the coming days?" (docs/01 §E1 P2). */
+  async bedOccupancyForecast(fromDate: string, days: number): Promise<Result<BedOccupancyForecast, AppError>> {
+    if (!Number.isInteger(days) || days < 1 || days > 90) {
+      return err(validationError("forecast horizon must be an integer between 1 and 90 days", "perioperative.forecast.bad_horizon"));
+    }
+    const from = fromDate.slice(0, 10);
+    const entries: BedOccupancyDay[] = [];
+    for (let i = 0; i < days; i += 1) {
+      const date = addDaysIso(from, i);
+      const reserved = (await this.store.scheduledForDate(date)).length;
+      entries.push({ date, ...bedReservationStatus(reserved, this.l2BedCapacity) });
+    }
+    return ok({ from, days, capacity: this.l2BedCapacity, entries, daysExceeding: entries.filter((e) => e.exceedsBeds).length });
   }
 
   /** Utilisation + turnaround analytics for one theatre on a day (docs/01 §E7 P1). */
