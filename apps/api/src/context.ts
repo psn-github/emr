@@ -44,7 +44,7 @@ import {
   type PerioperativeBillingPort,
   type PharmacyPort,
 } from "@oxford/perioperative";
-import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, ProcurementService, PgProcurementStore, ControlledDrugsService, PgControlledRegisterStore } from "@oxford/inventory";
+import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, ProcurementService, PgProcurementStore, ControlledDrugsService, PgControlledRegisterStore, DemandPlanningService, PgConsumptionProfileStore } from "@oxford/inventory";
 import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
@@ -94,6 +94,7 @@ export interface Services {
   readonly catalogue: CatalogueService;
   readonly inventory: InventoryService;
   readonly procurement: ProcurementService;
+  readonly demandPlanning: DemandPlanningService;
   readonly controlledDrugs: ControlledDrugsService;
   readonly assets: AssetService;
   readonly analytics: AnalyticsService;
@@ -280,6 +281,9 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // supplier invoice → 3-way match. Shares the real inventory so a GRN receives
   // actual stock; AP money is integer fils, kept apart from patient billing.
   const procurement = new ProcurementService(new PgProcurementStore(pool), inventory, audit, events);
+  // Demand planning (ADR-0059): forecast media/consumable burn from booked cycle
+  // counts using configured per-cycle profiles, netted against real on-hand stock.
+  const demandPlanning = new DemandPlanningService(new PgConsumptionProfileStore(pool), { onHand: (itemId) => inventory.onHand(itemId) });
   // Controlled-drugs register (docs/01 §E8): a legal-grade, two-person-witnessed,
   // reconcilable ledger for items flagged `controlled` in the catalogue. Its own
   // append-only book balance; a physical count reconciles against it.
@@ -348,5 +352,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

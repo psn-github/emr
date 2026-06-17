@@ -29,4 +29,16 @@ export type { CdMovementId, CdMovement } from "./types.js";
 export { type ControlledRegisterStore, InMemoryControlledRegisterStore } from "./controlled-store.js";
 export { PgControlledRegisterStore } from "./controlled-pg-store.js";
 export { ControlledDrugsService, type RecordMovementInput, type ReconcileInput, type PeriodReportRow } from "./controlled-service.js";
-export { inventorySchema, supplier, catalogueItem, stockLot, coldChainReading, requisition, purchaseOrder, goodsReceipt, supplierInvoice, cdMovement } from "./schema.js";
+// Demand planning from the cycle pipeline (docs/01 §E9 P2).
+export {
+  SEED_CONSUMPTION_PROFILES,
+  forecastDemand,
+  type CycleConsumptionItem,
+  type CycleConsumptionProfile,
+  type DemandLine,
+  type ConsumptionProfileStore,
+  InMemoryConsumptionProfileStore,
+} from "./demand-planning.js";
+export { DemandPlanningService, type OnHandPort } from "./demand-planning-service.js";
+export { PgConsumptionProfileStore, seedConsumptionProfiles } from "./demand-planning-pg-store.js";
+export { inventorySchema, supplier, catalogueItem, stockLot, coldChainReading, requisition, purchaseOrder, goodsReceipt, supplierInvoice, cdMovement, cycleConsumptionProfile } from "./schema.js";

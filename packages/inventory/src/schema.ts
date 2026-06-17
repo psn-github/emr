@@ -109,3 +109,9 @@ export const catalogueItem = inventorySchema.table("catalogue_item", {
   parLevel: integer("par_level").notNull().default(0),
   preferredSupplierId: text("preferred_supplier_id"),
 });
+
+/** Per-cycle consumption profile (config) for demand planning (docs/01 §E9 P2). */
+export const cycleConsumptionProfile = inventorySchema.table("cycle_consumption_profile", {
+  cycleType: text("cycle_type").primaryKey(),
+  items: jsonb("items").$type<{ itemId: string; quantityPerCycle: number }[]>().notNull().default([]),
+});
