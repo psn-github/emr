@@ -57,4 +57,10 @@ export { TheatreSchedulingService, type ScheduleCaseInput, type ScheduleCaseResu
 export { type PreOpStore, InMemoryPreOpStore } from "./preop-store.js";
 export { PgPreOpStore } from "./preop-pg-store.js";
 export { PreOpService, type RecordPreOpInput } from "./preop-service.js";
-export { perioperativeSchema, surgicalEncounter, theatreCase, preOpAssessment, whoChecklist, intraOpRecord, consumableUse, specimenRecord, observation, followUp, instrumentSet, sterilisationCycle, setUsage } from "./schema.js";
+// Implant/device registry reporting (docs/01 §E7 P2).
+export type { DeviceCatalogueEntry, ImplantRecord } from "./types.js";
+export { SEED_DEVICE_CATALOGUE, toImplantRecord, type DeviceCatalogueStore, InMemoryDeviceCatalogueStore } from "./device-registry.js";
+export { type ImplantUsageStore, InMemoryImplantUsageStore } from "./device-registry-store.js";
+export { DeviceRegistryService } from "./device-registry-service.js";
+export { PgDeviceCatalogueStore, PgImplantUsageStore, seedDeviceCatalogue } from "./device-registry-pg-store.js";
+export { perioperativeSchema, surgicalEncounter, theatreCase, preOpAssessment, whoChecklist, intraOpRecord, consumableUse, specimenRecord, observation, followUp, instrumentSet, sterilisationCycle, setUsage, deviceCatalogue } from "./schema.js";

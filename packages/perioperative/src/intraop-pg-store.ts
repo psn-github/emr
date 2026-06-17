@@ -21,9 +21,9 @@ export class PgIntraOpStore implements IntraOpStore {
   }
   async saveConsumable(c: ConsumableUse): Promise<void> {
     await this.pool.query(
-      `INSERT INTO perioperative.consumable_use (id, encounter_id, code, description, lot_no, quantity, unit_price_fils, invoice_ref, recorded_by, recorded_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
-      [c.id, c.encounterId, c.code, c.description, c.lotNo, c.quantity, c.unitPriceFils, c.invoiceRef, c.recordedBy, c.recordedAt],
+      `INSERT INTO perioperative.consumable_use (id, encounter_id, patient_id, code, description, lot_no, quantity, unit_price_fils, invoice_ref, recorded_by, recorded_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (id) DO NOTHING`,
+      [c.id, c.encounterId, c.patientId, c.code, c.description, c.lotNo, c.quantity, c.unitPriceFils, c.invoiceRef, c.recordedBy, c.recordedAt],
     );
   }
   async consumablesForEncounter(encounterId: string): Promise<readonly ConsumableUse[]> {
@@ -44,7 +44,7 @@ export class PgIntraOpStore implements IntraOpStore {
 }
 
 interface RecRow { id: string; encounter_id: string; procedure_performed: string; findings: string; anaesthetic_technique: string; drugs: DrugAdministration[]; staff: string[]; started_at: Date; finished_at: Date; recorded_by: string }
-interface ConsRow { id: string; encounter_id: string; code: string; description: string; lot_no: string; quantity: number; unit_price_fils: number; invoice_ref: string; recorded_by: string; recorded_at: Date }
+interface ConsRow { id: string; encounter_id: string; patient_id: string; code: string; description: string; lot_no: string; quantity: number; unit_price_fils: number; invoice_ref: string; recorded_by: string; recorded_at: Date }
 interface SpecRow { id: string; encounter_id: string; type: string; site: string; lot_ref: string; collected_at: Date; recorded_by: string }
 
 const iso = (d: Date): string => new Date(d).toISOString();
@@ -52,7 +52,7 @@ function recFrom(r: RecRow): IntraOpRecord {
   return { id: asId<"IntraOpRecord">(r.id), encounterId: r.encounter_id, procedurePerformed: r.procedure_performed, findings: r.findings, anaestheticTechnique: r.anaesthetic_technique, drugs: r.drugs, staff: r.staff, startedAt: iso(r.started_at), finishedAt: iso(r.finished_at), recordedBy: r.recorded_by };
 }
 function consFrom(r: ConsRow): ConsumableUse {
-  return { id: asId<"ConsumableUse">(r.id), encounterId: r.encounter_id, code: r.code, description: r.description, lotNo: r.lot_no, quantity: r.quantity, unitPriceFils: r.unit_price_fils, invoiceRef: r.invoice_ref, recordedBy: r.recorded_by, recordedAt: iso(r.recorded_at) };
+  return { id: asId<"ConsumableUse">(r.id), encounterId: r.encounter_id, patientId: r.patient_id, code: r.code, description: r.description, lotNo: r.lot_no, quantity: r.quantity, unitPriceFils: r.unit_price_fils, invoiceRef: r.invoice_ref, recordedBy: r.recorded_by, recordedAt: iso(r.recorded_at) };
 }
 function specFrom(r: SpecRow): SpecimenRecord {
   return { id: asId<"SpecimenRecord">(r.id), encounterId: r.encounter_id, type: r.type, site: r.site, lotRef: r.lot_ref, collectedAt: iso(r.collected_at), recordedBy: r.recorded_by };

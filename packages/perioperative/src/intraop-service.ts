@@ -89,6 +89,7 @@ export class IntraOpService {
       const rec: ConsumableUse = {
         id: newId<"ConsumableUse">(),
         encounterId,
+        patientId,
         code: u.code,
         description: u.description,
         lotNo: u.lotNo,
