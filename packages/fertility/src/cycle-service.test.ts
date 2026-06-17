@@ -251,4 +251,20 @@ describe("CycleService.cohort", () => {
     expect((await svc.cohort({ createdAfter: "2026-06-13T00:00:00.000Z", createdBefore: "2026-06-14T00:00:00.000Z" })).length).toBe(2);
     expect((await svc.cohort({ createdAfter: "2026-06-20T00:00:00.000Z" })).length).toBe(0);
   });
+
+  it("surfaces advisory AMH-nomogram counselling and guards bad inputs", () => {
+    const { svc } = build();
+    const r = svc.amhCounselling(5.0, 41);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.category).toBe("high");
+      expect(r.value.counsellingFlags).toEqual(["ohss_precaution", "advanced_maternal_age_counselling"]);
+    }
+    const badAmh = svc.amhCounselling(-1, 30);
+    expect(badAmh.ok).toBe(false);
+    if (!badAmh.ok) expect(badAmh.error.detailKey).toBe("fertility.amh.bad_value");
+    const badAge = svc.amhCounselling(2, 0);
+    expect(badAge.ok).toBe(false);
+    if (!badAge.ok) expect(badAge.error.detailKey).toBe("fertility.amh.bad_age");
+  });
 });
