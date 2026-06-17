@@ -27,4 +27,12 @@ export {
   type RecordAssessmentInput,
   type RecordOutcomeInput,
 } from "./outcomes-service.js";
+export {
+  ageBand,
+  toRegistryRow,
+  buildRegistryExport,
+  type AgeBand,
+  type RegistryCycleInput,
+  type RegistryRow,
+} from "./research-export.js";
 export { outcomesSchema, pregnancyTest, clinicalAssessment, pregnancyOutcome } from "./schema.js";

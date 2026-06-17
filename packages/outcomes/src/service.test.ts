@@ -65,4 +65,16 @@ describe("OutcomesService — continuum reconstruction", () => {
     expect(summary.outcome!.type).toBe("live_birth");
     expect(await svc.kpiInputs(CYCLE)).toEqual({ biochemicalPregnancy: true, clinicalPregnancy: true, liveBirth: true, ongoing: false });
   });
+
+  it("produces a de-identified research export and audits it as a sensitive read", async () => {
+    const { svc, audit } = build();
+    const rows = await svc.researchExport("researcher-1", [
+      { cycleId: CYCLE, patientRef: "person-1", ageYears: 36, cycleType: "IVF", protocol: "long", oocytesRetrieved: 10, matureOocytes: 8, twoPnZygotes: 6, embryosTransferred: 2, biochemicalPregnancy: true, clinicalPregnancy: true, liveBirth: true, liveBirthCount: 1 },
+    ], "secret-salt");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.ageBand).toBe("35-37");
+    expect(JSON.stringify(rows)).not.toContain("person-1");
+    const exportAudits = (await audit.entries()).filter((e) => e.payload.action === "READ_EXPORT" && e.payload.entityType === "ResearchRegistryExport");
+    expect(exportAudits).toHaveLength(1);
+  });
 });

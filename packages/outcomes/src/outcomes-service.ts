@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 import type { OutcomesStore } from "./store.js";
 import { classifyBetaHcg, isClinicalPregnancy, deriveKpiInputs } from "./outcome-logic.js";
+import { buildRegistryExport, type RegistryCycleInput, type RegistryRow } from "./research-export.js";
 
 export interface RecordTestInput {
   readonly cycleId: string;
@@ -122,5 +123,18 @@ export class OutcomesService {
   /** Vienna-consensus KPI input booleans for a cycle. */
   async kpiInputs(cycleId: string): Promise<OutcomeKpiInputs> {
     return deriveKpiInputs(await this.outcomeForCycle(cycleId));
+  }
+
+  /**
+   * De-identified research / registry export (docs/01 §E11 P2). The caller
+   * assembles per-cycle facts (no PHI — clinical counts + age in years +
+   * pseudonymisable refs); this de-identifies them (salted-hash keys, banded age,
+   * ESHRE-shaped fields) and audits the export as a sensitive read (READ_EXPORT).
+   * The salt is a residency-controlled secret supplied by the app.
+   */
+  async researchExport(actorId: string, inputs: readonly RegistryCycleInput[], salt: string): Promise<readonly RegistryRow[]> {
+    const rows = buildRegistryExport(inputs, salt);
+    await this.audit.record({ actorId, entityType: "ResearchRegistryExport", entityId: `cycles:${rows.length}`, action: "READ_EXPORT", after: { cycles: rows.length } });
+    return rows;
   }
 }
