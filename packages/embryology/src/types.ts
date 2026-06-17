@@ -13,6 +13,40 @@ export type GradingEntryId = Id<"GradingEntry">;
 export type DispositionId = Id<"Disposition">;
 export type EmbryoTransferId = Id<"EmbryoTransfer">;
 export type MediaApplicationId = Id<"MediaApplication">;
+export type MorphokineticAnnotationId = Id<"MorphokineticAnnotation">;
+
+// Time-lapse morphokinetic analytics (docs/01 §E4 P2). Annotation timings are in
+// hours-post-insemination (hpi). Codes follow standard time-lapse nomenclature.
+export type MorphokineticEventCode = "tPNf" | "t2" | "t3" | "t4" | "t5" | "t6" | "t7" | "t8" | "tM" | "tSB" | "tB";
+export type MorphokineticIntervalCode = "cc2" | "s2" | "cc3" | "t5_t2";
+export type MorphokineticVarCode = MorphokineticEventCode | MorphokineticIntervalCode;
+export type EventTimings = Partial<Record<MorphokineticEventCode, number>>;
+export type IntervalTimings = Partial<Record<MorphokineticIntervalCode, number>>;
+
+/** Optimal range for one morphokinetic variable (versioned config; bilingual). */
+export interface MorphokineticRange {
+  readonly code: MorphokineticVarCode;
+  readonly name: { readonly ar: string; readonly en: string };
+  readonly optimalMin: number;
+  readonly optimalMax: number;
+}
+
+/** A per-embryo morphokinetic annotation with the derived analytics. */
+export interface MorphokineticAnnotation {
+  readonly id: MorphokineticAnnotationId;
+  readonly embryoId: EmbryoId;
+  /** Originating time-lapse platform (e.g. EmbryoScope, Geri). */
+  readonly source: string;
+  readonly events: EventTimings;
+  readonly intervals: IntervalTimings;
+  readonly inRange: Partial<Record<MorphokineticVarCode, boolean>>;
+  readonly score: number;
+  readonly monitored: number;
+  readonly flags: readonly string[];
+  readonly annotatedBy: string;
+  readonly annotatedAt: string;
+  readonly note: string | null;
+}
 
 /** Oocyte maturity at retrieval. */
 export type Maturity = "MII" | "MI" | "GV" | "degenerate";
