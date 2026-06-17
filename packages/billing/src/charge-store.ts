@@ -13,6 +13,8 @@ export interface ChargeStore {
   chargesForPatient(patientId: string): Promise<readonly Charge[]>;
   /** All invoiced charges — drives revenue-by-service-line. */
   invoicedCharges(): Promise<readonly Charge[]>;
+  /** All uninvoiced, billable charges across patients — revenue-leakage candidates. */
+  uninvoicedBillable(): Promise<readonly Charge[]>;
 }
 
 export class InMemoryChargeMasterStore implements ChargeMasterStore {
@@ -41,5 +43,8 @@ export class InMemoryChargeStore implements ChargeStore {
   }
   async invoicedCharges(): Promise<readonly Charge[]> {
     return [...this.charges.values()].filter((c) => c.invoiceId !== null);
+  }
+  async uninvoicedBillable(): Promise<readonly Charge[]> {
+    return [...this.charges.values()].filter((c) => !c.recognised && c.invoiceId === null);
   }
 }

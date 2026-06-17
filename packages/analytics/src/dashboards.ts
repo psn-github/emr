@@ -28,6 +28,54 @@ export function ageingBuckets(items: readonly AgeingItem[]): AgeingBuckets {
   return b;
 }
 
+// Revenue leakage (docs/01 §E11 P2): billable work that was recorded but never
+// rolled into an invoice (recognised=false, not invoiced) is lost/at-risk revenue.
+// The older the leaked charge, the more likely it is truly lost.
+export interface LeakageCharge {
+  readonly source: string; // ChargeSource (clinical/lab/theatre/pharmacy)
+  readonly amountFils: number;
+  readonly ageDays: number;
+  /** True when covered by a package inclusion (not separately billable). */
+  readonly recognised: boolean;
+  /** True once rolled into an invoice. */
+  readonly invoiced: boolean;
+}
+export interface LeakageBySource {
+  readonly source: string;
+  readonly amountFils: number;
+  readonly count: number;
+}
+export interface LeakageReport {
+  readonly leakedCount: number;
+  readonly totalFils: number;
+  readonly bySource: readonly LeakageBySource[];
+  /** Subset of leaked value older than the aged-over threshold (likely lost). */
+  readonly agedFils: number;
+}
+
+/** Detect revenue leakage: billable (not recognised), uninvoiced charges, grouped
+ *  by source with an aged subset older than `agedOverDays` (default 30). */
+export function revenueLeakage(charges: readonly LeakageCharge[], agedOverDays = 30): LeakageReport {
+  const bySource = new Map<string, { amountFils: number; count: number }>();
+  let totalFils = 0;
+  let leakedCount = 0;
+  let agedFils = 0;
+  for (const c of charges) {
+    if (c.recognised || c.invoiced) continue; // not leakage
+    leakedCount += 1;
+    totalFils += c.amountFils;
+    if (c.ageDays > agedOverDays) agedFils += c.amountFils;
+    const cur = bySource.get(c.source) ?? { amountFils: 0, count: 0 };
+    bySource.set(c.source, { amountFils: cur.amountFils + c.amountFils, count: cur.count + 1 });
+  }
+  return {
+    leakedCount,
+    totalFils,
+    agedFils,
+    bySource: [...bySource.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([source, v]) => ({ source, ...v })),
+  };
+}
+
 export interface RevenueRow {
   readonly line: string;
   readonly amountFils: number;
