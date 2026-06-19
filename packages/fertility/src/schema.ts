@@ -88,6 +88,7 @@ export const stimDay = fertilitySchema.table(
     follicles: jsonb("follicles").notNull().default([]),
     endometriumMm: integer("endometrium_mm"),
     endocrine: jsonb("endocrine").notNull().default({}),
+    allergyWarnings: jsonb("allergy_warnings").notNull().default([]),
     recordedBy: text("recorded_by").notNull(),
     at: timestamp("at", { withTimezone: true }).notNull(),
   },

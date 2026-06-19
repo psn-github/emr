@@ -299,8 +299,12 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
     assertMayTreat: (coupleId) => registry.canStartFertility(asId<"Couple">(coupleId)),
   }, new PgReasonCodeStore(pool), new PgCycleTemplateStore(pool));
-  // Stimulation chart — read surface for the patient medication schedule.
-  const stim = new StimulationService(new PgStimStore(pool), audit, events, clock);
+  // Stimulation chart — read surface for the patient medication schedule. The
+  // prescribe-time allergy advisory (docs/01 §E8, ADR-0060) is wired to clinical
+  // via an injected port (fertility never imports the clinical module's tables).
+  const stim = new StimulationService(new PgStimStore(pool), audit, events, clock, {
+    allergicClasses: (patientId) => clinical.allergicClasses(patientId),
+  });
   // Secure patient↔clinic messaging (read/write surface for the portal).
   const messaging = new MessagingService(new PgMessagingStore(pool), audit, events, clock);
   // Consent-gated partner access (the portal read gate consults this).

@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { asId } from "@oxford/core";
 import type { DrugDoseInput } from "./stim-validate.js";
 import type { Endocrine, FollicleMeasurement, StimulationDay } from "./stimulation.js";
+import type { AllergyWarning } from "./allergy.js";
 import type { StimStore } from "./stim-store.js";
 
 /** Postgres-backed StimStore. One row per (cycle, day). */
@@ -10,10 +11,10 @@ export class PgStimStore implements StimStore {
 
   async saveDay(d: StimulationDay): Promise<void> {
     await this.pool.query(
-      `INSERT INTO fertility.stim_day (id, cycle_id, day, drugs, follicles, endometrium_mm, endocrine, recorded_by, at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (cycle_id, day) DO UPDATE SET drugs=EXCLUDED.drugs, follicles=EXCLUDED.follicles, endometrium_mm=EXCLUDED.endometrium_mm, endocrine=EXCLUDED.endocrine, recorded_by=EXCLUDED.recorded_by, at=EXCLUDED.at`,
-      [d.id, d.cycleId, d.day, JSON.stringify(d.drugs), JSON.stringify(d.follicles), d.endometriumMm, JSON.stringify(d.endocrine), d.recordedBy, d.at],
+      `INSERT INTO fertility.stim_day (id, cycle_id, day, drugs, follicles, endometrium_mm, endocrine, allergy_warnings, recorded_by, at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (cycle_id, day) DO UPDATE SET drugs=EXCLUDED.drugs, follicles=EXCLUDED.follicles, endometrium_mm=EXCLUDED.endometrium_mm, endocrine=EXCLUDED.endocrine, allergy_warnings=EXCLUDED.allergy_warnings, recorded_by=EXCLUDED.recorded_by, at=EXCLUDED.at`,
+      [d.id, d.cycleId, d.day, JSON.stringify(d.drugs), JSON.stringify(d.follicles), d.endometriumMm, JSON.stringify(d.endocrine), JSON.stringify(d.allergyWarnings), d.recordedBy, d.at],
     );
   }
 
@@ -31,6 +32,7 @@ interface StimRow {
   follicles: FollicleMeasurement[];
   endometrium_mm: number | null;
   endocrine: Endocrine;
+  allergy_warnings: AllergyWarning[] | null;
   recorded_by: string;
   at: Date;
 }
@@ -44,6 +46,7 @@ function fromRow(r: StimRow): StimulationDay {
     follicles: r.follicles,
     endometriumMm: r.endometrium_mm,
     endocrine: r.endocrine,
+    allergyWarnings: r.allergy_warnings ?? [],
     recordedBy: r.recorded_by,
     at: new Date(r.at).toISOString(),
   };

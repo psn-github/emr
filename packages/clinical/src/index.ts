@@ -25,6 +25,9 @@ export type {
   PregnancyStatus,
   AntenatalVisit,
   AntenatalVisitId,
+  DrugAllergy,
+  DrugAllergyId,
+  AllergySeverity,
 } from "./types.js";
 export { ClinicalService } from "./clinical-service.js";
 export { type ClinicalStore, InMemoryClinicalStore } from "./store.js";
@@ -35,4 +38,4 @@ export { estimateEdd, gestationWeeks, plannedVisits, assessVisit, DEFAULT_VISIT_
 export { AntenatalService, type BookPregnancyInput, type RecordVisitInput } from "./antenatal-service.js";
 export { type AntenatalStore, InMemoryAntenatalStore } from "./antenatal-store.js";
 export { PgAntenatalStore } from "./antenatal-pg-store.js";
-export { clinicalSchema, encounter, clinicalNote, clinicalOrder, result, letter, orderSet, pregnancy, antenatalVisit } from "./schema.js";
+export { clinicalSchema, encounter, clinicalNote, clinicalOrder, result, letter, orderSet, pregnancy, antenatalVisit, drugAllergy } from "./schema.js";
