@@ -5,6 +5,7 @@ import { validateDrugDose } from "./stim-validate.js";
 import type { RecordDayInput, StimulationDay } from "./stimulation.js";
 import type { StimStore } from "./stim-store.js";
 import { predictFromDay, type PredictivePrompts } from "./predictive-prompts.js";
+import { screenDrugs, type AllergyPort, type AllergyWarning } from "./allergy.js";
 
 /**
  * Stimulation charting. Records a day's drug doses (validated against the
@@ -18,6 +19,10 @@ export class StimulationService {
     private readonly audit: AuditLog,
     private readonly events: DomainEventLog,
     private readonly clock: Clock,
+    /** Optional prescribe-time allergy advisory (docs/01 §E8, ADR-0060). When
+     *  wired (app layer) and a patient is named on the day, prescribing screens
+     *  the drugs against the patient's recorded allergies. ADVISORY — never blocks. */
+    private readonly allergyPort?: AllergyPort,
   ) {}
 
   async recordDay(actorId: string, cycleId: string, input: RecordDayInput): Promise<Result<StimulationDay, AppError>> {
@@ -28,6 +33,13 @@ export class StimulationService {
       const valid = validateDrugDose(drug);
       if (!valid.ok) return err(valid.error);
     }
+    // Advisory allergy screen (docs/01 §E8). Never blocks — a clinician may
+    // prescribe despite a recorded allergy; the warning is recorded + audited.
+    let allergyWarnings: readonly AllergyWarning[] = [];
+    if (this.allergyPort && input.patientId !== undefined) {
+      const classes = await this.allergyPort.allergicClasses(input.patientId);
+      allergyWarnings = screenDrugs(input.drugs, classes);
+    }
     const day: StimulationDay = {
       id: newId<"StimulationDay">(),
       cycleId,
@@ -36,12 +48,17 @@ export class StimulationService {
       follicles: input.follicles ?? [],
       endometriumMm: input.endometriumMm ?? null,
       endocrine: input.endocrine ?? {},
+      allergyWarnings,
       recordedBy: actorId,
       at: this.clock.now().toISOString(),
     };
     await this.store.saveDay(day);
     await this.audit.record({ actorId, entityType: "StimulationDay", entityId: `${cycleId}:${input.day}`, action: "CREATE", after: { day: input.day, drugCount: input.drugs.length } });
     await this.events.emit({ type: "StimDayRecorded", aggregateType: "Cycle", aggregateId: cycleId, data: { day: input.day } });
+    if (allergyWarnings.length > 0) {
+      await this.audit.record({ actorId, entityType: "StimulationDay", entityId: `${cycleId}:${input.day}`, action: "UPDATE", after: { allergyAdvisory: allergyWarnings.map((w) => w.drugClass) } });
+      await this.events.emit({ type: "DrugAllergyAdvisoryRaised", aggregateType: "Cycle", aggregateId: cycleId, data: { day: input.day, patientId: input.patientId, classes: allergyWarnings.map((w) => w.drugClass) } });
+    }
     return ok(day);
   }
 

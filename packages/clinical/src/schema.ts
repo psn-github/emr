@@ -93,6 +93,27 @@ export const pregnancy = clinicalSchema.table(
   (t) => ({ byPatient: index("pregnancy_patient_idx").on(t.patientId) }),
 );
 
+/** Coded drug-allergy list (docs/01 §E8, ADR-0060). Append-only / soft-delete
+ *  (active flag); matched by drug-class code at prescribe time for an advisory. */
+export const drugAllergy = clinicalSchema.table(
+  "drug_allergy",
+  {
+    id: text("id").primaryKey(),
+    patientId: text("patient_id").notNull(),
+    drugClass: text("drug_class").notNull(),
+    substanceAr: text("substance_ar").notNull(),
+    substanceEn: text("substance_en").notNull(),
+    severity: text("severity").notNull(),
+    reaction: text("reaction"),
+    recordedBy: text("recorded_by").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    active: boolean("active").notNull().default(true),
+    retiredBy: text("retired_by"),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+  },
+  (t) => ({ byPatient: index("drug_allergy_patient_idx").on(t.patientId) }),
+);
+
 /** Serial antenatal visits: vitals + growth + derived risk flags. */
 export const antenatalVisit = clinicalSchema.table(
   "antenatal_visit",

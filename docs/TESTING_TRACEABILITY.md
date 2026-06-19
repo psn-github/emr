@@ -22,7 +22,7 @@
 | **E5** Andrology | Semen analysis → bilingual report + WHO 6th flags; sperm freeze witnessed + tank-mapped | `andrology.e2e`, `advanced-sperm-tests.e2e` | ✅ (rendered report is UI, see E0) |
 | **E6** Cryostorage | Locate any straw (owner/history/consent/expiry); list every specimen for a couple | `cryostore-thaw.e2e`, `cryostore-disposition.e2e`, `phase2-icsi-cycle.e2e` | ✅ |
 | **E7** Theatres / beds | Oocyte retrieval + hysteroscopy run the full journey; WHO checklist enforced; consumables deducted + billed; bed occupancy correct; full audit | `phase3-perioperative-journey.e2e` (Phase 3 gate), `who-checklist.e2e`, `discharge.e2e`, `intraop.e2e` | ✅ |
-| **E8** Pharmacy | Prescribe gonadotrophin from formulary, **checks allergies**, decrements lot, injection media to app; discharge Rx → pharmacy queue gates discharge; CD reconciles | `portal-medication.e2e`, `discharge.e2e`, `controlled-drugs.e2e`, `media-traceability.e2e` | 🟡 formulary/decrement/discharge-gate/CD/media PROVEN; **allergy-check GAP** (field captured, never checked) |
+| **E8** Pharmacy | Prescribe gonadotrophin from formulary, **checks allergies**, decrements lot, injection media to app; discharge Rx → pharmacy queue gates discharge; CD reconciles | `portal-medication.e2e`, `discharge.e2e`, `controlled-drugs.e2e`, `media-traceability.e2e`, `allergy-advisory.e2e` (ADR-0060) | ✅ allergy advisory now PROVEN (class-match, advisory-not-block); formulary/decrement/discharge-gate/CD/media PROVEN |
 | **E9** Procurement | Low stock → requisition; PO→GRN→invoice 3-way match; lot → embryo traceability | `procurement.e2e`, `inventory-stock.e2e`, `media-traceability.e2e`, `phase4-operations.e2e` | ✅ |
 | **E10** Assets | Every critical device has PPM/calibration; overdue calibration blocks + visible in lab; faults/downtime logged | `assets.e2e`, `phase4-operations.e2e` | ✅ |
 | **E11** Billing | ICSI package + deposit + 3 instalments; charges (clinic/lab/theatre) map to package; outstanding balance gates next cycle step; KNET posts + receipts | `packages.e2e`, `instalments.e2e`, `charge-capture.e2e`, `gateway-payments.e2e`, `phase5-revenue-cycle.e2e` | 🔌 PROVEN vs **stub** gateway; real KNET = GAP |
@@ -30,7 +30,7 @@
 | **E13** Patient experience | Couple sees timeline + next visit; correct injection video at the right time; signs consent; pays an instalment — **entirely in Arabic** if chosen | `phase6-portal-journey.e2e` (Phase 6 gate), `portal-timeline/medication/consents/payments.e2e` | 🟡 flows PROVEN via tRPC; **Arabic rendered-UI GAP** (no PWA shell) |
 | **E14** HR / rota | MOH licence-expiry alert; only witnessing-competency-signed-off staff can witness | `hr.e2e`, `practitioner-leave.e2e`; witnessing competency tests | ✅ |
 
-**Headline:** 11 of 14 acceptance criteria are fully proven end-to-end; the residual gaps cluster in exactly three places — **rendered bilingual/RTL UI** (E0, E13), **prescribe-time allergy checking** (E8), and **real external adapters** (E4 witnessing, E11 gateway).
+**Headline:** 12 of 14 acceptance criteria are fully proven end-to-end (E8's allergy-check gap was closed by ADR-0060); the residual gaps cluster in two places — **rendered bilingual/RTL UI** (E0, E13) and **real external adapters** (E4 witnessing, E11 gateway).
 
 ## 2. GO_LIVE_CHECKLIST cross-reference
 
@@ -43,7 +43,7 @@ Sections **A (data-safety)**, **B (hard rules)**, **E (automated gate)** are gre
 ## 3. Ranked gap list
 
 ### Code-actionable now (no external dependency)
-1. **Prescribe-time allergy checking (E8).** `allergy` is captured but never checked. Add allergy-vs-formulary/drug interaction at prescribe time (advisory block, surfaced), with unit + e2e. *Real acceptance miss — highest priority.*
+1. ~~**Prescribe-time allergy checking (E8).**~~ ✅ **DONE** (ADR-0060): coded clinical allergy list + injected `AllergyPort` + advisory `screenDrugs` at `recordDay`; class-match, advisory-not-block; clinical+fertility 100% domain, PG e2e `allergy-advisory.e2e`.
 2. **Deploy-over-populated-DB survival test.** Extend `restore-drill.e2e` into a test that applies all migrations to a DB holding clinical rows and asserts survival (proves PATIENT-DATA invariant 4 directly, not just by inference).
 3. **Non-functional harness (baseline).** Add a k6 (or autocannon) profile for hot paths (scheduling, portal read, KPI dashboards) **and** the audit-chain append under concurrency (it serialises on an advisory lock — measure contention). Baselines only; the centre is small (≤9 beds).
 4. **Security in CI beyond secret-scan.** Add dependency audit / SAST (e.g. `pnpm audit`, CodeQL) and a runtime **no-PHI-in-logs** assertion test.

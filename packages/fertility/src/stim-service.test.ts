@@ -64,3 +64,36 @@ describe("StimulationService.recordDay", () => {
     }
   });
 });
+
+describe("StimulationService.recordDay — allergy advisory (docs/01 §E8, ADR-0060)", () => {
+  // Wire an allergy port that reports the given patient's allergic drug classes.
+  function buildWith(allergic: Record<string, readonly string[]>) {
+    const clock = fixedClock(new Date("2026-06-13T08:00:00.000Z"));
+    const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock);
+    const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
+    const port = { allergicClasses: async (patientId: string) => allergic[patientId] ?? [] };
+    return { svc: new StimulationService(new InMemoryStimStore(), audit, events, clock, port), audit, events };
+  }
+
+  it("records an advisory warning on the day when a prescribed drug class matches an allergy — but does NOT block", async () => {
+    const { svc, audit, events } = buildWith({ "pat-1": ["gonadotropin_fsh"] });
+    const r = await svc.recordDay("nurse-1", "cycle-1", {
+      patientId: "pat-1",
+      day: 1,
+      drugs: [{ formularyItemId: "rfsh", dose: 225, unit: "IU" }, { formularyItemId: "gnrh_antagonist", dose: 0.25, unit: "mg" }],
+    });
+    expect(r.ok).toBe(true); // advisory, never a block
+    if (r.ok) expect(r.value.allergyWarnings).toEqual([{ formularyItemId: "rfsh", drugClass: "gonadotropin_fsh" }]);
+    expect((await audit.entries()).some((e) => (e.payload.after as { allergyAdvisory?: string[] })?.allergyAdvisory?.includes("gonadotropin_fsh"))).toBe(true);
+    expect((await events.events()).some((e) => e.payload.type === "DrugAllergyAdvisoryRaised")).toBe(true);
+  });
+
+  it("raises no advisory when nothing matches, or when no patient is named", async () => {
+    const { svc, events } = buildWith({ "pat-1": ["progesterone"] });
+    const noMatch = await svc.recordDay("nurse-1", "cycle-1", { patientId: "pat-1", day: 1, drugs: [{ formularyItemId: "rfsh", dose: 225, unit: "IU" }] });
+    expect(noMatch.ok && noMatch.value.allergyWarnings).toEqual([]);
+    const noPatient = await svc.recordDay("nurse-1", "cycle-2", { day: 1, drugs: [{ formularyItemId: "rfsh", dose: 225, unit: "IU" }] });
+    expect(noPatient.ok && noPatient.value.allergyWarnings).toEqual([]);
+    expect((await events.events()).some((e) => e.payload.type === "DrugAllergyAdvisoryRaised")).toBe(false);
+  });
+});

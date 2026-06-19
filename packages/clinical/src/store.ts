@@ -1,4 +1,4 @@
-import type { ClinicalNote, Encounter, EncounterId, Letter, LetterId, NoteId, Order, OrderId, Result, ResultId } from "./types.js";
+import type { ClinicalNote, DrugAllergy, DrugAllergyId, Encounter, EncounterId, Letter, LetterId, NoteId, Order, OrderId, Result, ResultId } from "./types.js";
 
 export interface ClinicalStore {
   saveEncounter(e: Encounter): Promise<void>;
@@ -13,6 +13,9 @@ export interface ClinicalStore {
   releasedResultsForPatient(patientId: string): Promise<readonly Result[]>;
   saveLetter(l: Letter): Promise<void>;
   getLetter(id: LetterId): Promise<Letter | null>;
+  saveAllergy(a: DrugAllergy): Promise<void>;
+  getAllergy(id: DrugAllergyId): Promise<DrugAllergy | null>;
+  activeAllergiesForPatient(patientId: string): Promise<readonly DrugAllergy[]>;
 }
 
 export class InMemoryClinicalStore implements ClinicalStore {
@@ -21,6 +24,7 @@ export class InMemoryClinicalStore implements ClinicalStore {
   private readonly orders = new Map<string, Order>();
   private readonly results = new Map<string, Result>();
   private readonly letters = new Map<string, Letter>();
+  private readonly allergies = new Map<string, DrugAllergy>();
 
   async saveEncounter(e: Encounter): Promise<void> {
     this.encounters.set(e.id, e);
@@ -57,5 +61,14 @@ export class InMemoryClinicalStore implements ClinicalStore {
   }
   async getLetter(id: LetterId): Promise<Letter | null> {
     return this.letters.get(id) ?? null;
+  }
+  async saveAllergy(a: DrugAllergy): Promise<void> {
+    this.allergies.set(a.id, a);
+  }
+  async getAllergy(id: DrugAllergyId): Promise<DrugAllergy | null> {
+    return this.allergies.get(id) ?? null;
+  }
+  async activeAllergiesForPatient(patientId: string): Promise<readonly DrugAllergy[]> {
+    return [...this.allergies.values()].filter((a) => a.patientId === patientId && a.active);
   }
 }

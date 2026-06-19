@@ -735,6 +735,24 @@ export const appRouter = router({
         if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "release failed" });
         return { released: r.value.releasedToPatient };
       }),
+    // Coded drug-allergy list (docs/01 §E8, ADR-0060). Matched by drug class at
+    // prescribe time for an advisory (never a block). Append-only / soft-delete.
+    recordAllergy: protectedProcedure("clinical:allergy.write")
+      .input((v: unknown) => v as { patientId: string; drugClass: string; substance: { ar: string; en: string }; severity: "mild" | "moderate" | "severe"; reaction?: string | null })
+      .mutation(async ({ ctx, input }) => {
+        const a = await ctx.services.clinical.recordAllergy(ctx.session.subject.staffId, input.patientId, { drugClass: input.drugClass, substance: input.substance, severity: input.severity, reaction: input.reaction ?? null });
+        return { allergyId: a.id };
+      }),
+    retireAllergy: protectedProcedure("clinical:allergy.write")
+      .input((v: unknown) => v as { allergyId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.clinical.retireAllergy(ctx.session.subject.staffId, asId<"DrugAllergy">(input.allergyId));
+        if (!r.ok) throw new TRPCError({ code: "BAD_REQUEST", message: r.error.detailKey ?? "retire failed" });
+        return { active: r.value.active };
+      }),
+    patientAllergies: protectedProcedure("clinical:allergy.read")
+      .input((v: unknown) => v as { patientId: string })
+      .query(async ({ ctx, input }) => ({ allergies: await ctx.services.clinical.allergiesForPatient(input.patientId) })),
   }),
 
   // Staff side of secure messaging (clinical domain, MFA-gated). Staff read a

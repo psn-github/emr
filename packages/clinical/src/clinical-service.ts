@@ -2,7 +2,10 @@ import type { Clock, Result as R, AppError } from "@oxford/core";
 import { ok, err, newId, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type {
+  AllergySeverity,
   ClinicalNote,
+  DrugAllergy,
+  DrugAllergyId,
   Encounter,
   EncounterId,
   EncounterType,
@@ -183,5 +186,52 @@ export class ClinicalService {
 
   getNote(id: NoteId): Promise<ClinicalNote | null> {
     return this.store.getNote(id);
+  }
+
+  // — Drug allergies (docs/01 §E8, ADR-0060) — append-only / soft-delete. The
+  //   `allergicClasses` read is the seam the prescribing advisory consumes (the
+  //   fertility AllergyPort) without crossing module tables.
+
+  /** Record a coded drug allergy for a patient. Audited; emits an event. */
+  async recordAllergy(actorId: string, patientId: string, input: { drugClass: string; substance: { ar: string; en: string }; severity: AllergySeverity; reaction?: string | null }): Promise<DrugAllergy> {
+    const allergy: DrugAllergy = {
+      id: newId<"DrugAllergy">(),
+      patientId,
+      drugClass: input.drugClass,
+      substance: input.substance,
+      severity: input.severity,
+      reaction: input.reaction ?? null,
+      recordedBy: actorId,
+      recordedAt: this.clock.now().toISOString(),
+      active: true,
+      retiredBy: null,
+      retiredAt: null,
+    };
+    await this.store.saveAllergy(allergy);
+    await this.audit.record({ actorId, entityType: "DrugAllergy", entityId: allergy.id, action: "CREATE", after: { patientId, drugClass: input.drugClass, severity: input.severity } });
+    await this.events.emit({ type: "DrugAllergyRecorded", aggregateType: "DrugAllergy", aggregateId: allergy.id, data: { patientId, drugClass: input.drugClass } });
+    return allergy;
+  }
+
+  /** Retire an allergy (soft-delete — retained for audit, no longer matched). */
+  async retireAllergy(actorId: string, id: DrugAllergyId): Promise<R<DrugAllergy, AppError>> {
+    const a = await this.store.getAllergy(id);
+    if (a === null) return err(notFound("allergy not found", "clinical.allergy.not_found"));
+    if (!a.active) return err(validationError("allergy already retired", "clinical.allergy.retired"));
+    const updated: DrugAllergy = { ...a, active: false, retiredBy: actorId, retiredAt: this.clock.now().toISOString() };
+    await this.store.saveAllergy(updated);
+    await this.audit.record({ actorId, entityType: "DrugAllergy", entityId: id, action: "UPDATE", before: { active: true }, after: { active: false } });
+    return ok(updated);
+  }
+
+  allergiesForPatient(patientId: string): Promise<readonly DrugAllergy[]> {
+    return this.store.activeAllergiesForPatient(patientId);
+  }
+
+  /** Active allergy drug-class codes for a patient (deduped) — the prescribing
+   *  advisory seam (fertility AllergyPort). */
+  async allergicClasses(patientId: string): Promise<readonly string[]> {
+    const list = await this.store.activeAllergiesForPatient(patientId);
+    return [...new Set(list.map((a) => a.drugClass))];
   }
 }

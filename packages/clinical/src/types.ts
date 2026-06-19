@@ -13,6 +13,35 @@ export type ResultId = Id<"Result">;
 export type LetterId = Id<"Letter">;
 export type PregnancyId = Id<"Pregnancy">;
 export type AntenatalVisitId = Id<"AntenatalVisit">;
+export type DrugAllergyId = Id<"DrugAllergy">;
+
+// Coded drug-allergy list (docs/01 §E8: prescribing "checks allergies"). Until
+// now allergies lived only as free text inside note bodies (see the header note);
+// this is the structured, matchable representation that lets prescribing run an
+// ADVISORY allergy check (ADR-0060). Append-only / soft-delete like all clinical
+// data: an allergy is retired (active=false), never hard-deleted. Matched by drug
+// CLASS — the formulary's natural axis — held here as an opaque string so the
+// clinical module stays independent of the fertility formulary (module boundaries).
+export type AllergySeverity = "mild" | "moderate" | "severe";
+
+export interface DrugAllergy {
+  readonly id: DrugAllergyId;
+  readonly patientId: string;
+  /** Formulary drug-class code (opaque string; the fertility formulary owns the
+   *  canonical enum). A prescription of this class raises an advisory. */
+  readonly drugClass: string;
+  /** Bilingual display label for the offending substance/class. */
+  readonly substance: { readonly ar: string; readonly en: string };
+  readonly severity: AllergySeverity;
+  /** Free-text reaction description (optional). */
+  readonly reaction: string | null;
+  readonly recordedBy: string;
+  readonly recordedAt: string;
+  /** Soft-delete: a retired allergy is retained for audit, never matched. */
+  readonly active: boolean;
+  readonly retiredBy: string | null;
+  readonly retiredAt: string | null;
+}
 
 export type EncounterType = "new_fertility" | "follow_up" | "antenatal" | "gynae" | "post_op";
 export type EncounterStatus = "open" | "closed";

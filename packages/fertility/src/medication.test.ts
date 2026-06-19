@@ -10,6 +10,7 @@ const day = (n: number, drugs: StimulationDay["drugs"]): StimulationDay => ({
   follicles: [],
   endometriumMm: null,
   endocrine: {},
+  allergyWarnings: [],
   recordedBy: "doc",
   at: "2026-06-20T08:00:00Z",
 });

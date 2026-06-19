@@ -43,6 +43,7 @@ export type {
   RecordDayInput,
 } from "./stimulation.js";
 export { StimulationService } from "./stim-service.js";
+export { screenDrugs, type AllergyPort, type AllergyWarning } from "./allergy.js";
 export { type StimStore, InMemoryStimStore } from "./stim-store.js";
 export { PgStimStore } from "./stim-pg-store.js";
 export {
