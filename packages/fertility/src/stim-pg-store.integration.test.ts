@@ -10,6 +10,7 @@ import { PgStimStore } from "./stim-pg-store.js";
 const DATABASE_URL = process.env.DATABASE_URL;
 const m1 = readFileSync(new URL("../migrations/0001_fertility.sql", import.meta.url), "utf8");
 const m2 = readFileSync(new URL("../migrations/0002_fertility_stim.sql", import.meta.url), "utf8");
+const m6 = readFileSync(new URL("../migrations/0006_fertility_allergy_warnings.sql", import.meta.url), "utf8");
 
 describe.skipIf(!DATABASE_URL)("PgStimStore", () => {
   const pool = new pg.Pool({ connectionString: DATABASE_URL });
@@ -18,6 +19,7 @@ describe.skipIf(!DATABASE_URL)("PgStimStore", () => {
   beforeAll(async () => {
     await pool.query(m1);
     await pool.query(m2);
+    await pool.query(m6); // adds stim_day.allergy_warnings (ADR-0060)
   });
   beforeEach(async () => {
     await pool.query("TRUNCATE fertility.stim_day");
