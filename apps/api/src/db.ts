@@ -6,7 +6,10 @@ import pg from "pg";
 // Postgres connection + forward-only migration runner. The DB lives OUTSIDE the
 // deployed code (docs/PATIENT-DATA.md); this only connects and applies additive
 // SQL. Every module ships its own packages/<m>/migrations/*.sql; they are applied
-// in (package, filename) order and recorded so each runs once.
+// in (package, filename) order and recorded (in _meta.migrations) so each runs
+// once — re-running is a no-op, which is what makes every deploy safe to repeat.
+// `runMigrations` takes an optional file subset so a deploy can be staged (used
+// by the deploy-survival e2e to apply "before" then "the new deploy").
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -28,14 +31,14 @@ export function migrationFiles(): string[] {
   return out;
 }
 
-export async function runMigrations(pool: pg.Pool): Promise<string[]> {
+export async function runMigrations(pool: pg.Pool, files: string[] = migrationFiles()): Promise<string[]> {
   await pool.query(
     `CREATE SCHEMA IF NOT EXISTS _meta;
      CREATE TABLE IF NOT EXISTS _meta.migrations (
        name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
   );
   const applied: string[] = [];
-  for (const file of migrationFiles()) {
+  for (const file of files) {
     const name = file.replace(REPO_ROOT, "");
     const seen = await pool.query("SELECT 1 FROM _meta.migrations WHERE name = $1", [name]);
     if (seen.rowCount && seen.rowCount > 0) continue;
