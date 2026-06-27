@@ -1,0 +1,697 @@
+<!doctype html>
+<!--
+  Oxford HIS — staff-facing EMR home page MOCKUP.
+
+  A static, self-contained design mockup (no build step, no data) for the
+  @oxford/web home/dashboard. It exists to make the look-and-feel reviewable
+  before the React/Vite shell is built (STATE.md: "no PWA shell" yet).
+
+  It is faithful to the real foundations already in the repo:
+    - design tokens .......... packages/ui/src/tokens.ts (colours, fonts, spacing,
+                               radius, shadow, clinical-status + drug-class colours)
+    - bilingual en/ar + RTL .. packages/i18n  (dir/lang flip on the <html> element)
+    - dual calendar .......... Gregorian + Hijri (Umm al-Qura) — i18n/format.ts
+    - clinical LTR exception . lab values / drug names / embryo grades stay LTR
+                               even in Arabic (packages/ui/src/rtl.ts)
+    - the domain ............. surfaces only what the modules already produce:
+                               scheduling, fertility cohort, lab KPIs, RI Witness
+                               reconciliation, inventory/asset/HR alerts, audit.
+
+  Hard rules honoured at the surface (CLAUDE.md):
+    - RI Witness is the authoritative witnessing system — shown as reconciliation
+      status, never a competing witness UI.
+    - No fertility workflow without a verified marriage record (identity gate).
+    - No PHI in any notification/discreet surface (that is the portal, not here).
+
+  Toggle language with the العربية / English button (top-right). All copy is
+  translated; no hardcoded user-facing strings would ship — here they live in the
+  I18N map below to mirror the real i18n catalog.
+-->
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Oxford HIS — Home</title>
+    <style>
+      /* ---- tokens mirrored from packages/ui/src/tokens.ts ---- */
+      :root {
+        --bg: #f5f5f0;
+        --surface: #ffffff;
+        --text-primary: #1d1d1f;
+        --text-secondary: #6e6e73;
+        --text-tertiary: #aeaeb2;
+        --accent: #2a7c6f;
+        --accent-hover: #1f5f55;
+        --accent-light: rgba(42, 124, 111, 0.08);
+        --border: #e8e8e3;
+        --border-subtle: #f0f0eb;
+        --success: #34a853;
+        --warning: #d4a024;
+        --error: #c4302b;
+        --info: #2a7c6f;
+
+        --font-display: "Satoshi", "Plus Jakarta Sans", system-ui, sans-serif;
+        --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
+        --font-data: "Geist", ui-monospace, monospace;
+
+        --r-sm: 8px;
+        --r-md: 12px;
+        --r-lg: 16px;
+        --r-full: 9999px;
+
+        --sh-card: 0 2px 10px rgba(0, 0, 0, 0.04);
+        --sh-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+        --sh-lg: 0 8px 30px rgba(0, 0, 0, 0.08);
+
+        --nav-w: 248px;
+      }
+      /* Arabic swaps the body font family (Noto Sans Arabic) */
+      html[lang="ar"] {
+        --font-body: "Noto Sans Arabic", "Plus Jakarta Sans", system-ui, sans-serif;
+        --font-display: "Noto Sans Arabic", "Satoshi", system-ui, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: var(--font-body);
+        font-size: 15px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* Force-LTR for international scientific notation, even in RTL (rtl.ts) */
+      .ltr { direction: ltr; unicode-bidi: isolate; }
+
+      /* ---------- layout ---------- */
+      .app { display: grid; grid-template-columns: var(--nav-w) 1fr; min-height: 100vh; }
+
+      /* ---------- sidebar ---------- */
+      .sidebar {
+        background: var(--surface);
+        border-inline-end: 1px solid var(--border);
+        padding: 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; }
+      .brand .mark {
+        width: 34px; height: 34px; border-radius: var(--r-md);
+        background: var(--accent); color: #fff;
+        display: grid; place-items: center;
+        font-family: var(--font-display); font-weight: 700; font-size: 17px;
+      }
+      .brand .name { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+      .brand .sub { font-size: 11px; color: var(--text-tertiary); }
+
+      .nav-group-label {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+        color: var(--text-tertiary); padding: 14px 8px 6px; font-weight: 600;
+      }
+      .nav-item {
+        display: flex; align-items: center; gap: 11px;
+        padding: 9px 10px; border-radius: var(--r-sm);
+        color: var(--text-secondary); cursor: pointer; font-size: 14px;
+        text-decoration: none; transition: background 0.12s, color 0.12s;
+      }
+      .nav-item:hover { background: var(--border-subtle); color: var(--text-primary); }
+      .nav-item.active { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+      .nav-item .ico { width: 18px; text-align: center; font-size: 15px; opacity: 0.9; }
+      .nav-item .badge {
+        margin-inline-start: auto; background: var(--error); color: #fff;
+        font-size: 11px; font-weight: 600; border-radius: var(--r-full);
+        min-width: 19px; height: 19px; padding: 0 6px;
+        display: grid; place-items: center; font-family: var(--font-data);
+      }
+      .nav-spacer { flex: 1; }
+
+      /* ---------- top bar ---------- */
+      .main { min-width: 0; }
+      .topbar {
+        position: sticky; top: 0; z-index: 5;
+        background: rgba(245, 245, 240, 0.85); backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; gap: 16px;
+        padding: 14px 28px;
+      }
+      .search {
+        flex: 1; max-width: 460px;
+        display: flex; align-items: center; gap: 9px;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--r-full); padding: 9px 16px; color: var(--text-tertiary);
+      }
+      .search input {
+        border: 0; outline: 0; background: transparent; flex: 1;
+        font-family: var(--font-body); font-size: 14px; color: var(--text-primary);
+      }
+      .topbar-spacer { flex: 1; }
+      .icon-btn {
+        position: relative; width: 38px; height: 38px; border-radius: var(--r-full);
+        border: 1px solid var(--border); background: var(--surface);
+        display: grid; place-items: center; cursor: pointer; font-size: 16px;
+        color: var(--text-secondary);
+      }
+      .icon-btn .dot {
+        position: absolute; top: 8px; inset-inline-end: 9px;
+        width: 7px; height: 7px; border-radius: var(--r-full); background: var(--error);
+      }
+      .lang-btn {
+        border: 1px solid var(--border); background: var(--surface);
+        border-radius: var(--r-full); padding: 8px 16px; cursor: pointer;
+        font-family: var(--font-body); font-size: 13px; font-weight: 600;
+        color: var(--accent);
+      }
+      .lang-btn:hover { background: var(--accent-light); }
+      .user { display: flex; align-items: center; gap: 10px; }
+      .avatar {
+        width: 38px; height: 38px; border-radius: var(--r-full);
+        background: linear-gradient(135deg, #2a7c6f, #1f5f55); color: #fff;
+        display: grid; place-items: center; font-weight: 600; font-size: 14px;
+      }
+      .user .meta { line-height: 1.2; }
+      .user .meta .n { font-size: 13px; font-weight: 600; }
+      .user .meta .r { font-size: 11px; color: var(--text-tertiary); }
+
+      /* ---------- content ---------- */
+      .content { padding: 28px; max-width: 1320px; margin: 0 auto; }
+      .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+      .greeting { font-family: var(--font-display); font-weight: 700; font-size: 28px; letter-spacing: -0.02em; margin: 0; }
+      .date-line { color: var(--text-secondary); font-size: 14px; margin-top: 4px; }
+      .date-line .hijri { color: var(--text-tertiary); }
+      .head-actions { display: flex; gap: 10px; }
+      .btn {
+        border-radius: var(--r-sm); padding: 10px 18px; font-family: var(--font-body);
+        font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid var(--border);
+        background: var(--surface); color: var(--text-primary);
+      }
+      .btn:hover { background: var(--border-subtle); }
+      .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .btn.primary:hover { background: var(--accent-hover); }
+
+      /* stat cards */
+      .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+      .card {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--r-lg); box-shadow: var(--sh-card);
+      }
+      .stat { padding: 18px 20px; }
+      .stat .label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+      .stat .value { font-family: var(--font-data); font-weight: 600; font-size: 32px; letter-spacing: -0.02em; margin-top: 8px; }
+      .stat .delta { font-size: 12px; margin-top: 2px; }
+      .delta.up { color: var(--success); }
+      .delta.warn { color: var(--warning); }
+      .delta.flat { color: var(--text-tertiary); }
+
+      /* dashboard grid */
+      .grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 16px; align-items: start; }
+      .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-card); }
+      .panel-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px; border-bottom: 1px solid var(--border-subtle);
+      }
+      .panel-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin: 0; letter-spacing: -0.01em; }
+      .panel-head a { color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; }
+      .panel-body { padding: 8px 20px 16px; }
+      .stack { display: grid; gap: 16px; }
+
+      /* schedule list */
+      .appt { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+      .appt:last-child { border-bottom: 0; }
+      .appt .time { font-family: var(--font-data); font-size: 14px; font-weight: 600; width: 64px; color: var(--text-primary); }
+      .appt .who { flex: 1; min-width: 0; }
+      .appt .who .nm { font-weight: 600; font-size: 14px; }
+      .appt .who .ty { font-size: 12px; color: var(--text-secondary); }
+      .pill {
+        font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: var(--r-full);
+        display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+      }
+      .pill::before { content: ""; width: 7px; height: 7px; border-radius: var(--r-full); background: currentColor; }
+      .pill.green { color: var(--success); background: rgba(52, 168, 83, 0.1); }
+      .pill.teal { color: var(--accent); background: var(--accent-light); }
+      .pill.amber { color: var(--warning); background: rgba(212, 160, 36, 0.12); }
+      .pill.red { color: var(--error); background: rgba(196, 48, 43, 0.1); }
+      .pill.grey { color: var(--text-secondary); background: var(--border-subtle); }
+
+      /* cohort table */
+      table { width: 100%; border-collapse: collapse; }
+      thead th {
+        text-align: start; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+        color: var(--text-tertiary); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle);
+      }
+      tbody td { padding: 12px 10px; border-bottom: 1px solid var(--border-subtle); font-size: 14px; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr:hover { background: var(--border-subtle); }
+      .num { font-family: var(--font-data); }
+      .pt { font-weight: 600; }
+      .pt .id { display: block; font-size: 11px; color: var(--text-tertiary); font-family: var(--font-data); font-weight: 400; }
+
+      /* alerts */
+      .alert { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+      .alert:last-child { border-bottom: 0; }
+      .alert .ai {
+        width: 30px; height: 30px; flex: none; border-radius: var(--r-sm);
+        display: grid; place-items: center; font-size: 15px;
+      }
+      .ai.red { background: rgba(196, 48, 43, 0.1); color: var(--error); }
+      .ai.amber { background: rgba(212, 160, 36, 0.12); color: var(--warning); }
+      .ai.teal { background: var(--accent-light); color: var(--accent); }
+      .alert .at { font-weight: 600; font-size: 13px; }
+      .alert .ad { font-size: 12px; color: var(--text-secondary); }
+
+      /* witnessing panel */
+      .witness-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border-subtle); }
+      .witness-row:last-child { border-bottom: 0; }
+      .witness-row .wl { font-size: 13px; }
+      .witness-row .wl small { display: block; color: var(--text-tertiary); font-family: var(--font-data); }
+      .ri-banner {
+        display: flex; align-items: center; gap: 8px; margin: 0 20px 4px;
+        padding: 9px 12px; background: var(--accent-light); border-radius: var(--r-sm);
+        font-size: 12px; color: var(--accent); font-weight: 600;
+      }
+
+      /* quick actions */
+      .qa-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .qa {
+        display: flex; align-items: center; gap: 10px; padding: 13px 14px;
+        border: 1px solid var(--border); border-radius: var(--r-md); cursor: pointer;
+        background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-primary);
+      }
+      .qa:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+      .qa .qi { font-size: 17px; }
+
+      .footnote { color: var(--text-tertiary); font-size: 12px; text-align: center; margin: 28px 0 8px; }
+
+      @media (max-width: 1100px) {
+        .stats { grid-template-columns: repeat(2, 1fr); }
+        .grid { grid-template-columns: 1fr; }
+        .app { grid-template-columns: 1fr; }
+        .sidebar { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- ===================== SIDEBAR ===================== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">O</div>
+          <div>
+            <div class="name" data-i18n="app.name">Oxford HIS</div>
+            <div class="sub" data-i18n="app.tagline">Fertility & Women's Health</div>
+          </div>
+        </div>
+
+        <a class="nav-item active"><span class="ico">▦</span><span data-i18n="nav.home">Home</span></a>
+        <a class="nav-item"><span class="ico">◷</span><span data-i18n="nav.schedule">Schedule</span></a>
+        <a class="nav-item"><span class="ico">⛢</span><span data-i18n="nav.patients">Patients</span></a>
+        <a class="nav-item"><span class="ico">⚭</span><span data-i18n="nav.couples">Couples</span></a>
+
+        <div class="nav-group-label" data-i18n="navgroup.clinical">Clinical</div>
+        <a class="nav-item"><span class="ico">↻</span><span data-i18n="nav.cycles">Cycles</span></a>
+        <a class="nav-item"><span class="ico">⚗</span><span data-i18n="nav.lab">Lab &amp; Embryology</span></a>
+        <a class="nav-item"><span class="ico">❄</span><span data-i18n="nav.cryostore">Cryostore</span></a>
+        <a class="nav-item"><span class="ico">✚</span><span data-i18n="nav.theatre">Theatre</span></a>
+
+        <div class="nav-group-label" data-i18n="navgroup.operations">Operations</div>
+        <a class="nav-item"><span class="ico">▤</span><span data-i18n="nav.inventory">Inventory</span><span class="badge num">3</span></a>
+        <a class="nav-item"><span class="ico">₲</span><span data-i18n="nav.billing">Billing</span></a>
+        <a class="nav-item"><span class="ico">▣</span><span data-i18n="nav.reports">Reports &amp; KPIs</span></a>
+
+        <div class="nav-spacer"></div>
+        <a class="nav-item"><span class="ico">⚙</span><span data-i18n="nav.settings">Settings</span></a>
+      </aside>
+
+      <!-- ===================== MAIN ===================== -->
+      <div class="main">
+        <!-- top bar -->
+        <header class="topbar">
+          <div class="search">
+            <span>⌕</span>
+            <input data-i18n-ph="search.placeholder" placeholder="Search patients, civil ID, cycle…" />
+          </div>
+          <div class="topbar-spacer"></div>
+          <button class="lang-btn" id="langToggle" data-i18n="language.toggle">العربية</button>
+          <button class="icon-btn" title="Notifications"><span>◔</span><span class="dot"></span></button>
+          <div class="user">
+            <div class="avatar">SN</div>
+            <div class="meta">
+              <div class="n" data-i18n="user.name">Dr. Sara Nasser</div>
+              <div class="r" data-i18n="user.role">Consultant · Reproductive Medicine</div>
+            </div>
+          </div>
+        </header>
+
+        <div class="content">
+          <!-- page head -->
+          <div class="page-head">
+            <div>
+              <h1 class="greeting"><span data-i18n="home.greeting">Good morning, Dr. Nasser</span></h1>
+              <div class="date-line">
+                <span data-i18n="home.date.greg">Saturday, 27 June 2026</span>
+                · <span class="hijri" data-i18n="home.date.hijri">12 Muharram 1448</span>
+              </div>
+            </div>
+            <div class="head-actions">
+              <button class="btn" data-i18n="action.newPatient">＋ New patient</button>
+              <button class="btn primary" data-i18n="action.startCycle">Start cycle</button>
+            </div>
+          </div>
+
+          <!-- stat cards -->
+          <section class="stats">
+            <div class="card stat">
+              <div class="label"><span>◷</span><span data-i18n="stat.appointments">Appointments today</span></div>
+              <div class="value num">24</div>
+              <div class="delta flat"><span data-i18n="stat.appointments.sub">6 awaiting check-in</span></div>
+            </div>
+            <div class="card stat">
+              <div class="label"><span>↻</span><span data-i18n="stat.stimulating">Patients stimulating</span></div>
+              <div class="value num">11</div>
+              <div class="delta up"><span data-i18n="stat.stimulating.sub">3 triggering tonight</span></div>
+            </div>
+            <div class="card stat">
+              <div class="label"><span>⚗</span><span data-i18n="stat.lab">Lab procedures today</span></div>
+              <div class="value num">5</div>
+              <div class="delta flat"><span data-i18n="stat.lab.sub">2 OPU · 2 ET · 1 ICSI</span></div>
+            </div>
+            <div class="card stat">
+              <div class="label"><span>⚠</span><span data-i18n="stat.alerts">Open alerts</span></div>
+              <div class="value num" style="color: var(--warning)">3</div>
+              <div class="delta warn"><span data-i18n="stat.alerts.sub">1 critical · needs action</span></div>
+            </div>
+          </section>
+
+          <!-- main two-column grid -->
+          <section class="grid">
+            <!-- LEFT column -->
+            <div class="stack">
+              <!-- today's schedule -->
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 data-i18n="panel.schedule">Today's schedule</h2>
+                  <a data-i18n="action.viewAll">View all →</a>
+                </div>
+                <div class="panel-body">
+                  <div class="appt">
+                    <div class="time ltr">08:30</div>
+                    <div class="who"><div class="nm" data-i18n="appt.1.nm">Layla &amp; Ahmad K.</div><div class="ty" data-i18n="appt.1.ty">Follicle-tracking scan · Day 7</div></div>
+                    <span class="pill green" data-i18n="status.checkedIn">Checked in</span>
+                  </div>
+                  <div class="appt">
+                    <div class="time ltr">09:00</div>
+                    <div class="who"><div class="nm" data-i18n="appt.2.nm">Noura S.</div><div class="ty" data-i18n="appt.2.ty">New consultation · AMH review</div></div>
+                    <span class="pill amber" data-i18n="status.waiting">Waiting</span>
+                  </div>
+                  <div class="appt">
+                    <div class="time ltr">09:30</div>
+                    <div class="who"><div class="nm" data-i18n="appt.3.nm">Fatima &amp; Yousef R.</div><div class="ty" data-i18n="appt.3.ty">Oocyte retrieval (OPU) · Theatre 2</div></div>
+                    <span class="pill teal" data-i18n="status.lab">In lab</span>
+                  </div>
+                  <div class="appt">
+                    <div class="time ltr">10:15</div>
+                    <div class="who"><div class="nm" data-i18n="appt.4.nm">Mariam A.</div><div class="ty" data-i18n="appt.4.ty">Embryo transfer · Single blastocyst <span class="ltr">5AA</span></div></div>
+                    <span class="pill grey" data-i18n="status.scheduled">Scheduled</span>
+                  </div>
+                  <div class="appt">
+                    <div class="time ltr">11:00</div>
+                    <div class="who"><div class="nm" data-i18n="appt.5.nm">Huda &amp; Khalid M.</div><div class="ty" data-i18n="appt.5.ty">Counselling · consent signing</div></div>
+                    <span class="pill grey" data-i18n="status.scheduled">Scheduled</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- stimulating cohort -->
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 data-i18n="panel.cohort">Stimulating this week</h2>
+                  <a data-i18n="action.openCohort">Open cohort →</a>
+                </div>
+                <div class="panel-body" style="padding-top: 4px">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th data-i18n="col.patient">Patient</th>
+                        <th data-i18n="col.protocol">Protocol</th>
+                        <th data-i18n="col.day">Day</th>
+                        <th data-i18n="col.follicles">Lead follicles</th>
+                        <th data-i18n="col.e2">E2 (pg/mL)</th>
+                        <th data-i18n="col.next">Next</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="pt">Layla K.<span class="id ltr">OX-10482</span></td>
+                        <td data-i18n="proto.antagonist">Antagonist</td>
+                        <td class="num ltr">7</td>
+                        <td class="num ltr">3 × 14–16 mm</td>
+                        <td class="num ltr">1,240</td>
+                        <td><span class="pill teal" data-i18n="next.scan">Scan tmrw</span></td>
+                      </tr>
+                      <tr>
+                        <td class="pt">Fatima R.<span class="id ltr">OX-10455</span></td>
+                        <td data-i18n="proto.antagonist">Antagonist</td>
+                        <td class="num ltr">10</td>
+                        <td class="num ltr">5 × 17–19 mm</td>
+                        <td class="num ltr">2,910</td>
+                        <td><span class="pill red" data-i18n="next.trigger">Trigger tonight</span></td>
+                      </tr>
+                      <tr>
+                        <td class="pt">Dana H.<span class="id ltr">OX-10501</span></td>
+                        <td data-i18n="proto.longAgonist">Long agonist</td>
+                        <td class="num ltr">9</td>
+                        <td class="num ltr">4 × 15–18 mm</td>
+                        <td class="num ltr">2,180</td>
+                        <td><span class="pill amber" data-i18n="next.review">Dose review</span></td>
+                      </tr>
+                      <tr>
+                        <td class="pt">Aisha B.<span class="id ltr">OX-10519</span></td>
+                        <td data-i18n="proto.antagonist">Antagonist</td>
+                        <td class="num ltr">5</td>
+                        <td class="num ltr">2 × 11–12 mm</td>
+                        <td class="num ltr">540</td>
+                        <td><span class="pill teal" data-i18n="next.scan">Scan tmrw</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT column -->
+            <div class="stack">
+              <!-- alerts -->
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 data-i18n="panel.alerts">Action required</h2>
+                  <a data-i18n="action.viewAll">View all →</a>
+                </div>
+                <div class="panel-body">
+                  <div class="alert">
+                    <div class="ai red">✚</div>
+                    <div>
+                      <div class="at" data-i18n="alert.1.t">Incubator K-3 calibration overdue</div>
+                      <div class="ad" data-i18n="alert.1.d">Use is blocked until recalibrated · Asset OX-INC-03</div>
+                    </div>
+                  </div>
+                  <div class="alert">
+                    <div class="ai amber">▤</div>
+                    <div>
+                      <div class="at" data-i18n="alert.2.t">Culture media below par level</div>
+                      <div class="ad" data-i18n="alert.2.d">3 items under par · auto-requisition drafted</div>
+                    </div>
+                  </div>
+                  <div class="alert">
+                    <div class="ai amber">◷</div>
+                    <div>
+                      <div class="at" data-i18n="alert.3.t">Witnessing competency expiring</div>
+                      <div class="ad" data-i18n="alert.3.d">Embryologist M. Tariq · expires in 12 days</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- RI Witness reconciliation -->
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 data-i18n="panel.witness">RI Witness reconciliation</h2>
+                  <a data-i18n="action.details">Details →</a>
+                </div>
+                <div class="ri-banner">
+                  <span>⛨</span><span data-i18n="witness.authoritative">RI Witness is the authoritative lab record — Oxford HIS reconciles against it</span>
+                </div>
+                <div class="panel-body">
+                  <div class="witness-row">
+                    <div class="wl"><span data-i18n="witness.matched">Handling events reconciled today</span><small class="ltr">18 / 18</small></div>
+                    <span class="pill green" data-i18n="witness.inSync">In sync</span>
+                  </div>
+                  <div class="witness-row">
+                    <div class="wl"><span data-i18n="witness.divergence">Open divergences</span><small class="ltr">0</small></div>
+                    <span class="pill green" data-i18n="witness.clear">Clear</span>
+                  </div>
+                  <div class="witness-row">
+                    <div class="wl"><span data-i18n="witness.signoff">Cycle-step sign-offs blocked</span><small class="ltr">0</small></div>
+                    <span class="pill grey" data-i18n="witness.none">None</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- quick actions -->
+              <div class="panel">
+                <div class="panel-head"><h2 data-i18n="panel.quick">Quick actions</h2></div>
+                <div class="panel-body">
+                  <div class="qa-grid">
+                    <div class="qa"><span class="qi">＋</span><span data-i18n="qa.register">Register patient</span></div>
+                    <div class="qa"><span class="qi">◷</span><span data-i18n="qa.book">Book appointment</span></div>
+                    <div class="qa"><span class="qi">↻</span><span data-i18n="qa.cycle">Start cycle</span></div>
+                    <div class="qa"><span class="qi">⚗</span><span data-i18n="qa.stim">Chart stim day</span></div>
+                    <div class="qa"><span class="qi">₲</span><span data-i18n="qa.invoice">Create invoice</span></div>
+                    <div class="qa"><span class="qi">▣</span><span data-i18n="qa.kpi">Open KPI board</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="footnote" data-i18n="footnote">
+            Static design mockup · Oxford HIS staff EMR · no patient data shown
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Bilingual copy. In the real app these come from the @oxford/i18n catalog
+      // (en/ar parity enforced by assertCatalogComplete). Toggling sets dir/lang
+      // on <html>, which flips the whole layout to RTL via CSS logical properties.
+      const I18N = {
+        ar: {
+          "app.name": "أكسفورد للأنظمة الصحية",
+          "app.tagline": "الخصوبة وصحة المرأة",
+          "nav.home": "الرئيسية",
+          "nav.schedule": "الجدول",
+          "nav.patients": "المرضى",
+          "nav.couples": "الأزواج",
+          "navgroup.clinical": "السريري",
+          "nav.cycles": "الدورات",
+          "nav.lab": "المختبر والأجنّة",
+          "nav.cryostore": "التخزين بالتبريد",
+          "nav.theatre": "غرفة العمليات",
+          "navgroup.operations": "العمليات التشغيلية",
+          "nav.inventory": "المخزون",
+          "nav.billing": "الفوترة",
+          "nav.reports": "التقارير ومؤشرات الأداء",
+          "nav.settings": "الإعدادات",
+          "search.placeholder": "ابحث عن مريض أو الرقم المدني أو الدورة…",
+          "language.toggle": "English",
+          "user.name": "د. سارة ناصر",
+          "user.role": "استشارية · طب الإنجاب",
+          "home.greeting": "صباح الخير، د. ناصر",
+          "home.date.greg": "السبت، ٢٧ يونيو ٢٠٢٦",
+          "home.date.hijri": "١٢ محرّم ١٤٤٨",
+          "action.newPatient": "＋ مريض جديد",
+          "action.startCycle": "بدء دورة",
+          "stat.appointments": "مواعيد اليوم",
+          "stat.appointments.sub": "٦ بانتظار التسجيل",
+          "stat.stimulating": "مريضات قيد التنشيط",
+          "stat.stimulating.sub": "٣ بانتظار الحقنة المفجّرة الليلة",
+          "stat.lab": "إجراءات المختبر اليوم",
+          "stat.lab.sub": "٢ سحب · ٢ إرجاع · ١ حقن مجهري",
+          "stat.alerts": "تنبيهات مفتوحة",
+          "stat.alerts.sub": "١ حرجة · تتطلب إجراءً",
+          "panel.schedule": "جدول اليوم",
+          "action.viewAll": "عرض الكل ←",
+          "appt.1.nm": "ليلى وأحمد ك.",
+          "appt.1.ty": "متابعة الجُريبات بالموجات · اليوم ٧",
+          "appt.2.nm": "نورة س.",
+          "appt.2.ty": "استشارة جديدة · مراجعة هرمون AMH",
+          "appt.3.nm": "فاطمة ويوسف ر.",
+          "appt.3.ty": "سحب البويضات · غرفة العمليات ٢",
+          "appt.4.nm": "مريم ع.",
+          "appt.4.ty": "إرجاع جنين · كيسة أريمية مفردة",
+          "appt.5.nm": "هدى وخالد م.",
+          "appt.5.ty": "استشارة · توقيع الموافقات",
+          "status.checkedIn": "تم التسجيل",
+          "status.waiting": "بالانتظار",
+          "status.lab": "في المختبر",
+          "status.scheduled": "مجدول",
+          "panel.cohort": "قيد التنشيط هذا الأسبوع",
+          "action.openCohort": "فتح المجموعة ←",
+          "col.patient": "المريضة",
+          "col.protocol": "البروتوكول",
+          "col.day": "اليوم",
+          "col.follicles": "الجُريبات الرئيسية",
+          "col.e2": "إستراديول (pg/mL)",
+          "col.next": "التالي",
+          "proto.antagonist": "مضادّ",
+          "proto.longAgonist": "ناهض طويل",
+          "next.scan": "تصوير غدًا",
+          "next.trigger": "الحقنة المفجّرة الليلة",
+          "next.review": "مراجعة الجرعة",
+          "panel.alerts": "إجراء مطلوب",
+          "alert.1.t": "معايرة الحاضنة K-3 متأخرة",
+          "alert.1.d": "الاستخدام محظور حتى إعادة المعايرة · الأصل OX-INC-03",
+          "alert.2.t": "وسط الزراعة دون الحد الأدنى",
+          "alert.2.d": "٣ أصناف تحت الحد · تم تجهيز طلب شراء آلي",
+          "alert.3.t": "كفاءة الإشهاد على وشك الانتهاء",
+          "alert.3.d": "أخصائي الأجنّة م. طارق · تنتهي خلال ١٢ يومًا",
+          "panel.witness": "مطابقة RI Witness",
+          "action.details": "التفاصيل ←",
+          "witness.authoritative": "نظام RI Witness هو السجل المعتمد للمختبر — يقوم النظام بالمطابقة معه",
+          "witness.matched": "أحداث المناولة المطابَقة اليوم",
+          "witness.inSync": "متطابق",
+          "witness.divergence": "اختلافات مفتوحة",
+          "witness.clear": "لا يوجد",
+          "witness.signoff": "اعتمادات الخطوات المحجوبة",
+          "witness.none": "لا شيء",
+          "panel.quick": "إجراءات سريعة",
+          "qa.register": "تسجيل مريض",
+          "qa.book": "حجز موعد",
+          "qa.cycle": "بدء دورة",
+          "qa.stim": "تسجيل يوم تنشيط",
+          "qa.invoice": "إنشاء فاتورة",
+          "qa.kpi": "لوحة مؤشرات الأداء",
+          "footnote": "نموذج تصميم ثابت · نظام أكسفورد للكادر الطبي · لا تظهر بيانات مرضى",
+        },
+      };
+
+      // Snapshot the original English so the toggle is reversible.
+      const EN = {};
+      function snapshot() {
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          EN[el.getAttribute("data-i18n")] = el.innerHTML;
+        });
+        document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+          EN["__ph__" + el.getAttribute("data-i18n-ph")] = el.getAttribute("placeholder");
+        });
+      }
+      snapshot();
+
+      let lang = "en";
+      function apply(target) {
+        const html = document.documentElement;
+        html.setAttribute("lang", target);
+        html.setAttribute("dir", target === "ar" ? "rtl" : "ltr");
+        const dict = target === "ar" ? I18N.ar : null;
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-i18n");
+          el.innerHTML = dict && dict[key] != null ? dict[key] : EN[key];
+        });
+        document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+          const key = el.getAttribute("data-i18n-ph");
+          el.setAttribute("placeholder", dict && dict[key] != null ? dict[key] : EN["__ph__" + key]);
+        });
+      }
+
+      document.getElementById("langToggle").addEventListener("click", () => {
+        lang = lang === "en" ? "ar" : "en";
+        apply(lang);
+      });
+    </script>
+  </body>
+</html>
