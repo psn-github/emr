@@ -1,6 +1,15 @@
 import type { ChainRecord } from "./chain.js";
 
 /**
+ * Thrown by `ChainStore.append` when a concurrent writer advanced the head
+ * between the caller's head-read and the append. RETRYABLE: the caller re-reads
+ * the head, re-links, and appends again (`HashChainLog.append` does this under a
+ * bounded retry). A conflict never corrupts the chain — the losing append rolls
+ * back — so this is a liveness signal, not a data-integrity failure.
+ */
+export class ChainConflictError extends Error {}
+
+/**
  * Append-only persistence for a hash chain. Implementations MUST:
  *  - serialize appends (the head read + write is a critical section), and
  *  - never update or delete an existing record.

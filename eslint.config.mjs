@@ -14,6 +14,7 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/*.config.*",
       "scripts/**",
+      "perf/**", // k6 load scripts run in the k6 runtime, not our TS toolchain
     ],
   },
   js.configs.recommended,

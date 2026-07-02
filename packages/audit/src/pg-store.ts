@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { ChainRecord } from "./chain.js";
-import type { ChainStore } from "./store.js";
+import { ChainConflictError, type ChainStore } from "./store.js";
 import { GENESIS_HASH } from "./hash.js";
 import type { AuditPayload } from "./types.js";
 
@@ -39,7 +39,7 @@ export class PgAuditChainStore implements ChainStore<AuditPayload> {
       const curSeq = head.rows[0] ? Number(head.rows[0].seq) : 0;
       const expectedPrev = head.rows[0] ? head.rows[0].hash : GENESIS_HASH;
       if (record.seq !== curSeq + 1 || record.prevHash !== expectedPrev) {
-        throw new Error(
+        throw new ChainConflictError(
           `append must extend the chain head (have seq ${curSeq}); concurrent append — retry`,
         );
       }
