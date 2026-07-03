@@ -89,5 +89,13 @@
 - **Status:** **approved & closed** — recorded as ADR-0034/0035; implemented in PR 5.1 (remove cash + tax from `@oxford/billing`, adversarially tested).
 - **Product-owner decision:** confirmed by the Medical Director, 2026-06-13.
 
+## AMD-0007 — Add "Phase 7 — Run it: staging deployment + whole-EMR simulation" to the roadmap
+- **Date:** 2026-07-03
+- **Raised by:** product owner (session direction: assess the build, verify zero errors, then "deploy this model to test the whole EMR", "simulate this with patients, creating loops to ensure all errors are corrected", then deploy to a VPS as done for om-software — without changing om-software).
+- **Type:** proposed-change (roadmap addition; docs/05 ends at Phase 6 + cutover)
+- **Documents involved:** docs/05_DELIVERY_ROADMAP.md, new docs/PHASE7_PLAN.md, ADR-0062/0063/0064
+- **Proposal:** adopt docs/PHASE7_PLAN.md as Phase 7. Scope: HTTP host (7.0 ✅), whole-EMR synthetic-patient simulation harness with an error-correction loop (7.1 ✅), staging VPS deploy wiring on the existing gated pipeline (7.2 ✅ first cut), simulation at scale + chaos drills + k6 baseline (7.3), staff web shell (7.4), patient portal PWA (7.5), documented exit gate (7.6). Staging holds synthetic data only (ADR-0007); om-software is untouched.
+- **Status:** **open** — proposed for product-owner ratification; build proceeding under it per session direction (the direction itself is the mandate; ratification formalises the roadmap text).
+
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.
