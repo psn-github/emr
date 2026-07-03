@@ -119,6 +119,8 @@ interface Env {
   readonly doc: Api; // dev-consultant: clinical:* + scheduling:*
   readonly emb: Api; // dev-embryologist: embryology:*
   readonly fin: Api; // dev-finance: financial:*
+  readonly phm: Api; // dev-pharmacist: clinical:dispense.*
+  readonly ops: Api; // dev-ops: admin:* (seeds pharmacy stock)
   readonly patient: (personId: string) => Api; // devpatient principal
   readonly j: Journal;
   readonly runTag: string;
@@ -176,7 +178,7 @@ function planCouple(rng: Rng, couple: number): CouplePlan {
 }
 
 async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: SimPackage | undefined): Promise<void> {
-  const { doc, emb, fin, j, runTag } = env;
+  const { doc, emb, fin, phm, ops, j, runTag } = env;
   const tag = `${runTag}-${at.loop}-${at.couple}`;
   const T0 = "2026-09-01T08:00:00.000Z";
 
@@ -260,6 +262,22 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
     // Exercises the dev pharmacy stub feed; the perioperative discharge gate it
     // backs is not reachable over HTTP on a fresh DB (see ROUTER_GAPS).
     await j.step(at, "mark pharmacy fulfilled (dev stub)", "dev.markPharmacyFulfilled", () => doc.dev.markPharmacyFulfilled.mutate({ encounterId: enc.encounterId }));
+
+    // Real Ground-floor pharmacy loop (ADR-0066): the clinician raises a
+    // FORMULARY-ONLY discharge script for the encounter; the pharmacist dispenses
+    // (FEFO from seeded stock) and marks it ready. Config-style + idempotent:
+    // stock receipt is additive, so re-runs against a persistent DB just top up.
+    await j.step(at, "pharmacy: raise → dispense → ready", "pharmacy.raisePrescription", async () => {
+      await ops.inventory.receiveStock.mutate({ itemId: "rfsh", lotNo: `SIM-${tag}`, locationId: "pharmacy-ground", quantity: 10, expiryDate: "2028-01-01", receivedAt: T0 });
+      const rx = await doc.pharmacy.raisePrescription.mutate({
+        patientId: wifeId,
+        encounterId: enc.encounterId,
+        items: [{ drugId: "rfsh", quantity: 2, doseInstruction: { en: "225 IU daily", ar: "225 وحدة يومياً" } }],
+      });
+      await phm.pharmacy.dispense.mutate({ prescriptionId: rx.prescriptionId, coldChainHandled: false });
+      const ready = await phm.pharmacy.markReady.mutate({ prescriptionId: rx.prescriptionId });
+      ensure(ready.status === "ready", `expected the script to be ready, got ${ready.status}`);
+    });
   }
 
   // ── andrology (husband) ───────────────────────────────────────────────────
@@ -596,6 +614,8 @@ export async function runSimulation(opts: SimulationOptions): Promise<Simulation
     doc: apiClient(opts.url, staffToken("dev-consultant")),
     emb: apiClient(opts.url, staffToken("dev-embryologist")),
     fin: apiClient(opts.url, staffToken("dev-finance")),
+    phm: apiClient(opts.url, staffToken("dev-pharmacist")),
+    ops: apiClient(opts.url, staffToken("dev-ops")),
     patient: (personId: string) => apiClient(opts.url, `devpatient:${personId}`),
     j,
     runTag,

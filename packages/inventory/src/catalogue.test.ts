@@ -49,6 +49,13 @@ describe("CatalogueService", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.detailKey).toBe("inventory.item.bad_pack_size");
   });
+  it("accepts an explicit stable id (the drug/formulary code import path)", async () => {
+    const { svc } = build();
+    const item = await svc.addItem("buyer-1", { ...good, id: "hcg_trigger", controlled: true });
+    expect(item.ok).toBe(true);
+    if (item.ok) expect(item.value.id).toBe("hcg_trigger");
+    expect((await svc.item(asId<"CatalogueItem">("hcg_trigger")))!.controlled).toBe(true);
+  });
   it("fetches a single item by id (undefined for unknown)", async () => {
     const { svc } = build();
     const item = await svc.addItem("buyer-1", good);

@@ -49,7 +49,15 @@ import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
 import { RecordsService, PgRecordsStore, type AppointmentsPort } from "@oxford/records";
-import { CycleService, PgCycleStore, StimulationService, PgStimStore, PgReasonCodeStore, PgCycleTemplateStore } from "@oxford/fertility";
+import { CycleService, PgCycleStore, StimulationService, PgStimStore, PgReasonCodeStore, PgCycleTemplateStore, formularyItem } from "@oxford/fertility";
+import {
+  PharmacyService,
+  PgPharmacyStore,
+  type FormularyPort,
+  type AllergyPort as PharmacyAllergyPort,
+  type InventoryPort as PharmacyInventoryPort,
+  type ControlledRegisterPort,
+} from "@oxford/pharmacy";
 import { MessagingService, PgMessagingStore } from "@oxford/messaging";
 import { ConsentService, PgConsentStore } from "@oxford/consent";
 import { PushService, PgPushStore, RecordingPushProvider } from "@oxford/push";
@@ -101,6 +109,7 @@ export interface Services {
   readonly analytics: AnalyticsService;
   readonly hr: HrService;
   readonly records: RecordsService;
+  readonly pharmacy: PharmacyService;
   readonly cycle: CycleService;
   readonly stim: StimulationService;
   readonly messaging: MessagingService;
@@ -125,6 +134,10 @@ const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
 /** L2 inpatient bed count — the seeded topology (ADR-0023). A day's theatre list
  *  reserving more than this is flagged (not blocked). Configuration, not code. */
 const L2_BED_CAPACITY = 6;
+
+/** The Ground-floor pharmacy's stock location — the dispensing seam issues from
+ *  here by default (ADR-0066). Configuration, not code. */
+const PHARMACY_LOCATION_ID = "pharmacy-ground";
 
 /** Dev/test pharmacy stub (ADR-0025) — discharge-prescription fulfilment until
  *  the real E8 pharmacy lands. `markFulfilled` simulates the pharmacy handover. */
@@ -342,9 +355,83 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const cssd = new CssdService(new PgCssdStore(pool), audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
+
+  // Ground-floor pharmacy dispensing (ADR-0066). A DOMAIN module wired here to
+  // three published-surface seams (module boundaries — pharmacy imports none of
+  // these): the FORMULARY (fertility's formulary is the only prescribable source;
+  // controlled/cold-chain come from the inventory catalogue by the shared drug
+  // code), the ALLERGY screen (clinical.allergicClasses; advisory only, ADR-0060),
+  // stock decrement (inventory's FEFO issue), and the CONTROLLED-DRUGS REGISTER
+  // (a controlled item's dispense posts a witnessed issue movement).
+  const pharmacyFormulary: FormularyPort = {
+    async isPrescribable(drugId) {
+      return formularyItem(drugId) !== null;
+    },
+    async drugInfo(drugId) {
+      const f = formularyItem(drugId);
+      if (f === null) return null;
+      // controlled/cold-chain are inventory-catalogue attributes; a catalogue item
+      // sharing the drug's formulary code carries them (absent ⇒ neither).
+      const cat = await catalogue.item(asId<"CatalogueItem">(drugId));
+      return { nameEn: f.name.en, nameAr: f.name.ar, drugClass: f.drugClass, controlled: cat?.controlled ?? false, coldChain: cat?.coldChain ?? false };
+    },
+  };
+  const pharmacyAllergy: PharmacyAllergyPort = {
+    allergicClasses: (patientId) => clinical.allergicClasses(patientId),
+  };
+  const pharmacyInventory: PharmacyInventoryPort = {
+    async availableAt(drugId, locationId) {
+      const lots = await inventory.lotsForItem(drugId);
+      return lots.filter((l) => l.locationId === locationId).reduce((s, l) => s + l.quantity, 0);
+    },
+    async issueFefo(actorId, drugId, locationId, quantity) {
+      // Read lots BEFORE issuing so FEFO-chosen lot ids resolve to lot/expiry for
+      // the dispense allocation record; inventory.issue does the FEFO decrement.
+      const lotsBefore = await inventory.lotsForItem(drugId);
+      const r = await inventory.issue(actorId, { itemId: drugId, locationId, quantity });
+      if (!r.ok) return err(r.error);
+      const allocations = r.value.map((line) => {
+        const lot = lotsBefore.find((l) => l.id === line.lotId)!; // just-issued lot
+        return { drugId, lotNo: lot.lotNo, expiry: lot.expiryDate, quantity: line.quantity };
+      });
+      return ok(allocations);
+    },
+    async deductLots(actorId, allocations) {
+      return inventory.deduct(actorId, allocations.map((a) => ({ code: a.drugId, lotNo: a.lotNo, quantity: a.quantity })));
+    },
+  };
+  const pharmacyControlledRegister: ControlledRegisterPort = {
+    async postIssue(actorId, input) {
+      const r = await controlledDrugs.record(actorId, {
+        itemId: input.drugId,
+        lotNo: input.lotNo,
+        type: "issue",
+        quantity: input.quantity,
+        reason: "pharmacy dispense",
+        patientRef: input.patientRef,
+        witnessedBy: input.witnessStaffId,
+        occurredAt: input.occurredAt,
+      });
+      return r.ok ? ok(undefined) : err(r.error);
+    },
+  };
+  const pharmacy = new PharmacyService(new PgPharmacyStore(pool), pharmacyFormulary, pharmacyAllergy, pharmacyInventory, pharmacyControlledRegister, audit, events, clock, { pharmacyLocationId: PHARMACY_LOCATION_ID });
+
   // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
+  // The gate consumes a COMPOSITE PharmacyPort (ADR-0066): fulfilled if the dev
+  // stub says so OR the real pharmacy service does. Rationale — the existing
+  // discharge/perioperative e2es and the simulator's dev.markPharmacyFulfilled
+  // feed the stub, and journeys that skip pharmacy still need that dev feed; the
+  // real ward→pharmacy→discharge loop must gate on real fulfilment without
+  // breaking either. `pharmacyStub` stays exposed on Services for those feeds.
   const pharmacyStub = new StubPharmacyProvider();
-  const recovery = new RecoveryService(new PgRecoveryStore(pool), pharmacyStub, audit, events);
+  const compositePharmacy: PharmacyPort = {
+    async isPrescriptionFulfilled(encounterId) {
+      if (await pharmacyStub.isPrescriptionFulfilled(encounterId)) return true;
+      return pharmacy.isPrescriptionFulfilled(encounterId);
+    },
+  };
+  const recovery = new RecoveryService(new PgRecoveryStore(pool), compositePharmacy, audit, events);
   const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, whoChecklist, recovery, audit, events);
 
   // Two-theatre case scheduling on the SHARED scheduling calendar (conflict-aware),
@@ -370,5 +457,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, records, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, records, pharmacy, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

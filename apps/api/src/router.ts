@@ -10,6 +10,7 @@ import {
   thermalZpl,
 } from "@oxford/records";
 import type { FileRef, LabelPatient, IdSheetOptions } from "@oxford/records";
+import type { DoseInstruction as PharmacyDose, DispenseAllocation as PharmacyAllocation, PrescriptionStatus as PharmacyStatus } from "@oxford/pharmacy";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod, PackageInput, ChargeSource } from "@oxford/billing";
@@ -58,6 +59,17 @@ function recordsError(error: AppError): TRPCError {
     : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
     : "BAD_REQUEST";
   return new TRPCError({ code, message: error.detailKey ?? "records error" });
+}
+
+/** Map a pharmacy domain error to the matching tRPC transport code. */
+function pharmacyError(error: AppError): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "CONFLICT" ? "CONFLICT"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? "pharmacy error" });
 }
 
 /** Build a file reference from a flat input (barcode scan = mrn+volume). */
@@ -1338,6 +1350,59 @@ export const appRouter = router({
     thermalLabel: protectedProcedure("clinical:records.read")
       .input((v: unknown) => v as LabelPatient)
       .query(({ input }) => ({ html: thermalLabel(input), zpl: thermalZpl(input) })),
+  }),
+
+  // Ground-floor pharmacy dispensing (docs/PHASE8_PLAN §8.1, ADR-0066). A
+  // clinician raises a FORMULARY-ONLY prescription (clinical:prescription.write);
+  // the pharmacy queue/dispense surface is the pharmacist's (clinical:dispense.*).
+  // Fulfilment (markReady) feeds the L2 discharge gate via the composite
+  // PharmacyPort wired in context.ts.
+  pharmacy: router({
+    raisePrescription: protectedProcedure("clinical:prescription.write")
+      .input((v: unknown) => v as { patientId: string; encounterId?: string; items: { drugId: string; quantity: number; doseInstruction: PharmacyDose }[] })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.raisePrescription(ctx.session.subject.staffId, input);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { prescriptionId: r.value.id, status: r.value.status, allergyWarnings: r.value.allergyWarnings };
+      }),
+    queue: protectedProcedure("clinical:dispense.read")
+      .input((v: unknown) => v as { status?: PharmacyStatus })
+      .query(async ({ ctx, input }) => ({ prescriptions: await ctx.services.pharmacy.queue(input.status) })),
+    get: protectedProcedure("clinical:dispense.read")
+      .input((v: unknown) => v as { prescriptionId: string })
+      .query(async ({ ctx, input }) => {
+        const p = await ctx.services.pharmacy.get(input.prescriptionId);
+        if (p === null) throw new TRPCError({ code: "NOT_FOUND", message: "prescription not found" });
+        return p;
+      }),
+    dispense: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string; locationId?: string; coldChainHandled?: boolean; witnessStaffId?: string; allocations?: PharmacyAllocation[]; dispensedAt?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.dispense(ctx.session.subject.staffId, input);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { dispenseId: r.value.id, allocations: r.value.allocations };
+      }),
+    markReady: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.markReady(ctx.session.subject.staffId, input.prescriptionId);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { status: r.value.status };
+      }),
+    markCollected: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.markCollected(ctx.session.subject.staffId, input.prescriptionId);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { status: r.value.status };
+      }),
+    cancel: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.cancel(ctx.session.subject.staffId, input.prescriptionId, input.reason);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { status: r.value.status, cancelReason: r.value.cancelReason };
+      }),
   }),
 });
 

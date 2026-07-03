@@ -42,6 +42,13 @@ const DIRECTORY: Readonly<Record<string, AuthSubject>> = {
     staffId: "rec-files-1",
     roles: [role("records-officer", ["clinical:records.read", "clinical:records.write"])],
   },
+  // Ground-floor pharmacist (ADR-0066): dispenses only. Prescribing is a
+  // clinician action (dev-consultant's clinical:* already covers it) — the
+  // pharmacist is deliberately NOT granted clinical:prescription.write.
+  "dev-pharmacist": {
+    staffId: "phm-1",
+    roles: [role("pharmacist", ["clinical:dispense.read", "clinical:dispense.write"])],
+  },
 };
 
 /** Deny-by-default resolver over the fixed staging directory. */

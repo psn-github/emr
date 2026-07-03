@@ -1,5 +1,5 @@
 import type { Result, AppError } from "@oxford/core";
-import { ok, err, newId } from "@oxford/core";
+import { ok, err, newId, asId } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import type { Supplier, CatalogueItem, CatalogueItemId, ItemCategory } from "./types.js";
 import type { CatalogueStore } from "./store.js";
@@ -11,6 +11,11 @@ export interface AddSupplierInput {
   readonly contactPhone?: string;
 }
 export interface AddItemInput {
+  /** Optional stable catalogue code (the drug/formulary code import path). When
+   *  omitted a fresh id is allocated; when supplied the row upserts on it, so a
+   *  catalogue item can share a drug's formulary code — the join the pharmacy
+   *  dispensing seam uses to key stock + the controlled register (ADR-0066). */
+  readonly id?: string;
   readonly name: string;
   readonly category: ItemCategory;
   readonly unit: string;
@@ -47,7 +52,7 @@ export class CatalogueService {
     const valid = validateCatalogueItem(input);
     if (!valid.ok) return err(valid.error);
     const item: CatalogueItem = {
-      id: newId<"CatalogueItem">(),
+      id: input.id !== undefined ? asId<"CatalogueItem">(input.id) : newId<"CatalogueItem">(),
       name: input.name,
       category: input.category,
       unit: input.unit,

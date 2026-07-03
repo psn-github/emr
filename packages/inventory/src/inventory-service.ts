@@ -104,6 +104,13 @@ export class InventoryService {
     return (await this.stock.lotsForItem(itemId)).reduce((s, l) => s + l.quantity, 0);
   }
 
+  /** All received lots for an item (published read). The pharmacy dispensing seam
+   *  (ADR-0066) uses this to resolve FEFO-chosen lot ids back to lot/expiry for
+   *  the dispense allocation record. */
+  lotsForItem(itemId: string): Promise<readonly StockLot[]> {
+    return this.stock.lotsForItem(itemId);
+  }
+
   async recordColdChain(actorId: string, locationId: string, temperatureC: number, recordedAt: string): Promise<ColdChainReading> {
     const reading: ColdChainReading = { id: newId<"ColdChainReading">(), locationId, temperatureC, recordedAt, recordedBy: actorId };
     await this.stock.saveColdChainReading(reading);

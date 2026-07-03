@@ -33,6 +33,7 @@
     "@oxford/notifications": "workspace:*",
     "@oxford/outcomes": "workspace:*",
     "@oxford/perioperative": "workspace:*",
+    "@oxford/pharmacy": "workspace:*",
     "@oxford/push": "workspace:*",
     "@oxford/records": "workspace:*",
     "@oxford/registry": "workspace:*",
