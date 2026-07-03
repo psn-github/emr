@@ -1,0 +1,35 @@
+# Oxford HIS staging API — systemd unit (ADR-0064).
+#
+# Install (one-time, on the VPS):
+#   sudo mkdir -p /etc/oxford-his
+#   sudo cp deploy/api.env.example /etc/oxford-his/api.env   # then edit values
+#   sudo cp deploy/oxford-his-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now oxford-his-api
+#
+# RESIDENCY (ADR-0007): staging / synthetic data ONLY. NODE_ENV is deliberately
+# NOT "production" — the host refuses production boot until the real OIDC
+# provider + staff provisioning are wired (ADR-0062). Do not "fix" that here.
+
+[Unit]
+Description=Oxford HIS API (staging, synthetic data only)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oxfordhis
+Group=oxfordhis
+WorkingDirectory=/opt/oxford-his
+EnvironmentFile=/etc/oxford-his/api.env
+ExecStart=/usr/bin/node /opt/oxford-his/apps/api/dist/serve.js
+Restart=always
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/oxford-his
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

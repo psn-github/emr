@@ -52,7 +52,21 @@ sudo mkdir -p /opt/oxford-his && sudo chown $USER /opt/oxford-his
 git clone https://github.com/psn-github/emr.git /opt/oxford-his
 ```
 
-(Install Docker or Node on the VPS depending on what Phase 0 produces — the deploy script handles either.)
+Then install the runtime the API needs (ADR-0064): Node 20 + pnpm 9, Postgres 16 with an
+`oxford_staging` database, and the unit/site templates:
+
+```bash
+sudo useradd --system --home /opt/oxford-his oxfordhis
+sudo mkdir -p /etc/oxford-his && sudo cp deploy/api.env.example /etc/oxford-his/api.env  # edit values
+sudo cp deploy/oxford-his-api.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemctl enable --now oxford-his-api
+sudo cp deploy/nginx-oxford-his.conf /etc/nginx/sites-available/oxford-his   # edit hostname; ln -s; nginx -t; reload
+sudo crontab -l | { cat; echo "15 2 * * * /opt/oxford-his/scripts/backup-staging-db.sh"; } | sudo crontab -
+```
+
+> **om-software isolation:** this stack lives entirely in `/opt/oxford-his` + its own systemd unit,
+> nginx site, port (8060) and database. It never touches `/opt/oxmedkw` or the om-software nginx
+> config — those tools are in daily clinical use.
 
 ### 4. (Optional) Codespaces — author without your Mac
 
