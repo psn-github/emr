@@ -11,6 +11,11 @@ export interface ApiContext {
   readonly session: Session | null;
   readonly patient: PatientPrincipal | null;
   readonly services: Services;
+  /** Staging/dev-only switch for the `dev` sub-router (stub-provider feeds for
+   *  the synthetic-patient simulator). Optional so the ~70 in-process e2e
+   *  contexts that never set it keep working; the HTTP host sets it from
+   *  `!isProduction` and production boot is refused anyway (serve.ts). */
+  readonly devTools?: boolean;
 }
 
 const t = initTRPC.context<ApiContext>().create();

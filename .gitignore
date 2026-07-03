@@ -35,3 +35,6 @@ coverage/
 *.sqlite
 *.sqlite3
 /tmp/
+
+# Synthetic-patient simulator output (apps/api simulate CLI)
+simulation-report.json

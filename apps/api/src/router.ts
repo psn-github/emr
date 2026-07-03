@@ -11,7 +11,8 @@ import type { ItemCategory } from "@oxford/inventory";
 import type { AssetCategory } from "@oxford/assets";
 import { cycleTimeline, buildMedicationSchedule, requiredConsents } from "@oxford/fertility";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
-import { router, protectedProcedure, patientProcedure } from "./trpc.js";
+import type { RiWitnessRecord } from "@oxford/witnessing";
+import { router, publicProcedure, protectedProcedure, patientProcedure } from "./trpc.js";
 import { assertOwnData, type PatientPrincipal } from "./patient-access.js";
 import type { Services } from "./context.js";
 import type { Cycle } from "@oxford/fertility";
@@ -65,7 +66,45 @@ const asVerifyInput = (v: unknown): { coupleId: string; documentRef: string; met
   v as { coupleId: string; documentRef: string; method: string };
 const asCoupleId = (v: unknown): { coupleId: string } => v as { coupleId: string };
 
+/** Every `dev` procedure is gated on ctx.devTools (set by the HTTP host from
+ *  `!isProduction`; in-process e2e contexts that never set it are denied). */
+const devProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (ctx.devTools !== true) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "dev tools are disabled" });
+  }
+  return next();
+});
+
 export const appRouter = router({
+  // DEV TOOLS — staging/synthetic-data ONLY. The e2e suite feeds the dev stub
+  // providers in-process; an HTTP client (the synthetic-patient simulator)
+  // cannot, so this surface exposes exactly those stub feeds. It exists only
+  // where devTools is set (the HTTP host sets it from !isProduction, and the
+  // host refuses production boot outright — see serve.ts). seedWitnessRecord
+  // seeds the RI Witness STUB with a record as the real device would have
+  // returned it — it is the stub-provider data feed, NEVER a witness override
+  // or a competing witness UI (CLAUDE.md hard rule): a divergent or absent RI
+  // record still blocks cycle-step sign-off, exactly as in production.
+  dev: router({
+    seedWitnessRecord: devProcedure
+      .input((v: unknown) => v as { cycleId: string; record: RiWitnessRecord })
+      .mutation(({ ctx, input }) => {
+        ctx.services.witnessProvider.seedRecord(input.cycleId, input.record);
+        return { seeded: true };
+      }),
+    markPharmacyFulfilled: devProcedure
+      .input((v: unknown) => v as { encounterId: string })
+      .mutation(({ ctx, input }) => {
+        ctx.services.pharmacyStub.markFulfilled(input.encounterId);
+        return { fulfilled: true };
+      }),
+    verifyAuditChain: devProcedure.query(async ({ ctx }): Promise<{ intact: boolean; detail?: string }> => {
+      const r = await ctx.services.audit.verifyIntegrity();
+      if (r.ok) return { intact: true };
+      return { intact: false, detail: `${r.error.reason} at seq ${r.error.seq}` };
+    }),
+  }),
+
   registry: router({
     registerPerson: protectedProcedure("clinical:patient.register")
       .input(asRegisterInput)

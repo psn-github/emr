@@ -6,6 +6,7 @@ import { appRouter } from "./router.js";
 import { serviceInfo } from "./index.js";
 import type { Services } from "./context.js";
 import type { ApiContext } from "./trpc.js";
+import type { PatientPrincipal } from "./patient-access.js";
 
 // The HTTP host (ADR-0062): mounts the one tRPC app router — the same surface
 // every e2e proves — on a plain node:http server. The server stays the
@@ -59,23 +60,33 @@ export function createApiServer(opts: ApiServerOptions): Server {
   const auth = new AuthService(opts.oidc ?? new DevOidcProvider(isProduction), opts.resolveSubject, services.audit);
   const sessions = new SessionCache();
 
+  // One context construction point. `devTools` enables the `dev` sub-router
+  // (stub-provider feeds for the synthetic-patient simulator) outside
+  // production only; production boot is refused regardless (serve.ts).
+  const context = (session: Session | null, patient: PatientPrincipal | null): ApiContext => ({
+    session,
+    patient,
+    services,
+    devTools: !isProduction,
+  });
+
   async function contextFor(req: IncomingMessage): Promise<ApiContext> {
     const header = req.headers.authorization;
-    if (!header?.startsWith("Bearer ")) return { session: null, patient: null, services };
+    if (!header?.startsWith("Bearer ")) return context(null, null);
     const token = header.slice("Bearer ".length);
 
     if (token.startsWith("devpatient:")) {
-      if (isProduction) return { session: null, patient: null, services };
-      return { session: null, patient: { patientId: token.slice("devpatient:".length) }, services };
+      if (isProduction) return context(null, null);
+      return context(null, { patientId: token.slice("devpatient:".length) });
     }
 
     const now = Date.now();
     const cached = sessions.get(token, now);
-    if (cached) return { session: cached, patient: null, services };
+    if (cached) return context(cached, null);
     const result = await auth.authenticate(token);
-    if (!result.ok) return { session: null, patient: null, services };
+    if (!result.ok) return context(null, null);
     sessions.put(token, result.value, now);
-    return { session: result.value, patient: null, services };
+    return context(result.value, null);
   }
 
   const trpc = createHTTPHandler({

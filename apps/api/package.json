@@ -8,7 +8,7 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src",
-    "build:server": "esbuild src/serve.ts src/migrate.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --external:pg --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\""
+    "build:server": "esbuild src/serve.ts src/migrate.ts src/simulator/simulate.ts --bundle --platform=node --format=esm --target=node20 --outdir=dist --entry-names=[name] --external:pg --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\""
   },
   "dependencies": {
     "@oxford/analytics": "workspace:*",
