@@ -102,4 +102,20 @@ describe("SchedulingService lifecycle", () => {
     const ctx = await booked();
     expect(await ctx.svc.list()).toHaveLength(1);
   });
+
+  it("appointmentsOn returns the day's active bookings, excluding other days + cancelled/no-show", async () => {
+    const ctx = await setup();
+    const day = "2026-06-15";
+    const a = await ctx.svc.book("rec-1", { typeId: ctx.type.id, patientId: "pat-1", practitionerId: ctx.doc.id, resourceIds: [ctx.scanner.id], start: "2026-06-15T09:00:00Z", end: "2026-06-15T09:30:00Z" });
+    await ctx.svc.book("rec-1", { typeId: ctx.type.id, patientId: "pat-2", practitionerId: ctx.doc.id, resourceIds: [ctx.scanner.id], start: "2026-06-16T09:00:00Z", end: "2026-06-16T09:30:00Z" }); // next day
+    const cancelled = await ctx.svc.book("rec-1", { typeId: ctx.type.id, patientId: "pat-3", practitionerId: ctx.doc.id, resourceIds: [], start: "2026-06-15T11:00:00Z", end: "2026-06-15T11:30:00Z" });
+    if (cancelled.ok) await ctx.svc.cancel("rec-1", cancelled.value.id, "patient requested");
+
+    const onDay = await ctx.svc.appointmentsOn(day);
+    expect(onDay.map((x) => x.patientId)).toEqual(["pat-1"]);
+    // a checked-in appointment is still "on the day"
+    if (a.ok) await ctx.svc.checkIn("rec-1", a.value.id);
+    expect((await ctx.svc.appointmentsOn(day)).map((x) => x.patientId)).toEqual(["pat-1"]);
+    expect(await ctx.svc.appointmentsOn("2026-06-17")).toHaveLength(0);
+  });
 });

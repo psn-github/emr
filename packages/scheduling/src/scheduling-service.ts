@@ -126,6 +126,16 @@ export class SchedulingService {
   async appointmentsForPatient(patientId: string): Promise<readonly Appointment[]> {
     return (await this.store.listAppointments()).filter((a) => a.patientId === patientId);
   }
+
+  /** Active (resource-holding) appointments booked on a UTC calendar day
+   *  (`dateIso` = YYYY-MM-DD). Feeds the records module's clinic pull list via a
+   *  port — a read-only, additive surface (ADR-0065). */
+  async appointmentsOn(dateIso: string): Promise<readonly Appointment[]> {
+    const from = `${dateIso}T00:00:00.000Z`;
+    const to = new Date(Date.parse(from) + 24 * 60 * 60 * 1000).toISOString();
+    const inRange = await this.store.appointmentsInRange(from, to);
+    return inRange.filter((a) => a.status === "booked" || a.status === "checked_in" || a.status === "in_progress");
+  }
 }
 
 function dedupe(ids: readonly ResourceId[]): ResourceId[] {

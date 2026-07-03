@@ -36,6 +36,12 @@ const DIRECTORY: Readonly<Record<string, AuthSubject>> = {
     staffId: "ops-1",
     roles: [role("ops-admin", ["admin:*", "hr:*"])],
   },
+  // Records/filing officer (ADR-0065): the paper-file desk. Scoped to the
+  // records surface only — MFA-gated clinical domain, no wider clinical access.
+  "dev-records": {
+    staffId: "rec-files-1",
+    roles: [role("records-officer", ["clinical:records.read", "clinical:records.write"])],
+  },
 };
 
 /** Deny-by-default resolver over the fixed staging directory. */

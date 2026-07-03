@@ -48,6 +48,7 @@ import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, Pro
 import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
+import { RecordsService, PgRecordsStore, type AppointmentsPort } from "@oxford/records";
 import { CycleService, PgCycleStore, StimulationService, PgStimStore, PgReasonCodeStore, PgCycleTemplateStore } from "@oxford/fertility";
 import { MessagingService, PgMessagingStore } from "@oxford/messaging";
 import { ConsentService, PgConsentStore } from "@oxford/consent";
@@ -99,6 +100,7 @@ export interface Services {
   readonly assets: AssetService;
   readonly analytics: AnalyticsService;
   readonly hr: HrService;
+  readonly records: RecordsService;
   readonly cycle: CycleService;
   readonly stim: StimulationService;
   readonly messaging: MessagingService;
@@ -294,6 +296,18 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // Light HR (ADR-0040): staff registry, licence/competency expiry alerts, and
   // rota shifts feeding scheduling availability. Full payroll stays external.
   const hr = new HrService(new PgHrStore(pool), audit, events);
+  // Paper medical records & filing (ADR-0065): MRN allocation, the physical file
+  // registry + volumes, audited barcode-keyed movements, overdue detection and
+  // the clinic pull list. The pull list reads tomorrow's bookings through the
+  // scheduling module's PUBLISHED interface via this port (no cross-module table
+  // access — module boundaries). Labels are pure renderers in the module.
+  const recordsAppointments: AppointmentsPort = {
+    async appointmentsOn(dateIso) {
+      const appts = await scheduling.appointmentsOn(dateIso);
+      return appts.map((a) => ({ patientId: a.patientId, start: a.start, practitionerId: a.practitionerId }));
+    },
+  };
+  const records = new RecordsService(new PgRecordsStore(pool), recordsAppointments, audit, events, clock);
   // Cycle engine (read surface used by the patient portal timeline). The marriage
   // hard-gate is wired to the registry (fertility never imports registry directly).
   const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
@@ -356,5 +370,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, records, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

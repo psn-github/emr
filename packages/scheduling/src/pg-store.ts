@@ -49,6 +49,14 @@ export class PgSchedulingStore implements SchedulingStore {
     return r.rows.map(rowToAppt);
   }
 
+  async appointmentsInRange(fromIso: string, toIso: string): Promise<readonly Appointment[]> {
+    const r = await this.pool.query<AppointmentRow>(
+      "SELECT * FROM scheduling.appointment WHERE start_at >= $1 AND start_at < $2 ORDER BY start_at",
+      [fromIso, toIso],
+    );
+    return r.rows.map(rowToAppt);
+  }
+
   async listAppointments(): Promise<readonly Appointment[]> {
     const r = await this.pool.query<AppointmentRow>("SELECT * FROM scheduling.appointment ORDER BY start_at");
     return r.rows.map(rowToAppt);

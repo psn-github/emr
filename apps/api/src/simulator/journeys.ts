@@ -205,6 +205,16 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
   const wifeId = wife.personId;
   const husbandId = husband.personId;
 
+  // ── paper file: allocate the MRN, open the physical file, and move it ──────
+  // (records domain, MFA-gated; the dev-consultant token carries clinical:*).
+  await j.step(at, "records: MRN + file + movement", "records.assignMrn", async () => {
+    const mrn = await doc.records.assignMrn.mutate({ personId: wifeId });
+    ensure(mrn.mrn.length > 0, "expected an allocated MRN");
+    const file = await doc.records.openFile.mutate({ personId: wifeId, homeLocation: "Records/A-1" });
+    await doc.records.checkOut.mutate({ fileId: file.fileId, toLocation: "L3/Consult-1", toStaffId: "nurse-1" });
+    await doc.records.checkIn.mutate({ fileId: file.fileId });
+  });
+
   const couple = await j.step(at, "create couple", "registry.createCouple", () =>
     doc.registry.createCouple.mutate({ husbandPersonId: husbandId, wifePersonId: wifeId }),
   );

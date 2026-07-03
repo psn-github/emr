@@ -1,5 +1,15 @@
 import { TRPCError } from "@trpc/server";
 import { asId } from "@oxford/core";
+import type { AppError } from "@oxford/core";
+import {
+  fileSpineLabel,
+  patientIdLabelSheet,
+  thermalLabel,
+  fileSpineZpl,
+  patientIdSheetZpl,
+  thermalZpl,
+} from "@oxford/records";
+import type { FileRef, LabelPatient, IdSheetOptions } from "@oxford/records";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod, PackageInput, ChargeSource } from "@oxford/billing";
@@ -37,6 +47,24 @@ async function assertPortalRead(services: Services, patient: PatientPrincipal, p
   if (patient.patientId === patientId) return;
   if (await services.consent.mayAccess(patientId, patient.patientId)) return;
   throw new TRPCError({ code: "FORBIDDEN", message: "no access to this patient's data" });
+}
+
+/** Map a records domain error to the matching tRPC transport code. */
+function recordsError(error: AppError): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "CONFLICT" ? "CONFLICT"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? "records error" });
+}
+
+/** Build a file reference from a flat input (barcode scan = mrn+volume). */
+function toFileRef(input: { fileId?: string; mrn?: string; volume?: number }): FileRef {
+  if (input.fileId !== undefined) return { fileId: input.fileId };
+  if (input.mrn !== undefined && input.volume !== undefined) return { mrn: input.mrn, volume: input.volume };
+  throw new TRPCError({ code: "BAD_REQUEST", message: "provide fileId or mrn+volume" });
 }
 
 // The internal tRPC surface. Domain services do the work; procedures only
@@ -1215,6 +1243,101 @@ export const appRouter = router({
     availability: protectedProcedure("hr:rota.read")
       .input((v: unknown) => v as { resourceId: string; from: string; to: string })
       .query(async ({ ctx, input }) => ({ shifts: await ctx.services.hr.availability(input.resourceId, input.from, input.to) })),
+  }),
+
+  // Paper medical records & filing (docs/PHASE8_PLAN §8.0, ADR-0065). MRN
+  // allocation, the physical file registry (+ volumes), audited barcode-keyed
+  // movements, overdue detection, the clinic pull list, and pure bilingual label
+  // rendering (Code 128 → SVG/HTML + ZPL). Clinical domain: the file's
+  // whereabouts is PHI-adjacent, so it is MFA-gated (clinical:records.*).
+  records: router({
+    assignMrn: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.assignMrn(ctx.session.subject.staffId, input.personId);
+        if (!r.ok) throw recordsError(r.error);
+        return r.value;
+      }),
+    registerExistingMrn: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string; mrn: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.registerExistingMrn(ctx.session.subject.staffId, input.personId, input.mrn);
+        if (!r.ok) throw recordsError(r.error);
+        return { mrn: r.value.mrn, imported: r.value.imported };
+      }),
+    openFile: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string; homeLocation: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.openFile(ctx.session.subject.staffId, input);
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, mrn: r.value.mrn, volume: r.value.volume };
+      }),
+    addVolume: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string; homeLocation?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.addVolume(ctx.session.subject.staffId, input);
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, mrn: r.value.mrn, volume: r.value.volume };
+      }),
+    checkOut: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; toLocation: string; toStaffId?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.checkOut(ctx.session.subject.staffId, { ref: toFileRef(input), toLocation: input.toLocation, ...(input.toStaffId !== undefined ? { toStaffId: input.toStaffId } : {}), ...(input.note !== undefined ? { note: input.note } : {}) });
+        if (!r.ok) throw recordsError(r.error);
+        return { movementId: r.value.id };
+      }),
+    checkIn: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; toLocation?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.checkIn(ctx.session.subject.staffId, { ref: toFileRef(input), ...(input.toLocation !== undefined ? { toLocation: input.toLocation } : {}), ...(input.note !== undefined ? { note: input.note } : {}) });
+        if (!r.ok) throw recordsError(r.error);
+        return { movementId: r.value.id };
+      }),
+    transfer: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; toLocation: string; toStaffId?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.transfer(ctx.session.subject.staffId, { ref: toFileRef(input), toLocation: input.toLocation, ...(input.toStaffId !== undefined ? { toStaffId: input.toStaffId } : {}), ...(input.note !== undefined ? { note: input.note } : {}) });
+        if (!r.ok) throw recordsError(r.error);
+        return { movementId: r.value.id };
+      }),
+    archiveFile: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; archiveLocation: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.archiveFile(ctx.session.subject.staffId, toFileRef(input), input.archiveLocation);
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, status: r.value.status };
+      }),
+    markMissing: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.markMissing(ctx.session.subject.staffId, toFileRef(input));
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, status: r.value.status };
+      }),
+    whereIs: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.records.whereIs(toFileRef(input));
+        if (!r.ok) throw recordsError(r.error);
+        return r.value;
+      }),
+    overdue: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { asOf: string; olderThanHours: number })
+      .query(async ({ ctx, input }) => ({ files: await ctx.services.records.outstanding(new Date(input.asOf), input.olderThanHours) })),
+    pullList: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { date: string })
+      .query(async ({ ctx, input }) => ({ files: await ctx.services.records.pullList(input.date) })),
+    // Pure, deterministic label renders (Code 128 → SVG/HTML + ZPL). Each returns
+    // both an A4/thermal print-ready HTML string and the equivalent ZPL string.
+    fileSpineLabel: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as LabelPatient)
+      .query(({ input }) => ({ html: fileSpineLabel(input), zpl: fileSpineZpl(input) })),
+    idLabelSheet: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as LabelPatient & IdSheetOptions)
+      .query(({ input }) => ({ html: patientIdLabelSheet(input, input), zpl: patientIdSheetZpl(input, input) })),
+    thermalLabel: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as LabelPatient)
+      .query(({ input }) => ({ html: thermalLabel(input), zpl: thermalZpl(input) })),
   }),
 });
 

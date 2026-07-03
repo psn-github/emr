@@ -104,6 +104,9 @@ importers:
       '@oxford/push':
         specifier: workspace:*
         version: link:../../packages/push
+      '@oxford/records':
+        specifier: workspace:*
+        version: link:../../packages/records
       '@oxford/registry':
         specifier: workspace:*
         version: link:../../packages/registry
@@ -521,6 +524,25 @@ importers:
         version: 8.20.0
 
   packages/push:
+    dependencies:
+      '@oxford/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@oxford/core':
+        specifier: workspace:*
+        version: link:../core
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
+
+  packages/records:
     dependencies:
       '@oxford/audit':
         specifier: workspace:*

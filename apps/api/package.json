@@ -34,6 +34,7 @@
     "@oxford/outcomes": "workspace:*",
     "@oxford/perioperative": "workspace:*",
     "@oxford/push": "workspace:*",
+    "@oxford/records": "workspace:*",
     "@oxford/registry": "workspace:*",
     "@oxford/scheduling": "workspace:*",
     "@oxford/witnessing": "workspace:*",
