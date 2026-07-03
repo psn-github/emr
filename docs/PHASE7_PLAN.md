@@ -50,10 +50,24 @@ with an `oxford_staging` DB, `systemctl enable oxford-his-api`, nginx include. S
   `simulate --couples 25 --loops 4`, fresh seed per run; report artifact retained.
 - **Loop rule:** any simulator error ⇒ reproduce locally with the same seed ⇒ fix with a test that
   pins it ⇒ redeploy ⇒ re-run until zero. Track each round in `docs/STATE.md`.
-- Grow journey coverage until every router procedure is exercised (coverage table in the report):
-  add IUI + FET + preservation cycles, theatre/perioperative day-list journeys, cryostore
-  disposition, procurement/inventory cycles, HR rota→availability, dashboards reads, research
-  export, antenatal continuation.
+- **Close the router gaps the first simulation run surfaced** (areas the e2e suite drives
+  in-process via services but that have NO HTTP surface, so neither the simulator nor the coming
+  UI shells can reach them — each is a thin router addition over an existing, fully-tested
+  service, not a domain feature):
+  1. scheduling config (appointment types / resources) — no define/create procedures;
+  2. facility topology seed/read — blocks `flow.checkIn` and the perioperative admit/advance
+     journey (and therefore the pharmacy-gated discharge) on a fresh staging DB;
+  3. fertility cycle engine (`createTreatmentCycle`, staff consent recording, reason-coded
+     cancel/convert) — until then `portal.cycleTimeline` / `medicationSchedule` /
+     `outstandingConsents` / `signConsent` are un-drivable over HTTP;
+  4. stimulation charting (`recordDay`) + formulary config surface;
+  5. embryology micro-steps (`recordOocyte`, fertilisation check, grading);
+  6. witnessing ingest/read surface (low priority — the sign-off gate already reconciles live);
+  7. perioperative admission path (depends on 2).
+- Then grow journey coverage until every router procedure is exercised (coverage table in the
+  report): IUI + FET + preservation cycles, theatre day-list journeys, cryostore disposition,
+  procurement/inventory cycles, HR rota→availability, dashboards reads, research export,
+  antenatal continuation.
 - Add a **chaos dimension** once green: concurrent couples (parallel journeys), mid-journey
   cancellations/conversions, arrears blocking, witness-divergence drills (must BLOCK sign-off),
   allergy advisories, controlled-drug reconciliation.
