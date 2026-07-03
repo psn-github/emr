@@ -97,5 +97,13 @@
 - **Proposal:** adopt docs/PHASE7_PLAN.md as Phase 7. Scope: HTTP host (7.0 ✅), whole-EMR synthetic-patient simulation harness with an error-correction loop (7.1 ✅), staging VPS deploy wiring on the existing gated pipeline (7.2 ✅ first cut), simulation at scale + chaos drills + k6 baseline (7.3), staff web shell (7.4), patient portal PWA (7.5), documented exit gate (7.6). Staging holds synthetic data only (ADR-0007); om-software is untouched.
 - **Status:** **open** — proposed for product-owner ratification; build proceeding under it per session direction (the direction itself is the mandate; ratification formalises the roadmap text).
 
+## AMD-0008 — Add Phase 8 (whole-clinic operations: paper-file integration, pharmacy, documents, printing) + new PRD module scope
+- **Date:** 2026-07-03
+- **Raised by:** product owner ("we will still have paper files but need to develop the filing system that integrates with this and we can print labels etc — think of everything we are missing")
+- **Type:** proposed-change (roadmap addition + PRD scope addition)
+- **Documents involved:** docs/01 (new module scope: medical records & paper-file management; E8 dispensing delivery), docs/05, new docs/PHASE8_PLAN.md, ADR-0065..0068
+- **Proposal:** adopt docs/PHASE8_PLAN.md as Phase 8. The gap analysis found: (A) paper medical records & filing entirely absent (MRN, file registry, movement tracking, pull lists, label printing) — new `@oxford/records`; (B) two PRD P0s promised but unbuilt — pharmacy dispensing (E8; only a stub today) → new `@oxford/pharmacy`, and the documents module (E0; built but never wired) → blob-store port + API; (C) a server-rendered bilingual print pack. UI shells + router gaps remain Phase 7. External adapters/hosting unchanged.
+- **Status:** **open** — proposed for PO ratification; build proceeding under the 2026-07-03 direction.
+
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.
