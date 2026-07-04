@@ -109,6 +109,13 @@ describe("ClinicalService letters", () => {
     if (signed.ok) expect(signed.value.signedBy).toBe("doc-1");
   });
 
+  it("reads a letter by id; null for an unknown letter", async () => {
+    const { svc } = build();
+    const letter = await svc.draftLetter("doc-1", "pat-1", "letter.referral", "en", "body");
+    expect((await svc.letter(letter.id))?.templateKey).toBe("letter.referral");
+    expect(await svc.letter(asId<"Letter">("ghost") as LetterId)).toBeNull();
+  });
+
   it("rejects signing an unknown or already-signed letter", async () => {
     const { svc } = build();
     expect((await svc.signLetter("doc-1", asId<"Letter">("ghost") as LetterId)).ok).toBe(false);

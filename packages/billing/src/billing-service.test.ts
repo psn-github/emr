@@ -35,6 +35,21 @@ describe("BillingService.createInvoice", () => {
   });
 });
 
+describe("BillingService.invoiceReceipt (print read model)", () => {
+  it("returns the invoice, payment ledger and totals; null for an unknown invoice", async () => {
+    const { svc } = build();
+    const created = await svc.createInvoice("fin-1", "pat-1", [line("CONSULT", 25000)]);
+    if (!created.ok) throw new Error("setup");
+    await svc.postPayment("fin-1", created.value.id, 25000, "knet");
+    const receipt = await svc.invoiceReceipt(created.value.id);
+    expect(receipt).not.toBeNull();
+    expect(receipt!.invoice.lines).toHaveLength(1);
+    expect(receipt!.payments.map((p) => p.method)).toEqual(["knet"]);
+    expect(receipt!.totals.balanceFils).toBe(0);
+    expect(await svc.invoiceReceipt(asId<"Invoice">("ghost"))).toBeNull();
+  });
+});
+
 describe("BillingService payments", () => {
   async function invoiced() {
     const ctx = build();

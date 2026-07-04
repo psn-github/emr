@@ -11,6 +11,11 @@ export interface ApiContext {
   readonly session: Session | null;
   readonly patient: PatientPrincipal | null;
   readonly services: Services;
+  /** Staging/dev-only switch for the `dev` sub-router (stub-provider feeds for
+   *  the synthetic-patient simulator). Optional so the ~70 in-process e2e
+   *  contexts that never set it keep working; the HTTP host sets it from
+   *  `!isProduction` and production boot is refused anyway (serve.ts). */
+  readonly devTools?: boolean;
 }
 
 const t = initTRPC.context<ApiContext>().create();
@@ -25,6 +30,17 @@ export const patientProcedure = t.procedure.use(async ({ ctx, next }) => {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "patient authentication required" });
   }
   return next({ ctx: { ...ctx, patient: ctx.patient } });
+});
+
+/** A procedure that only requires an AUTHENTICATED staff session — the specific
+ *  permission is decided dynamically by the handler (e.g. the documents store
+ *  gates each read on the DOCUMENT's own requiredPermission via the AccessGuard,
+ *  so the required permission is not known until the row is loaded). */
+export const authedProcedure = t.procedure.use(async ({ ctx, next }) => {
+  if (ctx.session === null) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "authentication required" });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session } });
 });
 
 /** A procedure gated on a required permission. The server is the enforcement

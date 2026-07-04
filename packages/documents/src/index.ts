@@ -10,6 +10,13 @@ export { currentVersion } from "./document.js";
 export { type OcrProvider, NoopOcrProvider } from "./ocr.js";
 export { type AccessGuard, allowAllGuard } from "./access.js";
 export { type DocumentStore, InMemoryDocumentStore } from "./store.js";
+export { PgDocumentStore } from "./pg-store.js";
+export {
+  type BlobData,
+  type BlobStorePort,
+  type LocalDiskBlobStoreOptions,
+  LocalDiskBlobStore,
+} from "./blob-store.js";
 export {
   DocumentService,
   type CreateDocumentInput,

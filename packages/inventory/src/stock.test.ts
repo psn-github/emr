@@ -54,6 +54,11 @@ describe("InventoryService", () => {
     expect(await svc.onHand(ITEM)).toBe(13); // FEFO: 4 from L2 (earlier) + 2 from L1
     const over = await svc.issue("nurse-1", { itemId: ITEM, locationId: "store", quantity: 999 });
     expect(over.ok).toBe(false);
+
+    // lotsForItem (published read used by the pharmacy dispensing seam, ADR-0066)
+    const lots = await svc.lotsForItem(ITEM);
+    expect(lots.map((l) => l.lotNo).sort()).toEqual(["L1", "L2"]);
+    expect(await svc.lotsForItem("no-such-item")).toEqual([]);
   });
 
   it("deduct consumes a specific lot (InventoryPort); errors when insufficient", async () => {

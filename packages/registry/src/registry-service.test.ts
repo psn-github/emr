@@ -57,6 +57,13 @@ describe("RegistryService.registerPerson", () => {
     expect(person.contact).toEqual({});
     expect(person.photoRef).toBeNull();
   });
+
+  it("reads a person by id (bilingual name); null for an unknown id", async () => {
+    const { service } = build();
+    const person = await service.registerPerson("staff-1", husbandInput);
+    expect((await service.person(person.id))?.name.en).toBe(husbandInput.name.en);
+    expect(await service.person(asId<"Person">("ghost"))).toBeNull();
+  });
 });
 
 describe("RegistryService.createCouple", () => {

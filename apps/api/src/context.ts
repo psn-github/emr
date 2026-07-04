@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import { systemClock, asId, ok, err, conflict, notFound } from "@oxford/core";
 import {
@@ -43,12 +44,23 @@ import {
   type SchedulingPort,
   type PerioperativeBillingPort,
   type PharmacyPort,
+  ANAESTHESIA_FORMULARY,
 } from "@oxford/perioperative";
 import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, ProcurementService, PgProcurementStore, ControlledDrugsService, PgControlledRegisterStore, DemandPlanningService, PgConsumptionProfileStore } from "@oxford/inventory";
 import { AssetService, PgAssetStore } from "@oxford/assets";
 import { AnalyticsService } from "@oxford/analytics";
 import { HrService, PgHrStore } from "@oxford/hr";
-import { CycleService, PgCycleStore, StimulationService, PgStimStore, PgReasonCodeStore, PgCycleTemplateStore } from "@oxford/fertility";
+import { RecordsService, PgRecordsStore, type AppointmentsPort } from "@oxford/records";
+import { CycleService, PgCycleStore, StimulationService, PgStimStore, PgReasonCodeStore, PgCycleTemplateStore, formularyItem } from "@oxford/fertility";
+import {
+  PharmacyService,
+  PgPharmacyStore,
+  type FormularyPort,
+  type AllergyPort as PharmacyAllergyPort,
+  type InventoryPort as PharmacyInventoryPort,
+  type ControlledRegisterPort,
+} from "@oxford/pharmacy";
+import { DocumentService, PgDocumentStore, NoopOcrProvider, LocalDiskBlobStore, type BlobStorePort } from "@oxford/documents";
 import { MessagingService, PgMessagingStore } from "@oxford/messaging";
 import { ConsentService, PgConsentStore } from "@oxford/consent";
 import { PushService, PgPushStore, RecordingPushProvider } from "@oxford/push";
@@ -99,6 +111,14 @@ export interface Services {
   readonly assets: AssetService;
   readonly analytics: AnalyticsService;
   readonly hr: HrService;
+  readonly records: RecordsService;
+  readonly pharmacy: PharmacyService;
+  /** Versioned, access-controlled document store (ADR-0067). Scanned paper
+   *  (consents, marriage certificates, ID scans, external reports). */
+  readonly documents: DocumentService;
+  /** Document CONTENT storage (blob) behind the BlobStorePort; the metadata store
+   *  is `documents`. Staging: local disk; production: in-region object store. */
+  readonly documentBlobs: BlobStorePort;
   readonly cycle: CycleService;
   readonly stim: StimulationService;
   readonly messaging: MessagingService;
@@ -123,6 +143,19 @@ const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
 /** L2 inpatient bed count — the seeded topology (ADR-0023). A day's theatre list
  *  reserving more than this is flagged (not blocked). Configuration, not code. */
 const L2_BED_CAPACITY = 6;
+
+/** The clinic's own in-house theatre stock location (ADR-0069). Theatre drug
+ *  administration (anaesthetic + controlled, L1) decrements stock from here by
+ *  default. The Ground-floor pharmacy is EXTERNAL — prescriptions never touch clinic
+ *  stock. Configuration, not code. */
+const THEATRE_STOCK_LOCATION_ID = "theatre-l1";
+
+/** Document blob store root — env-driven, defaulting to `<repo>/var/documents`
+ *  locally (gitignored, OUTSIDE the deploy path like the DB — ADR-0067). The
+ *  in-region object store replaces the disk backend behind BlobStorePort. */
+function documentStoreDir(): string {
+  return process.env.DOCUMENT_STORE_DIR ?? fileURLToPath(new URL("../../../var/documents", import.meta.url));
+}
 
 /** Dev/test pharmacy stub (ADR-0025) — discharge-prescription fulfilment until
  *  the real E8 pharmacy lands. `markFulfilled` simulates the pharmacy handover. */
@@ -294,6 +327,27 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   // Light HR (ADR-0040): staff registry, licence/competency expiry alerts, and
   // rota shifts feeding scheduling availability. Full payroll stays external.
   const hr = new HrService(new PgHrStore(pool), audit, events);
+  // Paper medical records & filing (ADR-0065): MRN allocation, the physical file
+  // registry + volumes, audited barcode-keyed movements, overdue detection and
+  // the clinic pull list. The pull list reads tomorrow's bookings through the
+  // scheduling module's PUBLISHED interface via this port (no cross-module table
+  // access — module boundaries). Labels are pure renderers in the module.
+  const recordsAppointments: AppointmentsPort = {
+    async appointmentsOn(dateIso) {
+      const appts = await scheduling.appointmentsOn(dateIso);
+      return appts.map((a) => ({ patientId: a.patientId, start: a.start, practitionerId: a.practitionerId }));
+    },
+  };
+  const records = new RecordsService(new PgRecordsStore(pool), recordsAppointments, audit, events, clock);
+  // Documents (ADR-0067): versioned, access-controlled, OCR-seamed store. Content
+  // reads verify the document's OWN requiredPermission via the AccessGuard the
+  // router builds from the session + Authorizer, and are audited as sensitive
+  // reads. NoopOcrProvider until a residency-reviewed OCR provider is wired; the
+  // LocalDiskBlobStore is staging-only (refuses production) — the in-region object
+  // store swaps in behind the same BlobStorePort.
+  const documentMaxBytes = process.env.DOCUMENT_MAX_BYTES !== undefined ? Number(process.env.DOCUMENT_MAX_BYTES) : undefined;
+  const documentBlobs = new LocalDiskBlobStore(documentStoreDir(), isProduction, documentMaxBytes !== undefined ? { maxBytes: documentMaxBytes } : {});
+  const documents = new DocumentService(new PgDocumentStore(pool), new NoopOcrProvider(), audit, events, clock);
   // Cycle engine (read surface used by the patient portal timeline). The marriage
   // hard-gate is wired to the registry (fertility never imports registry directly).
   const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
@@ -328,9 +382,111 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   const cssd = new CssdService(new PgCssdStore(pool), audit, events);
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
+
+  // Pharmacy (ADR-0069 — supersedes the dispensing model of ADR-0066). The
+  // Ground-floor pharmacy is EXTERNAL: the clinic ISSUES formulary-only prescriptions
+  // that the external pharmacy fulfils (no clinic stock movement). The clinic's own
+  // stock is the THEATRE anaesthetic + controlled drugs (L1), administered in theatre.
+  // A DOMAIN module wired here to published-surface seams (module boundaries —
+  // pharmacy imports none of these).
+  //
+  // PRESCRIPTION formulary — the stim formulary is the only prescribable source;
+  // controlled/cold-chain come from the inventory catalogue by the shared drug code.
+  const pharmacyFormulary: FormularyPort = {
+    async isPrescribable(drugId) {
+      return formularyItem(drugId) !== null;
+    },
+    async drugInfo(drugId) {
+      const f = formularyItem(drugId);
+      if (f === null) return null;
+      const cat = await catalogue.item(asId<"CatalogueItem">(drugId));
+      return { nameEn: f.name.en, nameAr: f.name.ar, drugClass: f.drugClass, controlled: cat?.controlled ?? false, coldChain: cat?.coldChain ?? false };
+    },
+  };
+  // THEATRE-ADMINISTRATION formulary — a COMPOSITE of perioperative's anaesthesia
+  // formulary PLUS the stim formulary (ADR-0069), composed here in the app layer from
+  // both packages' published exports. Anaesthesia entries carry code + unit only, so
+  // the name falls back to the catalogue item (or the code) and the class is
+  // "anaesthetic"; controlled/cold-chain resolve via the inventory-catalogue join, as
+  // for prescriptions.
+  const anaesthesiaByCode = new Map(ANAESTHESIA_FORMULARY.map((d) => [d.code, d]));
+  const theatreFormulary: FormularyPort = {
+    async isPrescribable(drugId) {
+      return formularyItem(drugId) !== null || anaesthesiaByCode.has(drugId);
+    },
+    async drugInfo(drugId) {
+      const cat = await catalogue.item(asId<"CatalogueItem">(drugId));
+      const controlled = cat?.controlled ?? false;
+      const coldChain = cat?.coldChain ?? false;
+      const stim = formularyItem(drugId);
+      if (stim !== null) {
+        return { nameEn: stim.name.en, nameAr: stim.name.ar, drugClass: stim.drugClass, controlled, coldChain };
+      }
+      const anae = anaesthesiaByCode.get(drugId);
+      if (anae !== undefined) {
+        const name = cat?.name ?? anae.code;
+        return { nameEn: name, nameAr: name, drugClass: "anaesthetic", controlled, coldChain };
+      }
+      return null;
+    },
+  };
+  const pharmacyAllergy: PharmacyAllergyPort = {
+    allergicClasses: (patientId) => clinical.allergicClasses(patientId),
+  };
+  // Inventory seam — theatre administration FEFO-decrements clinic stock through the
+  // inventory module's published issue interface (prescriptions never touch it).
+  const pharmacyInventory: PharmacyInventoryPort = {
+    async availableAt(drugId, locationId) {
+      const lots = await inventory.lotsForItem(drugId);
+      return lots.filter((l) => l.locationId === locationId).reduce((s, l) => s + l.quantity, 0);
+    },
+    async issueFefo(actorId, drugId, locationId, quantity) {
+      // Read lots BEFORE issuing so FEFO-chosen lot ids resolve to lot/expiry for the
+      // allocation record; inventory.issue does the FEFO decrement.
+      const lotsBefore = await inventory.lotsForItem(drugId);
+      const r = await inventory.issue(actorId, { itemId: drugId, locationId, quantity });
+      if (!r.ok) return err(r.error);
+      const allocations = r.value.map((line) => {
+        const lot = lotsBefore.find((l) => l.id === line.lotId)!; // just-issued lot
+        return { drugId, lotNo: lot.lotNo, expiry: lot.expiryDate, quantity: line.quantity };
+      });
+      return ok(allocations);
+    },
+  };
+  // Controlled-drugs register — a controlled theatre drug's administration posts a
+  // witnessed issue movement.
+  const pharmacyControlledRegister: ControlledRegisterPort = {
+    async postIssue(actorId, input) {
+      const r = await controlledDrugs.record(actorId, {
+        itemId: input.drugId,
+        lotNo: input.lotNo,
+        type: "issue",
+        quantity: input.quantity,
+        reason: "theatre administration",
+        patientRef: input.patientRef,
+        witnessedBy: input.witnessStaffId,
+        occurredAt: input.occurredAt,
+      });
+      return r.ok ? ok(undefined) : err(r.error);
+    },
+  };
+  const pharmacy = new PharmacyService(new PgPharmacyStore(pool), pharmacyFormulary, theatreFormulary, pharmacyAllergy, pharmacyInventory, pharmacyControlledRegister, audit, events, clock, { theatreStockLocationId: THEATRE_STOCK_LOCATION_ID });
+
   // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
+  // The gate consumes a COMPOSITE PharmacyPort (ADR-0066): fulfilled if the dev
+  // stub says so OR the real pharmacy service does. Rationale — the existing
+  // discharge/perioperative e2es and the simulator's dev.markPharmacyFulfilled
+  // feed the stub, and journeys that skip pharmacy still need that dev feed; the
+  // real ward→pharmacy→discharge loop must gate on real fulfilment without
+  // breaking either. `pharmacyStub` stays exposed on Services for those feeds.
   const pharmacyStub = new StubPharmacyProvider();
-  const recovery = new RecoveryService(new PgRecoveryStore(pool), pharmacyStub, audit, events);
+  const compositePharmacy: PharmacyPort = {
+    async isPrescriptionFulfilled(encounterId) {
+      if (await pharmacyStub.isPrescriptionFulfilled(encounterId)) return true;
+      return pharmacy.isPrescriptionFulfilled(encounterId);
+    },
+  };
+  const recovery = new RecoveryService(new PgRecoveryStore(pool), compositePharmacy, audit, events);
   const perioperative = new PerioperativeService(new PgPerioperativeStore(pool), perioperativeFlow, whoChecklist, recovery, audit, events);
 
   // Two-theatre case scheduling on the SHARED scheduling calendar (conflict-aware),
@@ -356,5 +512,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, records, pharmacy, documents, documentBlobs, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

@@ -172,6 +172,11 @@ export class ClinicalService {
     return letter;
   }
 
+  /** Read a letter by id (print read model). */
+  async letter(id: LetterId): Promise<Letter | null> {
+    return this.store.getLetter(id);
+  }
+
   /** E-sign a letter. */
   async signLetter(actorId: string, id: LetterId): Promise<R<Letter, AppError>> {
     const letter = await this.store.getLetter(id);

@@ -1,5 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { asId } from "@oxford/core";
+import type { AppError } from "@oxford/core";
+import {
+  fileSpineLabel,
+  patientIdLabelSheet,
+  thermalLabel,
+  fileSpineZpl,
+  patientIdSheetZpl,
+  thermalZpl,
+} from "@oxford/records";
+import type { FileRef, LabelPatient, IdSheetOptions } from "@oxford/records";
+import type { DoseInstruction as PharmacyDose, TheatreDrugInput as PharmacyTheatreDrug, PrescriptionStatus as PharmacyStatus } from "@oxford/pharmacy";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod, PackageInput, ChargeSource } from "@oxford/billing";
@@ -11,7 +22,20 @@ import type { ItemCategory } from "@oxford/inventory";
 import type { AssetCategory } from "@oxford/assets";
 import { cycleTimeline, buildMedicationSchedule, requiredConsents } from "@oxford/fertility";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
-import { router, protectedProcedure, patientProcedure } from "./trpc.js";
+import type { RiWitnessRecord } from "@oxford/witnessing";
+import type { Permission, Session } from "@oxford/identity";
+import { currentVersion, type AccessGuard, type Document, type DocumentKind } from "@oxford/documents";
+import {
+  prescriptionPrint,
+  receiptPrint,
+  appointmentSlipPrint,
+  clinicalLetterPrint,
+  theatreListPrint,
+  pullListPrint,
+  type PrintLocale,
+  type BilingualText as PrintBilingual,
+} from "@oxford/print";
+import { router, publicProcedure, protectedProcedure, patientProcedure, authedProcedure } from "./trpc.js";
 import { assertOwnData, type PatientPrincipal } from "./patient-access.js";
 import type { Services } from "./context.js";
 import type { Cycle } from "@oxford/fertility";
@@ -36,6 +60,84 @@ async function assertPortalRead(services: Services, patient: PatientPrincipal, p
   if (patient.patientId === patientId) return;
   if (await services.consent.mayAccess(patientId, patient.patientId)) return;
   throw new TRPCError({ code: "FORBIDDEN", message: "no access to this patient's data" });
+}
+
+/** Map a records domain error to the matching tRPC transport code. */
+function recordsError(error: AppError): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "CONFLICT" ? "CONFLICT"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? "records error" });
+}
+
+/** Map a pharmacy domain error to the matching tRPC transport code. */
+function pharmacyError(error: AppError): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "CONFLICT" ? "CONFLICT"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? "pharmacy error" });
+}
+
+/** Map a documents domain error to the matching tRPC transport code. */
+function documentsError(error: AppError): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? "documents error" });
+}
+
+/** The AccessGuard for a document read: it defers to the session's Authorizer for
+ *  the DOCUMENT's own requiredPermission (the guard→authorizer wiring, ADR-0067).
+ *  A denial is audited by the Authorizer (PERMISSION_DENIED); a successful content
+ *  read is audited by DocumentService as a sensitive READ_EXPORT — no double-audit. */
+function documentGuard(ctx: { session: Session; services: Services }): AccessGuard {
+  return { check: (perm) => ctx.services.authorizer.authorize(ctx.session, perm as Permission) };
+}
+
+/** Document metadata for the wire — never the blobRef/content. */
+function documentMeta(doc: Document) {
+  const current = currentVersion(doc);
+  return {
+    documentId: doc.id,
+    kind: doc.kind,
+    subjectRef: doc.subjectRef,
+    requiredPermission: doc.requiredPermission,
+    versionCount: doc.versions.length,
+    currentVersion: current.version,
+    contentType: current.contentType,
+    uploadedAt: current.uploadedAt,
+  };
+}
+
+/** The clinic identity on every printed artefact (bilingual). Configuration. */
+const CLINIC_NAME: PrintBilingual = { en: "Oxford Medical Kuwait", ar: "أكسفورد الطبية الكويت" };
+
+/** Resolve a patient's bilingual name (registry) + MRN (records) for print. A
+ *  missing person falls back to the id so a render never throws. */
+async function printPatient(services: Services, patientId: string): Promise<{ name: PrintBilingual; mrn: string }> {
+  const [person, mrn] = await Promise.all([
+    services.registry.person(asId<"Person">(patientId)),
+    services.records.mrnFor(patientId),
+  ]);
+  const name: PrintBilingual = person !== null ? { en: person.name.en, ar: person.name.ar } : { en: patientId, ar: patientId };
+  return { name, mrn: mrn ?? "—" };
+}
+
+const asPrintLocale = (v: unknown): PrintLocale => (v === "ar" ? "ar" : "en");
+
+/** Build a file reference from a flat input (barcode scan = mrn+volume). */
+function toFileRef(input: { fileId?: string; mrn?: string; volume?: number }): FileRef {
+  if (input.fileId !== undefined) return { fileId: input.fileId };
+  if (input.mrn !== undefined && input.volume !== undefined) return { mrn: input.mrn, volume: input.volume };
+  throw new TRPCError({ code: "BAD_REQUEST", message: "provide fileId or mrn+volume" });
 }
 
 // The internal tRPC surface. Domain services do the work; procedures only
@@ -65,7 +167,45 @@ const asVerifyInput = (v: unknown): { coupleId: string; documentRef: string; met
   v as { coupleId: string; documentRef: string; method: string };
 const asCoupleId = (v: unknown): { coupleId: string } => v as { coupleId: string };
 
+/** Every `dev` procedure is gated on ctx.devTools (set by the HTTP host from
+ *  `!isProduction`; in-process e2e contexts that never set it are denied). */
+const devProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (ctx.devTools !== true) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "dev tools are disabled" });
+  }
+  return next();
+});
+
 export const appRouter = router({
+  // DEV TOOLS — staging/synthetic-data ONLY. The e2e suite feeds the dev stub
+  // providers in-process; an HTTP client (the synthetic-patient simulator)
+  // cannot, so this surface exposes exactly those stub feeds. It exists only
+  // where devTools is set (the HTTP host sets it from !isProduction, and the
+  // host refuses production boot outright — see serve.ts). seedWitnessRecord
+  // seeds the RI Witness STUB with a record as the real device would have
+  // returned it — it is the stub-provider data feed, NEVER a witness override
+  // or a competing witness UI (CLAUDE.md hard rule): a divergent or absent RI
+  // record still blocks cycle-step sign-off, exactly as in production.
+  dev: router({
+    seedWitnessRecord: devProcedure
+      .input((v: unknown) => v as { cycleId: string; record: RiWitnessRecord })
+      .mutation(({ ctx, input }) => {
+        ctx.services.witnessProvider.seedRecord(input.cycleId, input.record);
+        return { seeded: true };
+      }),
+    markPharmacyFulfilled: devProcedure
+      .input((v: unknown) => v as { encounterId: string })
+      .mutation(({ ctx, input }) => {
+        ctx.services.pharmacyStub.markFulfilled(input.encounterId);
+        return { fulfilled: true };
+      }),
+    verifyAuditChain: devProcedure.query(async ({ ctx }): Promise<{ intact: boolean; detail?: string }> => {
+      const r = await ctx.services.audit.verifyIntegrity();
+      if (r.ok) return { intact: true };
+      return { intact: false, detail: `${r.error.reason} at seq ${r.error.seq}` };
+    }),
+  }),
+
   registry: router({
     registerPerson: protectedProcedure("clinical:patient.register")
       .input(asRegisterInput)
@@ -1176,6 +1316,341 @@ export const appRouter = router({
     availability: protectedProcedure("hr:rota.read")
       .input((v: unknown) => v as { resourceId: string; from: string; to: string })
       .query(async ({ ctx, input }) => ({ shifts: await ctx.services.hr.availability(input.resourceId, input.from, input.to) })),
+  }),
+
+  // Paper medical records & filing (docs/PHASE8_PLAN §8.0, ADR-0065). MRN
+  // allocation, the physical file registry (+ volumes), audited barcode-keyed
+  // movements, overdue detection, the clinic pull list, and pure bilingual label
+  // rendering (Code 128 → SVG/HTML + ZPL). Clinical domain: the file's
+  // whereabouts is PHI-adjacent, so it is MFA-gated (clinical:records.*).
+  records: router({
+    assignMrn: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.assignMrn(ctx.session.subject.staffId, input.personId);
+        if (!r.ok) throw recordsError(r.error);
+        return r.value;
+      }),
+    registerExistingMrn: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string; mrn: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.registerExistingMrn(ctx.session.subject.staffId, input.personId, input.mrn);
+        if (!r.ok) throw recordsError(r.error);
+        return { mrn: r.value.mrn, imported: r.value.imported };
+      }),
+    openFile: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string; homeLocation: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.openFile(ctx.session.subject.staffId, input);
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, mrn: r.value.mrn, volume: r.value.volume };
+      }),
+    addVolume: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { personId: string; homeLocation?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.addVolume(ctx.session.subject.staffId, input);
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, mrn: r.value.mrn, volume: r.value.volume };
+      }),
+    checkOut: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; toLocation: string; toStaffId?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.checkOut(ctx.session.subject.staffId, { ref: toFileRef(input), toLocation: input.toLocation, ...(input.toStaffId !== undefined ? { toStaffId: input.toStaffId } : {}), ...(input.note !== undefined ? { note: input.note } : {}) });
+        if (!r.ok) throw recordsError(r.error);
+        return { movementId: r.value.id };
+      }),
+    checkIn: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; toLocation?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.checkIn(ctx.session.subject.staffId, { ref: toFileRef(input), ...(input.toLocation !== undefined ? { toLocation: input.toLocation } : {}), ...(input.note !== undefined ? { note: input.note } : {}) });
+        if (!r.ok) throw recordsError(r.error);
+        return { movementId: r.value.id };
+      }),
+    transfer: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; toLocation: string; toStaffId?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.transfer(ctx.session.subject.staffId, { ref: toFileRef(input), toLocation: input.toLocation, ...(input.toStaffId !== undefined ? { toStaffId: input.toStaffId } : {}), ...(input.note !== undefined ? { note: input.note } : {}) });
+        if (!r.ok) throw recordsError(r.error);
+        return { movementId: r.value.id };
+      }),
+    archiveFile: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number; archiveLocation: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.archiveFile(ctx.session.subject.staffId, toFileRef(input), input.archiveLocation);
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, status: r.value.status };
+      }),
+    markMissing: protectedProcedure("clinical:records.write")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.records.markMissing(ctx.session.subject.staffId, toFileRef(input));
+        if (!r.ok) throw recordsError(r.error);
+        return { fileId: r.value.id, status: r.value.status };
+      }),
+    whereIs: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { fileId?: string; mrn?: string; volume?: number })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.records.whereIs(toFileRef(input));
+        if (!r.ok) throw recordsError(r.error);
+        return r.value;
+      }),
+    overdue: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { asOf: string; olderThanHours: number })
+      .query(async ({ ctx, input }) => ({ files: await ctx.services.records.outstanding(new Date(input.asOf), input.olderThanHours) })),
+    pullList: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { date: string })
+      .query(async ({ ctx, input }) => ({ files: await ctx.services.records.pullList(input.date) })),
+    // Pure, deterministic label renders (Code 128 → SVG/HTML + ZPL). Each returns
+    // both an A4/thermal print-ready HTML string and the equivalent ZPL string.
+    fileSpineLabel: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as LabelPatient)
+      .query(({ input }) => ({ html: fileSpineLabel(input), zpl: fileSpineZpl(input) })),
+    idLabelSheet: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as LabelPatient & IdSheetOptions)
+      .query(({ input }) => ({ html: patientIdLabelSheet(input, input), zpl: patientIdSheetZpl(input, input) })),
+    thermalLabel: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as LabelPatient)
+      .query(({ input }) => ({ html: thermalLabel(input), zpl: thermalZpl(input) })),
+  }),
+
+  // Pharmacy (docs/PHASE8_PLAN §8.1, ADR-0069 — supersedes the dispensing model of
+  // ADR-0066). The Ground-floor pharmacy is EXTERNAL. Two flows:
+  //   (1) PRESCRIPTIONS (external fulfilment, no clinic stock): a clinician raises a
+  //       FORMULARY-ONLY prescription (clinical:prescription.write) → issue (printed)
+  //       → recordExternalFulfilment (the audited handover confirmation) feeds the L2
+  //       discharge gate via the composite PharmacyPort. The queue is the ward's
+  //       outstanding-scripts tracker (clinical:dispense.read).
+  //   (2) THEATRE DRUG ADMINISTRATION (the clinic's in-house stock): administerTheatre
+  //       Drugs FEFO-decrements theatre stock + posts witnessed controlled movements.
+  // The ward/pharmacy write surface is clinical:dispense.write ("record external
+  // fulfilment / administer theatre drugs").
+  pharmacy: router({
+    raisePrescription: protectedProcedure("clinical:prescription.write")
+      .input((v: unknown) => v as { patientId: string; encounterId?: string; items: { drugId: string; quantity: number; doseInstruction: PharmacyDose }[] })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.raisePrescription(ctx.session.subject.staffId, input);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { prescriptionId: r.value.id, status: r.value.status, allergyWarnings: r.value.allergyWarnings };
+      }),
+    queue: protectedProcedure("clinical:dispense.read")
+      .input((v: unknown) => v as { status?: PharmacyStatus })
+      .query(async ({ ctx, input }) => ({ prescriptions: await ctx.services.pharmacy.queue(input.status) })),
+    get: protectedProcedure("clinical:dispense.read")
+      .input((v: unknown) => v as { prescriptionId: string })
+      .query(async ({ ctx, input }) => {
+        const p = await ctx.services.pharmacy.get(input.prescriptionId);
+        if (p === null) throw new TRPCError({ code: "NOT_FOUND", message: "prescription not found" });
+        return p;
+      }),
+    issue: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.issuePrescription(ctx.session.subject.staffId, input.prescriptionId);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { status: r.value.status };
+      }),
+    recordExternalFulfilment: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string; externalRef?: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.recordExternalFulfilment(ctx.session.subject.staffId, input);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { status: r.value.status, externalRef: r.value.externalRef };
+      }),
+    administerTheatreDrugs: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { encounterId: string; patientId: string; drugs: PharmacyTheatreDrug[]; witnessStaffId?: string; coldChainHandled?: boolean; locationId?: string; administeredAt?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.administerTheatreDrugs(ctx.session.subject.staffId, input);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { administrationId: r.value.id, allocations: r.value.allocations };
+      }),
+    cancel: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string; reason: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.cancel(ctx.session.subject.staffId, input.prescriptionId, input.reason);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { status: r.value.status, cancelReason: r.value.cancelReason };
+      }),
+  }),
+
+  // Documents (docs/PHASE8_PLAN §8.2, ADR-0067): versioned, access-controlled,
+  // OCR-seamed store for scanned paper (consents, marriage certificates, ID scans,
+  // external reports), linked by `subjectRef` (Person/Couple/Cycle). Upload +
+  // addVersion write behind `clinical:document.write`; list/meta/read gate on each
+  // DOCUMENT's OWN requiredPermission via the AccessGuard (dynamic), and a content
+  // read is audited as a sensitive READ_EXPORT. Base64-over-tRPC is the staging
+  // scanner flow (size-capped at the blob-store boundary); presigned upload lands
+  // with the in-region object store behind the same BlobStorePort.
+  documents: router({
+    upload: protectedProcedure("clinical:document.write")
+      .input((v: unknown) => v as { kind: DocumentKind; subjectRef: string; requiredPermission: string; contentType: string; bytesBase64: string })
+      .mutation(async ({ ctx, input }) => {
+        const put = await ctx.services.documentBlobs.put({ bytesBase64: input.bytesBase64, contentType: input.contentType });
+        if (!put.ok) throw new TRPCError({ code: "BAD_REQUEST", message: put.error.detailKey ?? "invalid blob" });
+        const doc = await ctx.services.documents.create(ctx.session.subject.staffId, {
+          kind: input.kind, subjectRef: input.subjectRef, requiredPermission: input.requiredPermission, blobRef: put.value, contentType: input.contentType,
+        });
+        return { documentId: doc.id, version: currentVersion(doc).version };
+      }),
+    addVersion: protectedProcedure("clinical:document.write")
+      .input((v: unknown) => v as { documentId: string; contentType: string; bytesBase64: string })
+      .mutation(async ({ ctx, input }) => {
+        const put = await ctx.services.documentBlobs.put({ bytesBase64: input.bytesBase64, contentType: input.contentType });
+        if (!put.ok) throw new TRPCError({ code: "BAD_REQUEST", message: put.error.detailKey ?? "invalid blob" });
+        const r = await ctx.services.documents.addVersion(ctx.session.subject.staffId, asId<"Document">(input.documentId), { blobRef: put.value, contentType: input.contentType });
+        if (!r.ok) throw documentsError(r.error);
+        return { documentId: r.value.id, version: currentVersion(r.value).version };
+      }),
+    list: authedProcedure
+      .input((v: unknown) => v as { subjectRef: string })
+      .query(async ({ ctx, input }) => {
+        const docs = await ctx.services.documents.listForSubject(input.subjectRef, documentGuard(ctx));
+        return { documents: docs.map(documentMeta) };
+      }),
+    meta: authedProcedure
+      .input((v: unknown) => v as { documentId: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.documents.meta(asId<"Document">(input.documentId), documentGuard(ctx));
+        if (!r.ok) throw documentsError(r.error);
+        return documentMeta(r.value);
+      }),
+    read: authedProcedure
+      .input((v: unknown) => v as { documentId: string })
+      .query(async ({ ctx, input }) => {
+        const access = await ctx.services.documents.access(ctx.session.subject.staffId, asId<"Document">(input.documentId), documentGuard(ctx));
+        if (!access.ok) throw documentsError(access.error);
+        const blob = await ctx.services.documentBlobs.get(access.value.blobRef);
+        if (blob === null) throw new TRPCError({ code: "NOT_FOUND", message: "document content missing" });
+        return { contentType: blob.contentType, bytesBase64: blob.bytesBase64, version: access.value.version };
+      }),
+  }),
+
+  // Server-rendered bilingual print pack (docs/PHASE8_PLAN §8.3, ADR-0068). Each
+  // route FETCHES the underlying read model via existing services then feeds a
+  // PURE renderer (deterministic, en+ar, RTL-correct HTML). Gated by the domain
+  // permission of the underlying data. Returns { html } the UI just open-and-prints.
+  print: router({
+    receipt: protectedProcedure("financial:invoice.read")
+      .input((v: unknown) => v as { invoiceId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.billing.invoiceReceipt(asId<"Invoice">(input.invoiceId));
+        if (r === null) throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
+        const locale = asPrintLocale(input.locale);
+        const who = await printPatient(ctx.services, r.invoice.patientId);
+        // Latest non-refund payment drives the receipt's method line (KNET/card only).
+        const payment = [...r.payments].reverse().find((p) => p.kind === "payment");
+        return {
+          html: receiptPrint(
+            {
+              clinicName: CLINIC_NAME,
+              receiptNo: payment?.receiptNo ?? r.invoice.id,
+              issuedAt: r.invoice.createdAt,
+              patientName: who.name,
+              mrn: who.mrn,
+              lines: r.invoice.lines.map((l) => ({ description: { en: l.description.en, ar: l.description.ar }, quantity: l.quantity, unitAmountFils: l.unitAmountFils, lineTotalFils: l.unitAmountFils * l.quantity })),
+              totalFils: r.totals.totalFils,
+              paidFils: r.totals.paidFils,
+              balanceFils: r.totals.balanceFils,
+              payment: payment !== undefined && (payment.method === "knet" || payment.method === "card") ? { method: payment.method, amountFils: payment.amountFils } : null,
+            },
+            locale,
+          ),
+        };
+      }),
+    prescription: protectedProcedure("clinical:dispense.read")
+      .input((v: unknown) => v as { prescriptionId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const rx = await ctx.services.pharmacy.get(input.prescriptionId);
+        if (rx === null) throw new TRPCError({ code: "NOT_FOUND", message: "prescription not found" });
+        const locale = asPrintLocale(input.locale);
+        const who = await printPatient(ctx.services, rx.patientId);
+        return {
+          html: prescriptionPrint(
+            {
+              clinicName: CLINIC_NAME,
+              patientName: who.name,
+              mrn: who.mrn,
+              prescriber: rx.prescriberId,
+              issuedAt: rx.raisedAt,
+              items: rx.items.map((it) => ({ name: { en: it.nameEn, ar: it.nameAr }, quantity: it.quantity, dose: { en: it.doseInstruction.en, ar: it.doseInstruction.ar } })),
+            },
+            locale,
+          ),
+        };
+      }),
+    appointmentSlip: protectedProcedure("scheduling:appointment.read")
+      .input((v: unknown) => v as { appointmentId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const appt = await ctx.services.scheduling.appointment(asId<"Appointment">(input.appointmentId));
+        if (appt === null) throw new TRPCError({ code: "NOT_FOUND", message: "appointment not found" });
+        const locale = asPrintLocale(input.locale);
+        const [who, type, prac] = await Promise.all([
+          printPatient(ctx.services, appt.patientId),
+          ctx.services.scheduling.appointmentType(appt.typeId),
+          ctx.services.scheduling.resource(appt.practitionerId),
+        ]);
+        return {
+          html: appointmentSlipPrint(
+            {
+              clinicName: CLINIC_NAME,
+              patientName: who.name,
+              mrn: who.mrn,
+              appointmentType: type !== null ? { en: type.name.en, ar: type.name.ar } : { en: "Appointment", ar: "موعد" },
+              practitioner: prac !== null ? { en: prac.name.en, ar: prac.name.ar } : { en: appt.practitionerId, ar: appt.practitionerId },
+              start: appt.start,
+              ...(type?.prep !== undefined ? { prep: { en: type.prep.en, ar: type.prep.ar } } : {}),
+            },
+            locale,
+          ),
+        };
+      }),
+    letter: protectedProcedure("clinical:letter.read")
+      .input((v: unknown) => v as { letterId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const letter = await ctx.services.clinical.letter(asId<"Letter">(input.letterId));
+        if (letter === null) throw new TRPCError({ code: "NOT_FOUND", message: "letter not found" });
+        const locale = asPrintLocale(input.locale ?? letter.locale);
+        const who = await printPatient(ctx.services, letter.patientId);
+        return {
+          html: clinicalLetterPrint(
+            {
+              clinicName: CLINIC_NAME,
+              patientName: who.name,
+              mrn: who.mrn,
+              issuedAt: letter.signedAt ?? new Date(0).toISOString(),
+              reference: letter.templateKey,
+              paragraphs: letter.body.split("\n").filter((p) => p.length > 0),
+              signatory: letter.signedBy ?? "—",
+            },
+            locale,
+          ),
+        };
+      }),
+    theatreList: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { date: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const day = await ctx.services.theatreScheduling.dayList(input.date);
+        const locale = asPrintLocale(input.locale);
+        const cases = await Promise.all(
+          day.cases.map(async (c) => {
+            const who = await printPatient(ctx.services, c.patientId);
+            return { patientName: who.name, mrn: who.mrn, procedure: c.procedure, theatre: c.theatreResourceId, surgeon: c.surgeonResourceId, start: c.start, end: c.end, status: c.status };
+          }),
+        );
+        return { html: theatreListPrint({ clinicName: CLINIC_NAME, date: input.date, cases }, locale) };
+      }),
+    pullList: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { date: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.services.records.pullList(input.date);
+        const locale = asPrintLocale(input.locale);
+        const printed = await Promise.all(
+          rows.map(async (r) => {
+            const who = await printPatient(ctx.services, r.personId);
+            return { mrn: r.mrn, patientName: who.name, volume: r.volume, currentLocation: r.currentLocation, alreadyOut: r.alreadyOut };
+          }),
+        );
+        return { html: pullListPrint({ clinicName: CLINIC_NAME, date: input.date, rows: printed }, locale) };
+      }),
   }),
 });
 
