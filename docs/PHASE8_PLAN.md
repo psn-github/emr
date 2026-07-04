@@ -81,14 +81,17 @@ from the scheduling module via a port · overdue/missing alerts · archive statu
 known vectors), label templates (file spine / ID sheet / single thermal) as bilingual HTML and ZPL
 strings. Migrations, seeds, unit + PG integration + API e2e, simulator step.
 
-### 8.1 `@oxford/pharmacy` — dispensing (ADR-0066)
-Prescription (formulary-only, allergy advisory via the existing port) → Ground-pharmacy queue →
-`dispense` (FEFO lot decrement via inventory's published interface; cold-chain flagged; controlled
-items also post to the controlled-drugs register via its service) → `markReady` → fulfilment
-feeds the real `PharmacyPort` (the L2 discharge gate switches from the stub to this service;
-the stub remains for unit tests). 100% coverage on dispensing/drug logic. Migrations, router
-(`clinical:prescription.write`, `pharmacy` domain reads), e2e incl. the ward→pharmacy→discharge
-loop, simulator step.
+### 8.1 `@oxford/pharmacy` — prescriptions + theatre drugs (ADR-0066 as corrected by ADR-0069)
+**The Ground-floor pharmacy is external (PO, 2026-07-04; AMD-0009).** Two flows: (1)
+**prescriptions** (incl. discharge): formulary-only + allergy advisory → issued (printed) →
+audited **external-fulfilment confirmation** — no clinic stock movement; the L2 discharge gate
+consumes the confirmation; the queue read is the ward's outstanding-scripts tracker. (2) **theatre
+drug administration** (the drugs the clinic actually stocks — anaesthetic + controlled, L1):
+`administerTheatreDrugs` decrements theatre stock (FEFO/lot/expiry via inventory's published
+interface), requires a witness for controlled items and posts to the controlled-drugs register,
+flags cold-chain; validated against the composite (anaesthesia + stim) formulary. 100% coverage on
+administration/allocation logic. Migrations, router, e2e incl. ward→external-pharmacy→discharge and
+theatre-administration→register reconciliation, simulator steps.
 
 ### 8.2 Documents wiring (ADR-0067)
 `BlobStorePort` + `LocalDiskBlobStore` (staging; size-capped base64 upload over tRPC now, presigned
