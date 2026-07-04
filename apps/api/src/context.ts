@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import { systemClock, asId, ok, err, conflict, notFound } from "@oxford/core";
 import {
@@ -58,6 +59,7 @@ import {
   type InventoryPort as PharmacyInventoryPort,
   type ControlledRegisterPort,
 } from "@oxford/pharmacy";
+import { DocumentService, PgDocumentStore, NoopOcrProvider, LocalDiskBlobStore, type BlobStorePort } from "@oxford/documents";
 import { MessagingService, PgMessagingStore } from "@oxford/messaging";
 import { ConsentService, PgConsentStore } from "@oxford/consent";
 import { PushService, PgPushStore, RecordingPushProvider } from "@oxford/push";
@@ -110,6 +112,12 @@ export interface Services {
   readonly hr: HrService;
   readonly records: RecordsService;
   readonly pharmacy: PharmacyService;
+  /** Versioned, access-controlled document store (ADR-0067). Scanned paper
+   *  (consents, marriage certificates, ID scans, external reports). */
+  readonly documents: DocumentService;
+  /** Document CONTENT storage (blob) behind the BlobStorePort; the metadata store
+   *  is `documents`. Staging: local disk; production: in-region object store. */
+  readonly documentBlobs: BlobStorePort;
   readonly cycle: CycleService;
   readonly stim: StimulationService;
   readonly messaging: MessagingService;
@@ -138,6 +146,13 @@ const L2_BED_CAPACITY = 6;
 /** The Ground-floor pharmacy's stock location — the dispensing seam issues from
  *  here by default (ADR-0066). Configuration, not code. */
 const PHARMACY_LOCATION_ID = "pharmacy-ground";
+
+/** Document blob store root — env-driven, defaulting to `<repo>/var/documents`
+ *  locally (gitignored, OUTSIDE the deploy path like the DB — ADR-0067). The
+ *  in-region object store replaces the disk backend behind BlobStorePort. */
+function documentStoreDir(): string {
+  return process.env.DOCUMENT_STORE_DIR ?? fileURLToPath(new URL("../../../var/documents", import.meta.url));
+}
 
 /** Dev/test pharmacy stub (ADR-0025) — discharge-prescription fulfilment until
  *  the real E8 pharmacy lands. `markFulfilled` simulates the pharmacy handover. */
@@ -321,6 +336,15 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     },
   };
   const records = new RecordsService(new PgRecordsStore(pool), recordsAppointments, audit, events, clock);
+  // Documents (ADR-0067): versioned, access-controlled, OCR-seamed store. Content
+  // reads verify the document's OWN requiredPermission via the AccessGuard the
+  // router builds from the session + Authorizer, and are audited as sensitive
+  // reads. NoopOcrProvider until a residency-reviewed OCR provider is wired; the
+  // LocalDiskBlobStore is staging-only (refuses production) — the in-region object
+  // store swaps in behind the same BlobStorePort.
+  const documentMaxBytes = process.env.DOCUMENT_MAX_BYTES !== undefined ? Number(process.env.DOCUMENT_MAX_BYTES) : undefined;
+  const documentBlobs = new LocalDiskBlobStore(documentStoreDir(), isProduction, documentMaxBytes !== undefined ? { maxBytes: documentMaxBytes } : {});
+  const documents = new DocumentService(new PgDocumentStore(pool), new NoopOcrProvider(), audit, events, clock);
   // Cycle engine (read surface used by the patient portal timeline). The marriage
   // hard-gate is wired to the registry (fertility never imports registry directly).
   const cycle = new CycleService(new PgCycleStore(pool), audit, events, clock, {
@@ -457,5 +481,5 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
   );
   const preOp = new PreOpService(new PgPreOpStore(pool), audit, events);
 
-  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, records, pharmacy, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
+  return { audit, events, registry, authorizer, i18n, scheduling, facility, flow, notifications, billing, packages, instalments, gatewayPayments, paymentGateway, charges, clinical, antenatal, witnessing, embryology, labQc, morphokinetics, pgt, andrology, outcomes, cryostore, perioperative, theatreScheduling, preOp, whoChecklist, intraOp, deviceRegistry, recovery, cssd, catalogue, inventory, procurement, demandPlanning, controlledDrugs, assets, analytics, hr, records, pharmacy, documents, documentBlobs, cycle, stim, messaging, consent, push, pushOutbox, pharmacyStub, notificationOutbox, witnessProvider };
 }

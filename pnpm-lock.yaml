@@ -65,6 +65,9 @@ importers:
       '@oxford/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
+      '@oxford/documents':
+        specifier: workspace:*
+        version: link:../../packages/documents
       '@oxford/embryology':
         specifier: workspace:*
         version: link:../../packages/embryology
@@ -104,6 +107,9 @@ importers:
       '@oxford/pharmacy':
         specifier: workspace:*
         version: link:../../packages/pharmacy
+      '@oxford/print':
+        specifier: workspace:*
+        version: link:../../packages/print
       '@oxford/push':
         specifier: workspace:*
         version: link:../../packages/push
@@ -315,6 +321,13 @@ importers:
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/pg@8.20.0)(pg@8.21.0)
+      pg:
+        specifier: ^8.13.1
+        version: 8.21.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
 
   packages/embryology:
     dependencies:
@@ -544,6 +557,8 @@ importers:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
+
+  packages/print: {}
 
   packages/push:
     dependencies:

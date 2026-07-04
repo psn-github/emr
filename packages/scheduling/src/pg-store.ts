@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { asId } from "@oxford/core";
-import type { Appointment, AppointmentId, AppointmentType, Resource, ResourceId } from "./types.js";
+import type { Appointment, AppointmentId, AppointmentType, AppointmentTypeId, FloorLevel, Resource, ResourceId, ResourceKind } from "./types.js";
 import type { SchedulingStore } from "./store.js";
 
 const ACTIVE = ["booked", "checked_in", "in_progress"];
@@ -40,6 +40,16 @@ export class PgSchedulingStore implements SchedulingStore {
     return r.rows[0] ? rowToAppt(r.rows[0]) : null;
   }
 
+  async getResource(id: ResourceId): Promise<Resource | null> {
+    const r = await this.pool.query<ResourceRow>("SELECT * FROM scheduling.resource WHERE id = $1", [id]);
+    return r.rows[0] ? rowToResource(r.rows[0]) : null;
+  }
+
+  async getAppointmentType(id: AppointmentTypeId): Promise<AppointmentType | null> {
+    const r = await this.pool.query<AppointmentTypeRow>("SELECT * FROM scheduling.appointment_type WHERE id = $1", [id]);
+    return r.rows[0] ? rowToType(r.rows[0]) : null;
+  }
+
   async activeForResources(resourceIds: readonly ResourceId[]): Promise<readonly Appointment[]> {
     if (resourceIds.length === 0) return [];
     const r = await this.pool.query<AppointmentRow>(
@@ -73,6 +83,47 @@ interface AppointmentRow {
   end_at: Date;
   status: string;
   cancellation_reason: string | null;
+}
+
+interface ResourceRow {
+  id: string;
+  kind: string;
+  name_ar: string;
+  name_en: string;
+  level: string | null;
+  location_ref: string | null;
+}
+interface AppointmentTypeRow {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  duration_min: number;
+  required_resource_kinds: string[];
+  prep_ar: string | null;
+  prep_en: string | null;
+  default_billing_item: string | null;
+}
+
+function rowToResource(row: ResourceRow): Resource {
+  return {
+    id: asId<"Resource">(row.id),
+    kind: row.kind as ResourceKind,
+    name: { ar: row.name_ar, en: row.name_en },
+    ...(row.level !== null ? { level: row.level as FloorLevel } : {}),
+    ...(row.location_ref !== null ? { locationRef: row.location_ref } : {}),
+  };
+}
+
+function rowToType(row: AppointmentTypeRow): AppointmentType {
+  const kinds = (typeof row.required_resource_kinds === "string" ? JSON.parse(row.required_resource_kinds) : row.required_resource_kinds) as ResourceKind[];
+  return {
+    id: asId<"AppointmentType">(row.id),
+    name: { ar: row.name_ar, en: row.name_en },
+    durationMin: Number(row.duration_min),
+    requiredResourceKinds: kinds,
+    ...(row.prep_ar !== null && row.prep_en !== null ? { prep: { ar: row.prep_ar, en: row.prep_en } } : {}),
+    ...(row.default_billing_item !== null ? { defaultBillingItem: row.default_billing_item } : {}),
+  };
 }
 
 function rowToAppt(row: AppointmentRow): Appointment {

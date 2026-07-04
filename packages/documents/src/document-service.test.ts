@@ -114,6 +114,51 @@ describe("DocumentService.softDelete", () => {
   });
 });
 
+describe("DocumentService.listForSubject (access-filtered metadata)", () => {
+  it("returns a subject's non-deleted documents the guard allows, and none when denied", async () => {
+    const { service } = build();
+    await service.create("s", consentInput);
+    await service.create("s", { ...consentInput, subjectRef: "Couple:other" });
+    const visible = await service.listForSubject("Couple:c1", allowAllGuard);
+    expect(visible).toHaveLength(1);
+    expect(visible[0]!.subjectRef).toBe("Couple:c1");
+    expect(await service.listForSubject("Couple:c1", denyGuard)).toHaveLength(0);
+  });
+
+  it("excludes soft-deleted documents", async () => {
+    const { service } = build();
+    const doc = await service.create("s", consentInput);
+    await service.softDelete("s", doc.id);
+    expect(await service.listForSubject("Couple:c1", allowAllGuard)).toHaveLength(0);
+  });
+});
+
+describe("DocumentService.meta (access-gated, not audited)", () => {
+  it("returns metadata when allowed and does NOT audit a READ_EXPORT", async () => {
+    const { service, audit } = build();
+    const doc = await service.create("s", consentInput);
+    const r = await service.meta(doc.id, allowAllGuard);
+    expect(r.ok).toBe(true);
+    expect((await audit.entries()).some((e) => e.payload.action === "READ_EXPORT")).toBe(false);
+  });
+
+  it("denies when the guard refuses", async () => {
+    const { service } = build();
+    const doc = await service.create("s", consentInput);
+    const r = await service.meta(doc.id, denyGuard);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("FORBIDDEN");
+  });
+
+  it("reports not-found for unknown and deleted documents", async () => {
+    const { service } = build();
+    expect((await service.meta(asId<"Document">("ghost"), allowAllGuard)).ok).toBe(false);
+    const doc = await service.create("s", consentInput);
+    await service.softDelete("s", doc.id);
+    expect((await service.meta(doc.id, allowAllGuard)).ok).toBe(false);
+  });
+});
+
 describe("DocumentService.search", () => {
   it("matches OCR text case-insensitively and filters by access", async () => {
     const { service } = build(textOcr("Marriage Certificate — Khaleeji"));

@@ -134,6 +134,30 @@ export class DocumentService {
     return ok(undefined);
   }
 
+  /** Metadata for the non-deleted documents on a subject that the actor may access
+   *  (each filtered by ITS OWN requiredPermission via the guard). Returns metadata
+   *  only — never content, so this is not a sensitive read and is not audited. */
+  async listForSubject(subjectRef: string, guard: AccessGuard): Promise<readonly Document[]> {
+    const matches: Document[] = [];
+    for (const doc of await this.store.bySubject(subjectRef)) {
+      const allowed = await guard.check(doc.requiredPermission);
+      if (allowed.ok) matches.push(doc);
+    }
+    return matches;
+  }
+
+  /** Metadata for a single document, access-gated (NOT audited — no content read).
+   *  A denial is audited by the Authorizer itself (PERMISSION_DENIED). */
+  async meta(id: DocumentId, guard: AccessGuard): Promise<Result<Document, AppError>> {
+    const doc = await this.store.get(id);
+    if (doc === null || doc.deletedAt !== null) {
+      return err(notFound("document not found", "documents.not_found"));
+    }
+    const allowed = await guard.check(doc.requiredPermission);
+    if (!allowed.ok) return err(allowed.error);
+    return ok(doc);
+  }
+
   /** Full-text-ish search over OCR-indexed content, filtered to documents the
    *  actor may access (per the guard). Returns metadata only, never content. */
   async search(query: string, guard: AccessGuard): Promise<readonly Document[]> {

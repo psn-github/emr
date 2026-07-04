@@ -8,6 +8,7 @@ import type {
   AppointmentId,
   AppointmentStatus,
   AppointmentType,
+  AppointmentTypeId,
   BilingualName,
   Resource,
   ResourceId,
@@ -120,6 +121,19 @@ export class SchedulingService {
 
   list(): Promise<readonly Appointment[]> {
     return this.store.listAppointments();
+  }
+
+  /** Read an appointment by id (print/read model; caller enforces access). */
+  appointment(id: AppointmentId): Promise<Appointment | null> {
+    return this.store.getAppointment(id);
+  }
+  /** Read a resource (practitioner/room/etc.) by id — its bilingual name. */
+  resource(id: ResourceId): Promise<Resource | null> {
+    return this.store.getResource(id);
+  }
+  /** Read an appointment type (config) by id — its bilingual name + prep. */
+  appointmentType(id: AppointmentTypeId): Promise<AppointmentType | null> {
+    return this.store.getAppointmentType(id);
   }
 
   /** A patient's own appointments (portal read; caller enforces own-data). */

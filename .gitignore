@@ -38,3 +38,7 @@ coverage/
 
 # Synthetic-patient simulator output (apps/api simulate CLI)
 simulation-report.json
+
+# Document blob store (staging LocalDiskBlobStore root — OUTSIDE the deploy path,
+# like the DB; ADR-0067). Never committed.
+var/

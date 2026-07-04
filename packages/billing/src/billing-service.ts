@@ -72,6 +72,17 @@ export class BillingService {
     return out;
   }
 
+  /** Read model for a printed receipt: the invoice (lines), its append-only
+   *  payment/refund ledger, and computed totals. Null for an unknown invoice. */
+  async invoiceReceipt(
+    invoiceId: InvoiceId,
+  ): Promise<{ invoice: Invoice; payments: readonly Payment[]; totals: InvoiceTotals } | null> {
+    const invoice = await this.store.getInvoice(invoiceId);
+    if (invoice === null) return null;
+    const payments = await this.store.paymentsFor(invoiceId);
+    return { invoice, payments, totals: await this.computeTotals(invoice) };
+  }
+
   /** Computed money view (subtotal/tax/total/paid/balance). */
   async totals(invoiceId: InvoiceId): Promise<Result<InvoiceTotals, AppError>> {
     const invoice = await this.store.getInvoice(invoiceId);

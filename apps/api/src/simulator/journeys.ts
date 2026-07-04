@@ -181,6 +181,9 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
   const { doc, emb, fin, phm, ops, j, runTag } = env;
   const tag = `${runTag}-${at.loop}-${at.couple}`;
   const T0 = "2026-09-01T08:00:00.000Z";
+  // Captured for the print pack (ADR-0068) at the end of the journey.
+  let printableInvoiceId: string | undefined;
+  let printablePrescriptionId: string | undefined;
 
   // ── registration + verified marriage (the identity hard-gate) ─────────────
   const wife = await j.step(at, "register wife", "registry.registerPerson", () =>
@@ -267,7 +270,7 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
     // FORMULARY-ONLY discharge script for the encounter; the pharmacist dispenses
     // (FEFO from seeded stock) and marks it ready. Config-style + idempotent:
     // stock receipt is additive, so re-runs against a persistent DB just top up.
-    await j.step(at, "pharmacy: raise → dispense → ready", "pharmacy.raisePrescription", async () => {
+    const rxId = await j.step(at, "pharmacy: raise → dispense → ready", "pharmacy.raisePrescription", async () => {
       await ops.inventory.receiveStock.mutate({ itemId: "rfsh", lotNo: `SIM-${tag}`, locationId: "pharmacy-ground", quantity: 10, expiryDate: "2028-01-01", receivedAt: T0 });
       const rx = await doc.pharmacy.raisePrescription.mutate({
         patientId: wifeId,
@@ -277,7 +280,9 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
       await phm.pharmacy.dispense.mutate({ prescriptionId: rx.prescriptionId, coldChainHandled: false });
       const ready = await phm.pharmacy.markReady.mutate({ prescriptionId: rx.prescriptionId });
       ensure(ready.status === "ready", `expected the script to be ready, got ${ready.status}`);
+      return rx.prescriptionId;
     });
+    if (rxId !== undefined) printablePrescriptionId = rxId;
   }
 
   // ── andrology (husband) ───────────────────────────────────────────────────
@@ -470,6 +475,7 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
       }),
     );
     if (invoice !== undefined) {
+      printableInvoiceId = invoice.invoiceId;
       await j.step(at, "KNET payment via gateway", "billing.gatewayPay", async () => {
         const r = await fin.billing.gatewayPay.mutate({ invoiceId: invoice.invoiceId, amountFils: 25_000, method: "knet" });
         ensure(r.gatewayRef.startsWith("CHG-KNET-"), `expected a KNET gateway receipt, got ${r.gatewayRef}`);
@@ -481,6 +487,7 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
   } else if (pkg !== undefined) {
     const sale = await j.step(at, "sell ICSI package", "packages.sell", () => fin.packages.sell.mutate({ patientId: wifeId, packageId: pkg.packageId }));
     if (sale !== undefined) {
+      printableInvoiceId = sale.invoiceId;
       const instalmentFils = Math.floor(pkg.priceFils / 5);
       const depositFils = pkg.priceFils - 3 * instalmentFils;
       await j.step(at, "create instalment plan", "instalments.createPlan", () =>
@@ -598,6 +605,22 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
       ensure(r.grants.length >= 1, "expected the partner grant to be listed");
     });
   }
+
+  // ── print pack (ADR-0068): server-rendered bilingual HTML for the paper the
+  // clinic hands out — the receipt for the paid invoice and the prescription
+  // printout, driven through existing tokens (fin: financial reads; phm: dispense
+  // reads). A failure is captured, never thrown (Journal), keeping the report shape.
+  await j.step(at, "print: receipt + prescription", "print.receipt", async () => {
+    if (printableInvoiceId !== undefined) {
+      const receipt = await fin.print.receipt.query({ invoiceId: printableInvoiceId, locale: "ar" });
+      ensure(receipt.html.includes("<!DOCTYPE html>"), "expected receipt HTML");
+      ensure(!receipt.html.toLowerCase().includes("tax") && !receipt.html.includes("ضريبة"), "receipt must carry NO tax line (ADR-0035)");
+    }
+    if (printablePrescriptionId !== undefined) {
+      const rx = await phm.print.prescription.query({ prescriptionId: printablePrescriptionId, locale: "en" });
+      ensure(rx.html.includes("<!DOCTYPE html>"), "expected prescription HTML");
+    }
+  });
 }
 
 /** Run the whole simulation: `loops` passes over `couples` couple journeys,

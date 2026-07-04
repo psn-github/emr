@@ -183,6 +183,12 @@ export class RegistryService {
     return ok(record);
   }
 
+  /** Read a person by id (name/demographics; the Civil ID stays encrypted on the
+   *  record). Used by print renderers that need the patient's bilingual name. */
+  async person(personId: PersonId): Promise<Person | null> {
+    return this.store.getPerson(personId);
+  }
+
   /** Authoritative vital status for the no-posthumous-use gate. */
   async isPersonLiving(personId: PersonId): Promise<boolean> {
     return personIsLiving(await this.store.getDeathRecord(personId));

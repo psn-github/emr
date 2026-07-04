@@ -23,7 +23,19 @@ import type { AssetCategory } from "@oxford/assets";
 import { cycleTimeline, buildMedicationSchedule, requiredConsents } from "@oxford/fertility";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import type { RiWitnessRecord } from "@oxford/witnessing";
-import { router, publicProcedure, protectedProcedure, patientProcedure } from "./trpc.js";
+import type { Permission, Session } from "@oxford/identity";
+import { currentVersion, type AccessGuard, type Document, type DocumentKind } from "@oxford/documents";
+import {
+  prescriptionPrint,
+  receiptPrint,
+  appointmentSlipPrint,
+  clinicalLetterPrint,
+  theatreListPrint,
+  pullListPrint,
+  type PrintLocale,
+  type BilingualText as PrintBilingual,
+} from "@oxford/print";
+import { router, publicProcedure, protectedProcedure, patientProcedure, authedProcedure } from "./trpc.js";
 import { assertOwnData, type PatientPrincipal } from "./patient-access.js";
 import type { Services } from "./context.js";
 import type { Cycle } from "@oxford/fertility";
@@ -71,6 +83,55 @@ function pharmacyError(error: AppError): TRPCError {
     : "BAD_REQUEST";
   return new TRPCError({ code, message: error.detailKey ?? "pharmacy error" });
 }
+
+/** Map a documents domain error to the matching tRPC transport code. */
+function documentsError(error: AppError): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? "documents error" });
+}
+
+/** The AccessGuard for a document read: it defers to the session's Authorizer for
+ *  the DOCUMENT's own requiredPermission (the guard→authorizer wiring, ADR-0067).
+ *  A denial is audited by the Authorizer (PERMISSION_DENIED); a successful content
+ *  read is audited by DocumentService as a sensitive READ_EXPORT — no double-audit. */
+function documentGuard(ctx: { session: Session; services: Services }): AccessGuard {
+  return { check: (perm) => ctx.services.authorizer.authorize(ctx.session, perm as Permission) };
+}
+
+/** Document metadata for the wire — never the blobRef/content. */
+function documentMeta(doc: Document) {
+  const current = currentVersion(doc);
+  return {
+    documentId: doc.id,
+    kind: doc.kind,
+    subjectRef: doc.subjectRef,
+    requiredPermission: doc.requiredPermission,
+    versionCount: doc.versions.length,
+    currentVersion: current.version,
+    contentType: current.contentType,
+    uploadedAt: current.uploadedAt,
+  };
+}
+
+/** The clinic identity on every printed artefact (bilingual). Configuration. */
+const CLINIC_NAME: PrintBilingual = { en: "Oxford Medical Kuwait", ar: "أكسفورد الطبية الكويت" };
+
+/** Resolve a patient's bilingual name (registry) + MRN (records) for print. A
+ *  missing person falls back to the id so a render never throws. */
+async function printPatient(services: Services, patientId: string): Promise<{ name: PrintBilingual; mrn: string }> {
+  const [person, mrn] = await Promise.all([
+    services.registry.person(asId<"Person">(patientId)),
+    services.records.mrnFor(patientId),
+  ]);
+  const name: PrintBilingual = person !== null ? { en: person.name.en, ar: person.name.ar } : { en: patientId, ar: patientId };
+  return { name, mrn: mrn ?? "—" };
+}
+
+const asPrintLocale = (v: unknown): PrintLocale => (v === "ar" ? "ar" : "en");
 
 /** Build a file reference from a flat input (barcode scan = mrn+volume). */
 function toFileRef(input: { fileId?: string; mrn?: string; volume?: number }): FileRef {
@@ -1402,6 +1463,187 @@ export const appRouter = router({
         const r = await ctx.services.pharmacy.cancel(ctx.session.subject.staffId, input.prescriptionId, input.reason);
         if (!r.ok) throw pharmacyError(r.error);
         return { status: r.value.status, cancelReason: r.value.cancelReason };
+      }),
+  }),
+
+  // Documents (docs/PHASE8_PLAN §8.2, ADR-0067): versioned, access-controlled,
+  // OCR-seamed store for scanned paper (consents, marriage certificates, ID scans,
+  // external reports), linked by `subjectRef` (Person/Couple/Cycle). Upload +
+  // addVersion write behind `clinical:document.write`; list/meta/read gate on each
+  // DOCUMENT's OWN requiredPermission via the AccessGuard (dynamic), and a content
+  // read is audited as a sensitive READ_EXPORT. Base64-over-tRPC is the staging
+  // scanner flow (size-capped at the blob-store boundary); presigned upload lands
+  // with the in-region object store behind the same BlobStorePort.
+  documents: router({
+    upload: protectedProcedure("clinical:document.write")
+      .input((v: unknown) => v as { kind: DocumentKind; subjectRef: string; requiredPermission: string; contentType: string; bytesBase64: string })
+      .mutation(async ({ ctx, input }) => {
+        const put = await ctx.services.documentBlobs.put({ bytesBase64: input.bytesBase64, contentType: input.contentType });
+        if (!put.ok) throw new TRPCError({ code: "BAD_REQUEST", message: put.error.detailKey ?? "invalid blob" });
+        const doc = await ctx.services.documents.create(ctx.session.subject.staffId, {
+          kind: input.kind, subjectRef: input.subjectRef, requiredPermission: input.requiredPermission, blobRef: put.value, contentType: input.contentType,
+        });
+        return { documentId: doc.id, version: currentVersion(doc).version };
+      }),
+    addVersion: protectedProcedure("clinical:document.write")
+      .input((v: unknown) => v as { documentId: string; contentType: string; bytesBase64: string })
+      .mutation(async ({ ctx, input }) => {
+        const put = await ctx.services.documentBlobs.put({ bytesBase64: input.bytesBase64, contentType: input.contentType });
+        if (!put.ok) throw new TRPCError({ code: "BAD_REQUEST", message: put.error.detailKey ?? "invalid blob" });
+        const r = await ctx.services.documents.addVersion(ctx.session.subject.staffId, asId<"Document">(input.documentId), { blobRef: put.value, contentType: input.contentType });
+        if (!r.ok) throw documentsError(r.error);
+        return { documentId: r.value.id, version: currentVersion(r.value).version };
+      }),
+    list: authedProcedure
+      .input((v: unknown) => v as { subjectRef: string })
+      .query(async ({ ctx, input }) => {
+        const docs = await ctx.services.documents.listForSubject(input.subjectRef, documentGuard(ctx));
+        return { documents: docs.map(documentMeta) };
+      }),
+    meta: authedProcedure
+      .input((v: unknown) => v as { documentId: string })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.documents.meta(asId<"Document">(input.documentId), documentGuard(ctx));
+        if (!r.ok) throw documentsError(r.error);
+        return documentMeta(r.value);
+      }),
+    read: authedProcedure
+      .input((v: unknown) => v as { documentId: string })
+      .query(async ({ ctx, input }) => {
+        const access = await ctx.services.documents.access(ctx.session.subject.staffId, asId<"Document">(input.documentId), documentGuard(ctx));
+        if (!access.ok) throw documentsError(access.error);
+        const blob = await ctx.services.documentBlobs.get(access.value.blobRef);
+        if (blob === null) throw new TRPCError({ code: "NOT_FOUND", message: "document content missing" });
+        return { contentType: blob.contentType, bytesBase64: blob.bytesBase64, version: access.value.version };
+      }),
+  }),
+
+  // Server-rendered bilingual print pack (docs/PHASE8_PLAN §8.3, ADR-0068). Each
+  // route FETCHES the underlying read model via existing services then feeds a
+  // PURE renderer (deterministic, en+ar, RTL-correct HTML). Gated by the domain
+  // permission of the underlying data. Returns { html } the UI just open-and-prints.
+  print: router({
+    receipt: protectedProcedure("financial:invoice.read")
+      .input((v: unknown) => v as { invoiceId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const r = await ctx.services.billing.invoiceReceipt(asId<"Invoice">(input.invoiceId));
+        if (r === null) throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
+        const locale = asPrintLocale(input.locale);
+        const who = await printPatient(ctx.services, r.invoice.patientId);
+        // Latest non-refund payment drives the receipt's method line (KNET/card only).
+        const payment = [...r.payments].reverse().find((p) => p.kind === "payment");
+        return {
+          html: receiptPrint(
+            {
+              clinicName: CLINIC_NAME,
+              receiptNo: payment?.receiptNo ?? r.invoice.id,
+              issuedAt: r.invoice.createdAt,
+              patientName: who.name,
+              mrn: who.mrn,
+              lines: r.invoice.lines.map((l) => ({ description: { en: l.description.en, ar: l.description.ar }, quantity: l.quantity, unitAmountFils: l.unitAmountFils, lineTotalFils: l.unitAmountFils * l.quantity })),
+              totalFils: r.totals.totalFils,
+              paidFils: r.totals.paidFils,
+              balanceFils: r.totals.balanceFils,
+              payment: payment !== undefined && (payment.method === "knet" || payment.method === "card") ? { method: payment.method, amountFils: payment.amountFils } : null,
+            },
+            locale,
+          ),
+        };
+      }),
+    prescription: protectedProcedure("clinical:dispense.read")
+      .input((v: unknown) => v as { prescriptionId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const rx = await ctx.services.pharmacy.get(input.prescriptionId);
+        if (rx === null) throw new TRPCError({ code: "NOT_FOUND", message: "prescription not found" });
+        const locale = asPrintLocale(input.locale);
+        const who = await printPatient(ctx.services, rx.patientId);
+        return {
+          html: prescriptionPrint(
+            {
+              clinicName: CLINIC_NAME,
+              patientName: who.name,
+              mrn: who.mrn,
+              prescriber: rx.prescriberId,
+              issuedAt: rx.raisedAt,
+              items: rx.items.map((it) => ({ name: { en: it.nameEn, ar: it.nameAr }, quantity: it.quantity, dose: { en: it.doseInstruction.en, ar: it.doseInstruction.ar } })),
+            },
+            locale,
+          ),
+        };
+      }),
+    appointmentSlip: protectedProcedure("scheduling:appointment.read")
+      .input((v: unknown) => v as { appointmentId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const appt = await ctx.services.scheduling.appointment(asId<"Appointment">(input.appointmentId));
+        if (appt === null) throw new TRPCError({ code: "NOT_FOUND", message: "appointment not found" });
+        const locale = asPrintLocale(input.locale);
+        const [who, type, prac] = await Promise.all([
+          printPatient(ctx.services, appt.patientId),
+          ctx.services.scheduling.appointmentType(appt.typeId),
+          ctx.services.scheduling.resource(appt.practitionerId),
+        ]);
+        return {
+          html: appointmentSlipPrint(
+            {
+              clinicName: CLINIC_NAME,
+              patientName: who.name,
+              mrn: who.mrn,
+              appointmentType: type !== null ? { en: type.name.en, ar: type.name.ar } : { en: "Appointment", ar: "موعد" },
+              practitioner: prac !== null ? { en: prac.name.en, ar: prac.name.ar } : { en: appt.practitionerId, ar: appt.practitionerId },
+              start: appt.start,
+              ...(type?.prep !== undefined ? { prep: { en: type.prep.en, ar: type.prep.ar } } : {}),
+            },
+            locale,
+          ),
+        };
+      }),
+    letter: protectedProcedure("clinical:letter.read")
+      .input((v: unknown) => v as { letterId: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const letter = await ctx.services.clinical.letter(asId<"Letter">(input.letterId));
+        if (letter === null) throw new TRPCError({ code: "NOT_FOUND", message: "letter not found" });
+        const locale = asPrintLocale(input.locale ?? letter.locale);
+        const who = await printPatient(ctx.services, letter.patientId);
+        return {
+          html: clinicalLetterPrint(
+            {
+              clinicName: CLINIC_NAME,
+              patientName: who.name,
+              mrn: who.mrn,
+              issuedAt: letter.signedAt ?? new Date(0).toISOString(),
+              reference: letter.templateKey,
+              paragraphs: letter.body.split("\n").filter((p) => p.length > 0),
+              signatory: letter.signedBy ?? "—",
+            },
+            locale,
+          ),
+        };
+      }),
+    theatreList: protectedProcedure("clinical:encounter.write")
+      .input((v: unknown) => v as { date: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const day = await ctx.services.theatreScheduling.dayList(input.date);
+        const locale = asPrintLocale(input.locale);
+        const cases = await Promise.all(
+          day.cases.map(async (c) => {
+            const who = await printPatient(ctx.services, c.patientId);
+            return { patientName: who.name, mrn: who.mrn, procedure: c.procedure, theatre: c.theatreResourceId, surgeon: c.surgeonResourceId, start: c.start, end: c.end, status: c.status };
+          }),
+        );
+        return { html: theatreListPrint({ clinicName: CLINIC_NAME, date: input.date, cases }, locale) };
+      }),
+    pullList: protectedProcedure("clinical:records.read")
+      .input((v: unknown) => v as { date: string; locale?: PrintLocale })
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.services.records.pullList(input.date);
+        const locale = asPrintLocale(input.locale);
+        const printed = await Promise.all(
+          rows.map(async (r) => {
+            const who = await printPatient(ctx.services, r.personId);
+            return { mrn: r.mrn, patientName: who.name, volume: r.volume, currentLocation: r.currentLocation, alreadyOut: r.alreadyOut };
+          }),
+        );
+        return { html: pullListPrint({ clinicName: CLINIC_NAME, date: input.date, rows: printed }, locale) };
       }),
   }),
 });

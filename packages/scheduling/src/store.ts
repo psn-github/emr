@@ -1,4 +1,4 @@
-import type { Appointment, AppointmentId, AppointmentType, Resource, ResourceId } from "./types.js";
+import type { Appointment, AppointmentId, AppointmentType, AppointmentTypeId, Resource, ResourceId } from "./types.js";
 
 const ACTIVE: ReadonlySet<Appointment["status"]> = new Set(["booked", "checked_in", "in_progress"]);
 
@@ -7,6 +7,8 @@ export interface SchedulingStore {
   saveAppointmentType(t: AppointmentType): Promise<void>;
   saveAppointment(a: Appointment): Promise<void>;
   getAppointment(id: AppointmentId): Promise<Appointment | null>;
+  getResource(id: ResourceId): Promise<Resource | null>;
+  getAppointmentType(id: AppointmentTypeId): Promise<AppointmentType | null>;
   /** Active (resource-holding) appointments touching any of these resources. */
   activeForResources(resourceIds: readonly ResourceId[]): Promise<readonly Appointment[]>;
   /** Appointments whose start falls in the half-open instant range [from, to). */
@@ -30,6 +32,12 @@ export class InMemorySchedulingStore implements SchedulingStore {
   }
   async getAppointment(id: AppointmentId): Promise<Appointment | null> {
     return this.appts.get(id) ?? null;
+  }
+  async getResource(id: ResourceId): Promise<Resource | null> {
+    return this.resources.get(id) ?? null;
+  }
+  async getAppointmentType(id: AppointmentTypeId): Promise<AppointmentType | null> {
+    return this.types.get(id) ?? null;
   }
   async activeForResources(resourceIds: readonly ResourceId[]): Promise<readonly Appointment[]> {
     const wanted = new Set<string>(resourceIds);

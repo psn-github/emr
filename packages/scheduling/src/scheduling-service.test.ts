@@ -22,6 +22,20 @@ async function setup() {
   return { ...ctx, doc, scanner, type };
 }
 
+describe("SchedulingService reads (appointment / resource / type)", () => {
+  it("reads an appointment, resource and type by id; null for unknown ids", async () => {
+    const ctx = await setup();
+    const booked = await ctx.svc.book("staff-1", { typeId: ctx.type.id, patientId: "pat-1", practitionerId: ctx.doc.id, resourceIds: [ctx.scanner.id], start: "2026-06-13T09:00:00.000Z", end: "2026-06-13T09:30:00.000Z" });
+    if (!booked.ok) throw new Error("setup");
+    expect((await ctx.svc.appointment(booked.value.id))?.patientId).toBe("pat-1");
+    expect((await ctx.svc.resource(ctx.doc.id))?.name.en).toBe("Dr A");
+    expect((await ctx.svc.appointmentType(ctx.type.id))?.name.en).toBe("Monitoring scan");
+    expect(await ctx.svc.appointment(asId<"Appointment">("ghost"))).toBeNull();
+    expect(await ctx.svc.resource(asId<"Resource">("ghost"))).toBeNull();
+    expect(await ctx.svc.appointmentType(asId<"AppointmentType">("ghost"))).toBeNull();
+  });
+});
+
 describe("SchedulingService.book", () => {
   it("books a slot, audits, emits AppointmentBooked", async () => {
     const { svc, doc, scanner, type, audit, events } = await setup();

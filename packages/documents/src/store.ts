@@ -7,6 +7,8 @@ export interface DocumentStore {
   get(id: DocumentId): Promise<Document | null>;
   /** All non-deleted documents (for search). */
   all(): Promise<readonly Document[]>;
+  /** Non-deleted documents for a subject (list-by-subject). */
+  bySubject(subjectRef: string): Promise<readonly Document[]>;
 }
 
 export class InMemoryDocumentStore implements DocumentStore {
@@ -20,5 +22,8 @@ export class InMemoryDocumentStore implements DocumentStore {
   }
   async all(): Promise<readonly Document[]> {
     return [...this.docs.values()].filter((d) => d.deletedAt === null);
+  }
+  async bySubject(subjectRef: string): Promise<readonly Document[]> {
+    return [...this.docs.values()].filter((d) => d.deletedAt === null && d.subjectRef === subjectRef);
   }
 }
