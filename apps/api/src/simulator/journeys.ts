@@ -266,23 +266,37 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
     // backs is not reachable over HTTP on a fresh DB (see ROUTER_GAPS).
     await j.step(at, "mark pharmacy fulfilled (dev stub)", "dev.markPharmacyFulfilled", () => doc.dev.markPharmacyFulfilled.mutate({ encounterId: enc.encounterId }));
 
-    // Real Ground-floor pharmacy loop (ADR-0066): the clinician raises a
-    // FORMULARY-ONLY discharge script for the encounter; the pharmacist dispenses
-    // (FEFO from seeded stock) and marks it ready. Config-style + idempotent:
-    // stock receipt is additive, so re-runs against a persistent DB just top up.
-    const rxId = await j.step(at, "pharmacy: raise → dispense → ready", "pharmacy.raisePrescription", async () => {
-      await ops.inventory.receiveStock.mutate({ itemId: "rfsh", lotNo: `SIM-${tag}`, locationId: "pharmacy-ground", quantity: 10, expiryDate: "2028-01-01", receivedAt: T0 });
+    // External-pharmacy prescription loop (ADR-0069): the clinician raises a
+    // FORMULARY-ONLY discharge script for the encounter; ward/reception staff issue
+    // it (printed) and then record the EXTERNAL pharmacy's fulfilment. NO clinic
+    // stock moves on this path. Idempotent: no stock writes at all.
+    const rxId = await j.step(at, "pharmacy: raise → issue → external fulfilment", "pharmacy.raisePrescription", async () => {
       const rx = await doc.pharmacy.raisePrescription.mutate({
         patientId: wifeId,
         encounterId: enc.encounterId,
         items: [{ drugId: "rfsh", quantity: 2, doseInstruction: { en: "225 IU daily", ar: "225 وحدة يومياً" } }],
       });
-      await phm.pharmacy.dispense.mutate({ prescriptionId: rx.prescriptionId, coldChainHandled: false });
-      const ready = await phm.pharmacy.markReady.mutate({ prescriptionId: rx.prescriptionId });
-      ensure(ready.status === "ready", `expected the script to be ready, got ${ready.status}`);
+      await phm.pharmacy.issue.mutate({ prescriptionId: rx.prescriptionId });
+      const fulfilled = await phm.pharmacy.recordExternalFulfilment.mutate({ prescriptionId: rx.prescriptionId, externalRef: `GRD-${tag}` });
+      ensure(fulfilled.status === "fulfilled", `expected the script to be fulfilled, got ${fulfilled.status}`);
       return rx.prescriptionId;
     });
     if (rxId !== undefined) printablePrescriptionId = rxId;
+
+    // In-house theatre drug administration (ADR-0069): the clinic's OWN stock — an
+    // anaesthetic drawn in theatre decrements theatre stock (FEFO). Seed theatre
+    // stock first via the inventory router. Config-style + idempotent: the stock
+    // receipt is additive (top-up each loop), so a re-run against a persistent DB
+    // always has enough to administer.
+    await j.step(at, "pharmacy: administer theatre drugs (in-house stock)", "pharmacy.administerTheatreDrugs", async () => {
+      await ops.inventory.receiveStock.mutate({ itemId: "propofol", lotNo: `SIM-PROP-${tag}`, locationId: "theatre-l1", quantity: 10, expiryDate: "2028-01-01", receivedAt: T0 });
+      const admin = await phm.pharmacy.administerTheatreDrugs.mutate({
+        encounterId: enc.encounterId,
+        patientId: wifeId,
+        drugs: [{ drugId: "propofol", quantity: 2 }],
+      });
+      ensure(admin.allocations.length > 0, "expected theatre stock to be allocated FEFO");
+    });
   }
 
   // ── andrology (husband) ───────────────────────────────────────────────────

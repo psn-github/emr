@@ -1,14 +1,15 @@
 import type { Result, AppError } from "@oxford/core";
-import type { DispenseAllocation } from "./types.js";
+import type { StockAllocation } from "./types.js";
 
-// Injected seams (ADR-0066). @oxford/pharmacy is a DOMAIN module: it never imports
-// the fertility formulary, the inventory module, or clinical (module boundaries).
-// Every integration is a port DEFINED here and IMPLEMENTED in the app layer
-// (apps/api/src/context.ts) over the other modules' published read/issue surfaces.
+// Injected seams (ADR-0066/0069). @oxford/pharmacy is a DOMAIN module: it never
+// imports the fertility formulary, the anaesthesia formulary, the inventory module,
+// or clinical (module boundaries). Every integration is a port DEFINED here and
+// IMPLEMENTED in the app layer (apps/api/src/context.ts) over the other modules'
+// published read/issue surfaces.
 
-/** The prescribable-drug attributes the pharmacy needs. `controlled`/`coldChain`
- *  are optional at the seam (a plain formulary drug is neither) and normalised to
- *  a boolean by the service. */
+/** The prescribable/administrable-drug attributes the pharmacy needs.
+ *  `controlled`/`coldChain` are optional at the seam (a plain drug is neither) and
+ *  normalised to a boolean by the service. */
 export interface DrugInfo {
   readonly nameEn: string;
   readonly nameAr: string;
@@ -17,10 +18,11 @@ export interface DrugInfo {
   readonly coldChain?: boolean;
 }
 
-/** Formulary seam — the ONLY source of prescribable drugs (CLAUDE.md hard rule:
- *  prescribable items come from the formulary, never free text). The app wires
- *  this over the fertility formulary's published read surface (name + drug class);
- *  controlled/cold-chain come from the inventory catalogue's item attributes. */
+/** Formulary seam — the ONLY source of prescribable/administrable drugs (CLAUDE.md
+ *  hard rule: prescribable items come from the formulary, never free text).
+ *  Prescriptions wire this over the stim formulary; theatre administration wires a
+ *  COMPOSITE formulary (anaesthesia + stim). controlled/cold-chain come from the
+ *  inventory catalogue's item attributes. */
 export interface FormularyPort {
   isPrescribable(drugId: string): Promise<boolean>;
   drugInfo(drugId: string): Promise<DrugInfo | null>;
@@ -32,8 +34,9 @@ export interface AllergyPort {
   allergicClasses(patientId: string): Promise<readonly string[]>;
 }
 
-/** Inventory seam — the pharmacy decrements stock through the inventory module's
- *  PUBLISHED interface (FEFO lot selection; never touches inventory's tables). */
+/** Inventory seam — theatre administration decrements clinic stock through the
+ *  inventory module's PUBLISHED interface (FEFO lot selection; never touches
+ *  inventory's tables). Prescriptions do NOT use this seam (external fulfilment). */
 export interface InventoryPort {
   /** On-hand quantity of a drug at a stock location (pre-flight sufficiency). */
   availableAt(drugId: string, locationId: string): Promise<number>;
@@ -44,9 +47,7 @@ export interface InventoryPort {
     drugId: string,
     locationId: string,
     quantity: number,
-  ): Promise<Result<readonly DispenseAllocation[], AppError>>;
-  /** Deduct a caller-chosen set of exact lots (the manual-allocation override). */
-  deductLots(actorId: string, allocations: readonly DispenseAllocation[]): Promise<Result<void, AppError>>;
+  ): Promise<Result<readonly StockAllocation[], AppError>>;
 }
 
 export interface ControlledIssueInput {
@@ -58,8 +59,9 @@ export interface ControlledIssueInput {
   readonly occurredAt: string;
 }
 
-/** Controlled-drugs register seam — a controlled item's dispense posts a witnessed
- *  issue movement to the register via the inventory module's ControlledDrugsService. */
+/** Controlled-drugs register seam — a controlled drug's theatre administration posts
+ *  a witnessed issue movement to the register via the inventory module's
+ *  ControlledDrugsService. */
 export interface ControlledRegisterPort {
   postIssue(actorId: string, input: ControlledIssueInput): Promise<Result<void, AppError>>;
 }

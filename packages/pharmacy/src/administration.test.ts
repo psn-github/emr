@@ -3,16 +3,18 @@ import {
   nextStatus,
   validatePrescriptionItems,
   screenPrescription,
-  controlledItems,
+  validateTheatreDrugs,
+  controlledDrugItems,
   assertColdChainHandled,
   assertWitnessForControlled,
   assertSufficientStock,
   totalAllocated,
   assertAllocationsCoverItems,
-} from "./dispensing.js";
-import type { PrescriptionItem, PrescriptionItemInput, DispenseAllocation, PrescriptionStatus } from "./types.js";
+  type DrugLine,
+} from "./administration.js";
+import type { PrescriptionItem, PrescriptionItemInput, TheatreDrugInput, StockAllocation, PrescriptionStatus } from "./types.js";
 
-// Pure dispensing/drug-quantity logic — 100% coverage (CLAUDE.md drugs bar).
+// Pure pharmacy drug-safety logic — 100% coverage (CLAUDE.md drugs bar).
 
 const item = (over: Partial<PrescriptionItem> = {}): PrescriptionItem => ({
   drugId: "rfsh",
@@ -31,26 +33,28 @@ const input = (over: Partial<PrescriptionItemInput> = {}): PrescriptionItemInput
   doseInstruction: { en: "225 IU daily", ar: "225 وحدة يومياً" },
   ...over,
 });
+const line = (over: Partial<DrugLine> = {}): DrugLine => ({ drugId: "propofol", quantity: 2, controlled: false, coldChain: false, ...over });
 const key = (r: { ok: boolean; error?: { detailKey?: string } }): string | undefined => (r.ok ? undefined : r.error?.detailKey);
 
-describe("nextStatus lifecycle", () => {
-  it("advances pending → dispensing → ready → collected", () => {
-    expect(nextStatus("pending", "dispense")).toEqual({ ok: true, value: "dispensing" });
-    expect(nextStatus("dispensing", "ready")).toEqual({ ok: true, value: "ready" });
-    expect(nextStatus("ready", "collected")).toEqual({ ok: true, value: "collected" });
+describe("nextStatus lifecycle (ADR-0069)", () => {
+  it("advances pending → issued → fulfilled", () => {
+    expect(nextStatus("pending", "issue")).toEqual({ ok: true, value: "issued" });
+    expect(nextStatus("issued", "fulfil")).toEqual({ ok: true, value: "fulfilled" });
   });
-  it("cancels only a pending prescription", () => {
+  it("cancels a pending OR issued prescription (pre-fulfilment)", () => {
     expect(nextStatus("pending", "cancel")).toEqual({ ok: true, value: "cancelled" });
-    expect(key(nextStatus("dispensing", "cancel"))).toBe("pharmacy.status.invalid_transition");
+    expect(nextStatus("issued", "cancel")).toEqual({ ok: true, value: "cancelled" });
+    expect(key(nextStatus("fulfilled", "cancel"))).toBe("pharmacy.status.invalid_transition");
+    expect(key(nextStatus("cancelled", "cancel"))).toBe("pharmacy.status.invalid_transition");
   });
   it("rejects every out-of-order transition", () => {
-    const bad: Array<[PrescriptionStatus, "dispense" | "ready" | "collected"]> = [
-      ["dispensing", "dispense"],
-      ["ready", "dispense"],
-      ["collected", "collected"],
-      ["pending", "ready"],
-      ["pending", "collected"],
-      ["cancelled", "dispense"],
+    const bad: Array<[PrescriptionStatus, "issue" | "fulfil"]> = [
+      ["issued", "issue"],
+      ["fulfilled", "issue"],
+      ["cancelled", "issue"],
+      ["pending", "fulfil"],
+      ["fulfilled", "fulfil"],
+      ["cancelled", "fulfil"],
     ];
     for (const [status, action] of bad) {
       const r = nextStatus(status, action);
@@ -89,42 +93,57 @@ describe("screenPrescription (allergy advisory)", () => {
   });
 });
 
-describe("controlledItems", () => {
+describe("validateTheatreDrugs", () => {
+  it("accepts a well-formed set", () => {
+    const drugs: TheatreDrugInput[] = [{ drugId: "propofol", quantity: 2 }];
+    expect(validateTheatreDrugs(drugs).ok).toBe(true);
+  });
+  it("rejects an empty administration", () => {
+    expect(key(validateTheatreDrugs([]))).toBe("pharmacy.admin.empty");
+  });
+  it("rejects a non-integer or non-positive quantity", () => {
+    expect(key(validateTheatreDrugs([{ drugId: "propofol", quantity: 1.5 }]))).toBe("pharmacy.admin.quantity_invalid");
+    expect(key(validateTheatreDrugs([{ drugId: "propofol", quantity: 0 }]))).toBe("pharmacy.admin.quantity_invalid");
+    expect(key(validateTheatreDrugs([{ drugId: "propofol", quantity: -1 }]))).toBe("pharmacy.admin.quantity_invalid");
+  });
+});
+
+describe("controlledDrugItems", () => {
   it("selects only the controlled items", () => {
-    const items = [item(), item({ drugId: "cd", controlled: true })];
-    expect(controlledItems(items).map((i) => i.drugId)).toEqual(["cd"]);
+    const items = [line(), line({ drugId: "fentanyl", controlled: true })];
+    expect(controlledDrugItems(items).map((i) => i.drugId)).toEqual(["fentanyl"]);
   });
 });
 
 describe("assertColdChainHandled", () => {
   it("requires the assertion only when a cold-chain item is present", () => {
-    expect(assertColdChainHandled([item()], false).ok).toBe(true); // no cold-chain item
-    expect(assertColdChainHandled([item({ coldChain: true })], true).ok).toBe(true);
-    expect(key(assertColdChainHandled([item({ coldChain: true })], false))).toBe("pharmacy.dispense.cold_chain_required");
+    expect(assertColdChainHandled([line()], false).ok).toBe(true); // no cold-chain item
+    expect(assertColdChainHandled([line({ coldChain: true })], true).ok).toBe(true);
+    expect(key(assertColdChainHandled([line({ coldChain: true })], false))).toBe("pharmacy.admin.cold_chain_required");
   });
 });
 
 describe("assertWitnessForControlled", () => {
   it("requires a witness only when a controlled item is present", () => {
-    expect(assertWitnessForControlled([item()], undefined).ok).toBe(true); // no controlled item
-    expect(assertWitnessForControlled([item({ controlled: true })], "phm-2").ok).toBe(true);
-    expect(key(assertWitnessForControlled([item({ controlled: true })], undefined))).toBe("pharmacy.dispense.witness_required");
-    expect(key(assertWitnessForControlled([item({ controlled: true })], "  "))).toBe("pharmacy.dispense.witness_required");
+    expect(assertWitnessForControlled([line()], undefined).ok).toBe(true); // no controlled item
+    expect(assertWitnessForControlled([line({ controlled: true })], "nurse-2").ok).toBe(true);
+    expect(key(assertWitnessForControlled([line({ controlled: true })], undefined))).toBe("pharmacy.admin.witness_required");
+    expect(key(assertWitnessForControlled([line({ controlled: true })], "  "))).toBe("pharmacy.admin.witness_required");
   });
 });
 
 describe("assertSufficientStock", () => {
   it("passes when every item is covered, fails on any shortfall", () => {
-    const items = [item({ drugId: "a", quantity: 2 }), item({ drugId: "b", quantity: 1 })];
+    const items = [line({ drugId: "a", quantity: 2 }), line({ drugId: "b", quantity: 1 })];
     expect(assertSufficientStock(items, new Map([["a", 2], ["b", 5]])).ok).toBe(true);
-    expect(key(assertSufficientStock(items, new Map([["a", 1], ["b", 5]])))).toBe("pharmacy.dispense.insufficient_stock");
+    expect(key(assertSufficientStock(items, new Map([["a", 1], ["b", 5]])))).toBe("pharmacy.admin.insufficient_stock");
     // a drug with no entry defaults to 0 on hand
-    expect(key(assertSufficientStock(items, new Map([["b", 5]])))).toBe("pharmacy.dispense.insufficient_stock");
+    expect(key(assertSufficientStock(items, new Map([["b", 5]])))).toBe("pharmacy.admin.insufficient_stock");
   });
 });
 
 describe("allocation math", () => {
-  const allocs: DispenseAllocation[] = [
+  const allocs: StockAllocation[] = [
     { drugId: "a", lotNo: "L1", expiry: "2027-01-01", quantity: 1 },
     { drugId: "a", lotNo: "L2", expiry: "2027-02-01", quantity: 1 },
     { drugId: "b", lotNo: "L3", expiry: "2027-03-01", quantity: 1 },
@@ -135,8 +154,8 @@ describe("allocation math", () => {
     expect(totalAllocated(allocs, "z")).toBe(0);
   });
   it("assertAllocationsCoverItems requires an exact cover", () => {
-    const items = [item({ drugId: "a", quantity: 2 }), item({ drugId: "b", quantity: 1 })];
+    const items = [line({ drugId: "a", quantity: 2 }), line({ drugId: "b", quantity: 1 })];
     expect(assertAllocationsCoverItems(items, allocs).ok).toBe(true);
-    expect(key(assertAllocationsCoverItems([item({ drugId: "a", quantity: 3 })], allocs))).toBe("pharmacy.dispense.allocation_mismatch");
+    expect(key(assertAllocationsCoverItems([line({ drugId: "a", quantity: 3 })], allocs))).toBe("pharmacy.admin.allocation_mismatch");
   });
 });

@@ -6,8 +6,10 @@ import type {
   PrescriptionItem,
   PrescriptionItemInput,
   PrescriptionStatus,
-  DispenseAllocation,
-  Dispense,
+  TheatreDrugInput,
+  TheatreDrugItem,
+  StockAllocation,
+  TheatreDrugAdministration,
 } from "./types.js";
 import type { PharmacyStore } from "./store.js";
 import type { FormularyPort, AllergyPort, InventoryPort, ControlledRegisterPort } from "./ports.js";
@@ -15,13 +17,13 @@ import {
   nextStatus,
   validatePrescriptionItems,
   screenPrescription,
-  controlledItems,
+  validateTheatreDrugs,
+  controlledDrugItems,
   assertColdChainHandled,
   assertWitnessForControlled,
   assertSufficientStock,
-  assertAllocationsCoverItems,
   type PrescriptionAction,
-} from "./dispensing.js";
+} from "./administration.js";
 
 export interface RaisePrescriptionInput {
   readonly patientId: string;
@@ -30,38 +32,61 @@ export interface RaisePrescriptionInput {
   readonly items: readonly PrescriptionItemInput[];
 }
 
-export interface DispenseInput {
+export interface RecordExternalFulfilmentInput {
   readonly prescriptionId: string;
-  /** The pharmacy stock location to issue from (defaults to config). */
-  readonly locationId?: string;
-  /** Must be asserted true for a prescription containing cold-chain items. */
-  readonly coldChainHandled?: boolean;
-  /** Required (second person) for a prescription containing controlled items. */
+  /** The external pharmacy's reference for the handover, if provided. */
+  readonly externalRef?: string;
+  /** An optional non-clinical note captured at the handover confirmation. */
+  readonly note?: string;
+}
+
+export interface AdministerTheatreDrugsInput {
+  readonly encounterId: string;
+  readonly patientId: string;
+  readonly drugs: readonly TheatreDrugInput[];
+  /** Required (second person) when any drug is controlled. */
   readonly witnessStaffId?: string;
-  /** Manual lot override; when omitted, lots are chosen FEFO from inventory. */
-  readonly allocations?: readonly DispenseAllocation[];
-  readonly dispensedAt?: string;
+  /** Must be asserted true when any drug is cold-chain. */
+  readonly coldChainHandled?: boolean;
+  /** The theatre stock location to draw from (defaults to config). */
+  readonly locationId?: string;
+  readonly administeredAt?: string;
 }
 
 export interface PharmacyConfig {
-  /** Default stock location the Ground-floor pharmacy dispenses from. */
-  readonly pharmacyLocationId: string;
+  /** Default in-house theatre stock location administrations draw from (ADR-0069). */
+  readonly theatreStockLocationId: string;
 }
 
 /**
- * @oxford/pharmacy (ADR-0066): the Ground-floor dispensing workflow. A clinician
- * raises a FORMULARY-ONLY prescription (allergy screened, advisory only) → it
- * sits in the dispensing queue → the pharmacist dispenses (FEFO stock decrement
- * through the inventory seam; cold-chain asserted; controlled items post a
- * witnessed movement to the controlled-drugs register) → markReady → markCollected.
- * `isPrescriptionFulfilled` implements the perioperative PharmacyPort so the L2
- * discharge gate consumes real fulfilment. Every mutation is audited + emits a
- * domain event.
+ * @oxford/pharmacy (ADR-0069 — supersedes the dispensing model of ADR-0066). Two
+ * distinct flows:
+ *
+ *   (1) PRESCRIPTIONS (external fulfilment, NO clinic stock movement): a clinician
+ *       raises a FORMULARY-ONLY prescription (allergy screened, advisory) →
+ *       `issuePrescription` marks it issued (the printed script is the instrument) →
+ *       `recordExternalFulfilment` is the audited handover confirmation recorded by
+ *       ward/reception staff when the EXTERNAL Ground-floor pharmacy has supplied.
+ *       `isPrescriptionFulfilled` implements the perioperative PharmacyPort so the L2
+ *       discharge gate consumes the confirmation state. The queue read is the ward's
+ *       outstanding-scripts tracker. No inventory or controlled-register writes.
+ *
+ *   (2) THEATRE DRUG ADMINISTRATION (the clinic's real in-house stock): the
+ *       anaesthetic + controlled drugs used on L1 — `administerTheatreDrugs`
+ *       decrements theatre stock (FEFO/lot via the inventory seam), requires a
+ *       witness and posts witnessed movements to the controlled-drugs register for
+ *       controlled items, and asserts cold-chain. Drugs validate against the
+ *       COMPOSITE formulary (anaesthesia + stim).
+ *
+ * Every mutation is audited + emits a domain event.
  */
 export class PharmacyService {
   constructor(
     private readonly store: PharmacyStore,
+    /** Prescription formulary (stim-only source). */
     private readonly formulary: FormularyPort,
+    /** Theatre-administration formulary (composite: anaesthesia + stim). */
+    private readonly theatreFormulary: FormularyPort,
     private readonly allergy: AllergyPort,
     private readonly inventory: InventoryPort,
     private readonly controlled: ControlledRegisterPort,
@@ -71,12 +96,12 @@ export class PharmacyService {
     private readonly config: PharmacyConfig,
   ) {}
 
-  // ── Prescription (formulary-only, allergy advisory) ─────────────────────────
+  // ── Prescription (formulary-only, allergy advisory, external fulfilment) ─────
 
   /** Raise a prescription. Every item MUST validate against the formulary — a
    *  non-formulary drug is rejected (there is no free-text item shape). The
    *  patient's allergies are screened at prescribe time (ADVISORY — never blocks;
-   *  ADR-0060): matches are recorded on the prescription. */
+   *  ADR-0060): matches are recorded on the prescription. Status starts `pending`. */
   async raisePrescription(actorId: string, input: RaisePrescriptionInput): Promise<Result<Prescription, AppError>> {
     const valid = validatePrescriptionItems(input.items);
     if (!valid.ok) return err(valid.error);
@@ -113,6 +138,8 @@ export class PharmacyService {
       items,
       status: "pending",
       allergyWarnings: warnings,
+      externalRef: null,
+      fulfilmentNote: null,
       cancelReason: null,
       raisedAt: now,
       updatedAt: now,
@@ -134,7 +161,7 @@ export class PharmacyService {
 
   // ── Queue reads ─────────────────────────────────────────────────────────────
 
-  /** The dispensing queue (oldest first), optionally filtered to one status. */
+  /** The ward's outstanding-scripts queue (oldest first), optionally filtered. */
   queue(status?: PrescriptionStatus): Promise<readonly Prescription[]> {
     return this.store.listPrescriptions(status);
   }
@@ -142,106 +169,32 @@ export class PharmacyService {
     return this.store.getPrescription(asId<"Prescription">(prescriptionId));
   }
 
-  // ── Dispense (FEFO stock decrement; cold-chain + controlled) ────────────────
+  // ── Prescription status transitions (issue / fulfil / cancel) ───────────────
 
-  /** Dispense a pending prescription: FEFO-decrement stock through the inventory
-   *  seam, record lot allocations, post controlled items to the register (a
-   *  witnessed movement), and advance the status to `dispensing`. Insufficient
-   *  stock leaves the prescription pending (typed domain error, no partial issue). */
-  async dispense(actorId: string, input: DispenseInput): Promise<Result<Dispense, AppError>> {
+  /** Mark a pending prescription ISSUED — the printed script (print.prescription)
+   *  is the instrument handed to the patient / external pharmacy. No stock moves. */
+  issuePrescription(actorId: string, prescriptionId: string): Promise<Result<Prescription, AppError>> {
+    return this.advance(actorId, prescriptionId, "issue", "PrescriptionIssued");
+  }
+
+  /** Record the EXTERNAL pharmacy's fulfilment — the audited handover confirmation
+   *  recorded by ward/reception staff when the external pharmacy has supplied.
+   *  NO inventory writes, NO controlled-register writes, NO cold-chain assertion. */
+  async recordExternalFulfilment(actorId: string, input: RecordExternalFulfilmentInput): Promise<Result<Prescription, AppError>> {
     const prescription = await this.store.getPrescription(asId<"Prescription">(input.prescriptionId));
     if (prescription === null) return err(notFound("prescription not found", "pharmacy.rx.not_found"));
-
-    const transition = nextStatus(prescription.status, "dispense");
+    const transition = nextStatus(prescription.status, "fulfil");
     if (!transition.ok) return err(transition.error);
-
-    const coldChainHandled = input.coldChainHandled ?? false;
-    const cold = assertColdChainHandled(prescription.items, coldChainHandled);
-    if (!cold.ok) return err(cold.error);
-    const witness = assertWitnessForControlled(prescription.items, input.witnessStaffId);
-    if (!witness.ok) return err(witness.error);
-
-    const locationId = input.locationId ?? this.config.pharmacyLocationId;
-    const at = input.dispensedAt ?? this.now();
-
-    const allocated = await this.allocate(actorId, prescription.items, input.allocations, locationId);
-    if (!allocated.ok) return err(allocated.error); // stays pending on any stock error
-
-    // Controlled items → a witnessed issue movement to the controlled-drugs
-    // register, per consumed lot (the witness is guaranteed present above).
-    for (const item of controlledItems(prescription.items)) {
-      for (const alloc of allocated.value.filter((a) => a.drugId === item.drugId)) {
-        const posted = await this.controlled.postIssue(actorId, {
-          drugId: item.drugId,
-          lotNo: alloc.lotNo,
-          quantity: alloc.quantity,
-          patientRef: prescription.patientId,
-          witnessStaffId: input.witnessStaffId!,
-          occurredAt: at,
-        });
-        if (!posted.ok) return err(posted.error);
-      }
-    }
-
-    const dispense: Dispense = {
-      id: newId<"Dispense">(),
-      prescriptionId: prescription.id,
-      dispensedBy: actorId,
-      allocations: allocated.value,
-      coldChainHandled,
-      witnessStaffId: input.witnessStaffId ?? null,
-      dispensedAt: at,
-    };
-    const updated: Prescription = { ...prescription, status: transition.value, updatedAt: at };
-    await this.store.saveDispense(dispense);
+    const externalRef = input.externalRef?.trim() ? input.externalRef.trim() : null;
+    const fulfilmentNote = input.note?.trim() ? input.note.trim() : null;
+    const updated: Prescription = { ...prescription, status: transition.value, externalRef, fulfilmentNote, updatedAt: this.now() };
     await this.store.savePrescription(updated);
-    await this.audit.record({ actorId, entityType: "Prescription", entityId: prescription.id, action: "UPDATE", before: { status: prescription.status }, after: { status: transition.value, dispenseId: dispense.id, allocations: allocated.value } });
-    await this.events.emit({ type: "PrescriptionDispensed", aggregateType: "Prescription", aggregateId: prescription.id, data: { patientId: prescription.patientId, dispenseId: dispense.id } });
-    return ok(dispense);
+    await this.audit.record({ actorId, entityType: "Prescription", entityId: prescription.id, action: "UPDATE", before: { status: prescription.status }, after: { status: transition.value, externalRef, fulfilmentNote } });
+    await this.events.emit({ type: "PrescriptionFulfilled", aggregateType: "Prescription", aggregateId: prescription.id, data: { patientId: prescription.patientId, encounterId: prescription.encounterId, externalRef } });
+    return ok(updated);
   }
 
-  /** Resolve the lots to consume: a caller-chosen override (validated + deducted
-   *  exactly), or an automatic FEFO issue per item (pre-flight sufficiency first
-   *  so a shortfall never partially decrements). */
-  private async allocate(
-    actorId: string,
-    items: readonly PrescriptionItem[],
-    manual: readonly DispenseAllocation[] | undefined,
-    locationId: string,
-  ): Promise<Result<readonly DispenseAllocation[], AppError>> {
-    if (manual !== undefined) {
-      const cover = assertAllocationsCoverItems(items, manual);
-      if (!cover.ok) return err(cover.error);
-      const deducted = await this.inventory.deductLots(actorId, manual);
-      if (!deducted.ok) return err(deducted.error);
-      return ok([...manual]);
-    }
-    const availableByDrug = new Map<string, number>();
-    for (const item of items) availableByDrug.set(item.drugId, await this.inventory.availableAt(item.drugId, locationId));
-    const sufficient = assertSufficientStock(items, availableByDrug);
-    if (!sufficient.ok) return err(sufficient.error);
-    const allocations: DispenseAllocation[] = [];
-    for (const item of items) {
-      const issued = await this.inventory.issueFefo(actorId, item.drugId, locationId, item.quantity);
-      if (!issued.ok) return err(issued.error);
-      allocations.push(...issued.value);
-    }
-    return ok(allocations);
-  }
-
-  // ── Status transitions (ready / collected / cancel) ─────────────────────────
-
-  /** Mark a dispensing prescription READY for collection (the discharge gate
-   *  consumes ready-or-collected). */
-  markReady(actorId: string, prescriptionId: string): Promise<Result<Prescription, AppError>> {
-    return this.advance(actorId, prescriptionId, "ready", "PrescriptionReady");
-  }
-  /** Close the loop: the patient has collected the prescription. */
-  markCollected(actorId: string, prescriptionId: string): Promise<Result<Prescription, AppError>> {
-    return this.advance(actorId, prescriptionId, "collected", "PrescriptionCollected");
-  }
-
-  /** Cancel a pending (not-yet-dispensed) prescription with a reason. */
+  /** Cancel a prescription pre-fulfilment (pending or issued) with a reason. */
   async cancel(actorId: string, prescriptionId: string, reason: string): Promise<Result<Prescription, AppError>> {
     if (reason.trim() === "") return err(validationError("a cancellation reason is required", "pharmacy.cancel.reason_required"));
     const prescription = await this.store.getPrescription(asId<"Prescription">(prescriptionId));
@@ -257,14 +210,102 @@ export class PharmacyService {
 
   // ── PharmacyPort (the L2 discharge gate) ────────────────────────────────────
 
-  /** Has the discharge prescription for an encounter been fulfilled? True when at
-   *  least one prescription is linked to the encounter AND every one of them is
-   *  ready-or-collected. No prescription ⇒ false (mirrors the stub's semantics so
-   *  the existing discharge e2e holds). */
+  /** Has the discharge prescription for an encounter been fulfilled by the external
+   *  pharmacy? True when at least one prescription is linked to the encounter AND
+   *  every one of them is `fulfilled`. No prescription ⇒ false (mirrors the stub's
+   *  semantics so the existing discharge e2e holds). */
   async isPrescriptionFulfilled(encounterId: string): Promise<boolean> {
     const list = await this.store.prescriptionsForEncounter(encounterId);
     if (list.length === 0) return false;
-    return list.every((p) => p.status === "ready" || p.status === "collected");
+    return list.every((p) => p.status === "fulfilled");
+  }
+
+  // ── Theatre drug administration (in-house stock: FEFO + controlled + cold-chain) ─
+
+  /** Administer the clinic's own in-house theatre drugs (anaesthetic + controlled,
+   *  L1): validate each drug against the COMPOSITE formulary, FEFO-decrement theatre
+   *  stock through the inventory seam (recording lot allocations), REQUIRE a witness
+   *  when any drug is controlled (posting witnessed issue movements to the
+   *  controlled-drugs register), and enforce the cold-chain assertion for cold-chain
+   *  items. Insufficient stock leaves no partial decrement (typed domain error). */
+  async administerTheatreDrugs(actorId: string, input: AdministerTheatreDrugsInput): Promise<Result<TheatreDrugAdministration, AppError>> {
+    const valid = validateTheatreDrugs(input.drugs);
+    if (!valid.ok) return err(valid.error);
+
+    const items: TheatreDrugItem[] = [];
+    for (const d of input.drugs) {
+      if (!(await this.theatreFormulary.isPrescribable(d.drugId))) {
+        return err(validationError("drug is not in the formulary", "pharmacy.admin.not_in_formulary"));
+      }
+      const info = await this.theatreFormulary.drugInfo(d.drugId);
+      if (info === null) {
+        return err(validationError("drug is not in the formulary", "pharmacy.admin.not_in_formulary"));
+      }
+      items.push({
+        drugId: d.drugId,
+        quantity: d.quantity,
+        nameEn: info.nameEn,
+        nameAr: info.nameAr,
+        drugClass: info.drugClass,
+        controlled: info.controlled ?? false,
+        coldChain: info.coldChain ?? false,
+      });
+    }
+
+    const coldChainHandled = input.coldChainHandled ?? false;
+    const cold = assertColdChainHandled(items, coldChainHandled);
+    if (!cold.ok) return err(cold.error);
+    const witness = assertWitnessForControlled(items, input.witnessStaffId);
+    if (!witness.ok) return err(witness.error);
+
+    const locationId = input.locationId ?? this.config.theatreStockLocationId;
+    const at = input.administeredAt ?? this.now();
+
+    // Pre-flight sufficiency so a shortfall never partially decrements stock.
+    const availableByDrug = new Map<string, number>();
+    for (const item of items) availableByDrug.set(item.drugId, await this.inventory.availableAt(item.drugId, locationId));
+    const sufficient = assertSufficientStock(items, availableByDrug);
+    if (!sufficient.ok) return err(sufficient.error);
+
+    const allocations: StockAllocation[] = [];
+    for (const item of items) {
+      const issued = await this.inventory.issueFefo(actorId, item.drugId, locationId, item.quantity);
+      if (!issued.ok) return err(issued.error);
+      allocations.push(...issued.value);
+    }
+
+    // Controlled items → a witnessed issue movement to the controlled-drugs
+    // register, per consumed lot (the witness is guaranteed present above).
+    for (const item of controlledDrugItems(items)) {
+      for (const alloc of allocations.filter((a) => a.drugId === item.drugId)) {
+        const posted = await this.controlled.postIssue(actorId, {
+          drugId: item.drugId,
+          lotNo: alloc.lotNo,
+          quantity: alloc.quantity,
+          patientRef: input.patientId,
+          witnessStaffId: input.witnessStaffId!,
+          occurredAt: at,
+        });
+        if (!posted.ok) return err(posted.error);
+      }
+    }
+
+    const administration: TheatreDrugAdministration = {
+      id: newId<"TheatreDrugAdministration">(),
+      encounterId: input.encounterId,
+      patientId: input.patientId,
+      administeredBy: actorId,
+      items,
+      allocations,
+      coldChainHandled,
+      witnessStaffId: input.witnessStaffId ?? null,
+      locationId,
+      administeredAt: at,
+    };
+    await this.store.saveTheatreAdministration(administration);
+    await this.audit.record({ actorId, entityType: "TheatreDrugAdministration", entityId: administration.id, action: "CREATE", after: { encounterId: input.encounterId, patientId: input.patientId, items: items.map((i) => ({ drugId: i.drugId, quantity: i.quantity })), allocations } });
+    await this.events.emit({ type: "TheatreDrugsAdministered", aggregateType: "TheatreDrugAdministration", aggregateId: administration.id, data: { encounterId: input.encounterId, patientId: input.patientId } });
+    return ok(administration);
   }
 
   // ── internals ────────────────────────────────────────────────────────────────

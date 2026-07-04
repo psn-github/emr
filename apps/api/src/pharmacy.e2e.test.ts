@@ -1,10 +1,15 @@
-// e2e — Ground-floor pharmacy dispensing THROUGH the tRPC API on real Postgres
-// (docs/PHASE8_PLAN §8.1, ADR-0066). Proves the whole ward→pharmacy→door loop:
-// formulary-only rejection → raise (allergy advisory recorded, not blocked) →
-// Ground queue → dispense decrements the REAL inventory lot (FEFO: earlier expiry
-// first) → controlled item needs a witness + posts to the controlled register →
-// cold-chain needs the explicit flag → markReady → the L2 discharge gate passes
-// on REAL fulfilment (no dev stub) → RBAC → audit hash-chain intact.
+// e2e — pharmacy THROUGH the tRPC API on real Postgres (docs/PHASE8_PLAN §8.1,
+// ADR-0069 — supersedes the dispensing model of ADR-0066). The Ground-floor pharmacy
+// is EXTERNAL. Proves BOTH loops end-to-end:
+//   (a) PRESCRIPTION (external fulfilment): a discharge script raised on L2 → issued
+//       → discharge BLOCKED → external fulfilment recorded → discharge gate passes.
+//       Asserts the prescription path performs NO inventory decrement and NO
+//       controlled-register movement.
+//   (b) THEATRE DRUG ADMINISTRATION (in-house stock): a controlled anaesthetic with a
+//       witness → theatre stock decremented FEFO + a witnessed controlled-register
+//       movement present + the register reconciles; missing witness REJECTED;
+//       cold-chain unasserted REJECTED.
+// Plus formulary-only rejection, RBAC deny, and audit hash-chain intact.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { seedFacility } from "@oxford/facility";
 import { WHO_REQUIRED_ITEMS } from "@oxford/perioperative";
@@ -36,7 +41,7 @@ const reception: Session = {
   mfa: false,
 };
 
-const LOC = "pharmacy-ground";
+const THEATRE = "theatre-l1";
 const dose = { en: "225 IU daily", ar: "225 وحدة يومياً" };
 
 async function expectCode(fn: () => Promise<unknown>, code: string): Promise<void> {
@@ -48,7 +53,7 @@ async function expectCode(fn: () => Promise<unknown>, code: string): Promise<voi
   }
 }
 
-describe.skipIf(!DATABASE_URL)("Ground-floor pharmacy dispensing (e2e via the API + real Postgres)", () => {
+describe.skipIf(!DATABASE_URL)("Pharmacy: external prescriptions + theatre drugs (e2e via the API + real Postgres)", () => {
   const pool = createPool(DATABASE_URL!);
   let services: ReturnType<typeof buildServices>;
   let doc: ReturnType<typeof appRouter.createCaller>;
@@ -60,7 +65,7 @@ describe.skipIf(!DATABASE_URL)("Ground-floor pharmacy dispensing (e2e via the AP
   });
   beforeEach(async () => {
     await pool.query(
-      "TRUNCATE pharmacy.prescription, pharmacy.dispense, inventory.supplier, inventory.catalogue_item, inventory.stock_lot, inventory.cd_movement, clinical.drug_allergy, facility.floor, facility.location_node, facility.bed, facility.patient_location, facility.location_movement, perioperative.surgical_encounter, perioperative.who_checklist, perioperative.observation, perioperative.follow_up, registry.person, audit.audit_log",
+      "TRUNCATE pharmacy.prescription, pharmacy.theatre_drug_administration, inventory.supplier, inventory.catalogue_item, inventory.stock_lot, inventory.cd_movement, clinical.drug_allergy, facility.floor, facility.location_node, facility.bed, facility.patient_location, facility.location_movement, perioperative.surgical_encounter, perioperative.who_checklist, perioperative.observation, perioperative.follow_up, registry.person, audit.audit_log",
     );
     services = buildServices(pool);
     await seedFacility(services.facility);
@@ -79,83 +84,40 @@ describe.skipIf(!DATABASE_URL)("Ground-floor pharmacy dispensing (e2e via the AP
     );
   });
 
-  it("raises with an allergy advisory (not blocked), queues, FEFO-dispenses the real lot, markReady", async () => {
+  it("raises with an allergy advisory (not blocked), then issue → external fulfilment", async () => {
     const patientId = "pat-1";
-    // A coded drug-class allergy (the existing clinical allergy surface, ADR-0060).
     await doc.clinical.recordAllergy({ patientId, drugClass: "gonadotropin_fsh", substance: { en: "Recombinant FSH", ar: "FSH" }, severity: "severe", reaction: "urticaria" });
-
-    // Seed two rFSH lots at the Ground pharmacy (later + earlier expiry) via the
-    // inventory router — FEFO must consume the earlier-expiry lot first.
-    await ops.inventory.receiveStock({ itemId: "rfsh", lotNo: "RFSH-LATE", locationId: LOC, quantity: 5, expiryDate: "2028-01-01", receivedAt: "2026-07-01T08:00:00Z" });
-    await ops.inventory.receiveStock({ itemId: "rfsh", lotNo: "RFSH-EARLY", locationId: LOC, quantity: 1, expiryDate: "2027-01-01", receivedAt: "2026-07-01T08:00:00Z" });
-    expect((await ops.inventory.onHand({ itemId: "rfsh" })).onHand).toBe(6);
 
     const raised = await doc.pharmacy.raisePrescription({ patientId, items: [{ drugId: "rfsh", quantity: 2, doseInstruction: dose }] });
     expect(raised.status).toBe("pending");
     expect(raised.allergyWarnings).toEqual([{ drugId: "rfsh", drugClass: "gonadotropin_fsh" }]); // advisory, still raised
 
-    // Appears in the Ground pharmacy queue (pending).
+    // Appears in the ward's outstanding-scripts queue (pending).
     const queue = await phm.pharmacy.queue({ status: "pending" });
     expect(queue.prescriptions.map((p) => p.id)).toContain(raised.prescriptionId);
 
-    // Dispense: FEFO consumes RFSH-EARLY (1) then RFSH-LATE (1); real stock drops.
-    const d = await phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId, coldChainHandled: false });
-    expect(d.allocations).toEqual([
-      { drugId: "rfsh", lotNo: "RFSH-EARLY", expiry: "2027-01-01", quantity: 1 },
-      { drugId: "rfsh", lotNo: "RFSH-LATE", expiry: "2028-01-01", quantity: 1 },
-    ]);
-    expect((await ops.inventory.onHand({ itemId: "rfsh" })).onHand).toBe(4);
-    expect((await phm.pharmacy.get({ prescriptionId: raised.prescriptionId })).status).toBe("dispensing");
-
-    const ready = await phm.pharmacy.markReady({ prescriptionId: raised.prescriptionId });
-    expect(ready.status).toBe("ready");
+    expect((await phm.pharmacy.issue({ prescriptionId: raised.prescriptionId })).status).toBe("issued");
+    const fulfilled = await phm.pharmacy.recordExternalFulfilment({ prescriptionId: raised.prescriptionId, externalRef: "GRD-42", note: "handed over" });
+    expect(fulfilled.status).toBe("fulfilled");
+    expect(fulfilled.externalRef).toBe("GRD-42");
 
     const integrity = await services.audit.verifyIntegrity();
     expect(integrity.ok).toBe(true);
   });
 
-  it("a controlled item requires a witness and posts a witnessed movement to the register", async () => {
-    // A controlled formulary drug: seed a catalogue item sharing the drug's
-    // formulary code, flagged controlled (the catalogue is the controlled/cold-
-    // chain source; the formulary code is the shared join key).
+  it("(a) discharge script: raise → issue → discharge BLOCKED → external fulfilment → discharge passes; NO stock/register writes", async () => {
+    // A controlled catalogue item sharing a stim-formulary code — so if the
+    // prescription path wrongly posted to the register, the balance would move.
     await services.catalogue.addItem("stores-1", { id: "hcg_trigger", name: "hCG trigger", category: "drug", unit: "mcg", packSize: 1, coldChain: false, controlled: true, parLevel: 5 });
-    await ops.inventory.receiveStock({ itemId: "hcg_trigger", lotNo: "CD-1", locationId: LOC, quantity: 4, expiryDate: "2027-06-01", receivedAt: "2026-07-01T08:00:00Z" });
-    // The controlled-drugs register (witnessed) books the receipt into stock.
-    await doc.controlledDrugs.record({ itemId: "hcg_trigger", lotNo: "CD-1", type: "receipt", quantity: 4, reason: "stock receipt", witnessedBy: "phm-2", occurredAt: "2026-07-01T08:00:00Z" });
+    await ops.inventory.receiveStock({ itemId: "hcg_trigger", lotNo: "CD-1", locationId: THEATRE, quantity: 4, expiryDate: "2027-06-01", receivedAt: "2026-06-22T08:00:00Z" });
+    await doc.controlledDrugs.record({ itemId: "hcg_trigger", lotNo: "CD-1", type: "receipt", quantity: 4, reason: "stock receipt", witnessedBy: "phm-2", occurredAt: "2026-06-22T08:00:00Z" });
+    // Some plain stock too — its on-hand must be untouched by the prescription path.
+    await ops.inventory.receiveStock({ itemId: "rfsh", lotNo: "DIS-1", locationId: THEATRE, quantity: 10, expiryDate: "2028-01-01", receivedAt: "2026-06-22T08:00:00Z" });
+    const cdBalanceBefore = (await doc.controlledDrugs.balance({ itemId: "hcg_trigger" })).balance;
+    const rfshBefore = (await ops.inventory.onHand({ itemId: "rfsh" })).onHand;
 
-    const raised = await doc.pharmacy.raisePrescription({ patientId: "pat-2", items: [{ drugId: "hcg_trigger", quantity: 2, doseInstruction: { en: "250 mcg once", ar: "250 مرة واحدة" } }] });
-
-    // Without a witness → rejected (controlled two-person rule).
-    await expectCode(() => phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId }), "BAD_REQUEST");
-
-    // With a second-person witness → dispensed, and the register carries the issue.
-    await phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId, witnessStaffId: "phm-2" });
-    const report = await doc.controlledDrugs.periodReport({ itemId: "hcg_trigger", from: "2026-01-01T00:00:00Z", to: "2027-12-31T00:00:00Z" });
-    expect(report.movements.some((m) => m.type === "issue" && m.quantity === 2 && m.witnessedBy === "phm-2" && m.patientRef === "pat-2")).toBe(true);
-    expect((await doc.controlledDrugs.balance({ itemId: "hcg_trigger" })).balance).toBe(2); // 4 received − 2 dispensed
-  });
-
-  it("a cold-chain item requires the explicit cold-chain-handled flag", async () => {
-    await services.catalogue.addItem("stores-1", { id: "progesterone", name: "Progesterone", category: "drug", unit: "mg", packSize: 1, coldChain: true, controlled: false, parLevel: 5 });
-    await ops.inventory.receiveStock({ itemId: "progesterone", lotNo: "PROG-1", locationId: LOC, quantity: 10, expiryDate: "2027-06-01", receivedAt: "2026-07-01T08:00:00Z" });
-    const raised = await doc.pharmacy.raisePrescription({ patientId: "pat-3", items: [{ drugId: "progesterone", quantity: 1, doseInstruction: { en: "400 mg", ar: "400 ملغ" } }] });
-
-    await expectCode(() => phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId }), "BAD_REQUEST"); // no cold-chain flag
-    const d = await phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId, coldChainHandled: true });
-    expect(d.allocations[0]).toMatchObject({ drugId: "progesterone", lotNo: "PROG-1", quantity: 1 });
-  });
-
-  it("insufficient stock leaves the prescription pending (PRECONDITION_FAILED)", async () => {
-    await ops.inventory.receiveStock({ itemId: "rfsh", lotNo: "L1", locationId: LOC, quantity: 1, expiryDate: "2027-01-01", receivedAt: "2026-07-01T08:00:00Z" });
-    const raised = await doc.pharmacy.raisePrescription({ patientId: "pat-4", items: [{ drugId: "rfsh", quantity: 5, doseInstruction: dose }] });
-    await expectCode(() => phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId }), "PRECONDITION_FAILED");
-    expect((await phm.pharmacy.get({ prescriptionId: raised.prescriptionId })).status).toBe("pending");
-    expect((await ops.inventory.onHand({ itemId: "rfsh" })).onHand).toBe(1); // untouched
-  });
-
-  it("the L2 discharge gate passes on REAL pharmacy fulfilment (no dev stub)", async () => {
     // Drive the perioperative journey to the post-op ward (mirrors discharge.e2e,
-    // but WITHOUT services.pharmacyStub.markFulfilled).
+    // WITHOUT services.pharmacyStub.markFulfilled — real fulfilment only).
     const p = await doc.registry.registerPerson({ name: { ar: "م", en: "P" }, civilId: "290010140777", dob: "1990-01-01", sex: "female", nationality: "KW", languagePref: "ar" });
     const { encounterId } = await doc.perioperative.admit({ patientId: p.personId, indication: "oocyte retrieval", admittedAt: "2026-06-22T08:00:00Z" });
     await doc.perioperative.advance({ encounterId, toStage: "ward_bed" });
@@ -168,31 +130,87 @@ describe.skipIf(!DATABASE_URL)("Ground-floor pharmacy dispensing (e2e via the AP
     await doc.perioperative.recordObservation({ encounterId, phase: "recovery", aldreteScore: 9, systolicBp: 120, heartRate: 70, spo2: 98, recordedAt: "2026-06-22T10:00:00Z" });
     await doc.perioperative.advance({ encounterId, toStage: "post_op_ward" });
 
-    // A discharge prescription linked to the encounter — pending → blocks discharge.
-    await ops.inventory.receiveStock({ itemId: "rfsh", lotNo: "DIS-1", locationId: LOC, quantity: 10, expiryDate: "2028-01-01", receivedAt: "2026-06-22T08:00:00Z" });
-    const raised = await doc.pharmacy.raisePrescription({ patientId: p.personId, encounterId, items: [{ drugId: "rfsh", quantity: 2, doseInstruction: dose }] });
+    // A discharge prescription linked to the encounter (a controlled + a plain drug).
+    const raised = await doc.pharmacy.raisePrescription({ patientId: p.personId, encounterId, items: [{ drugId: "rfsh", quantity: 2, doseInstruction: dose }, { drugId: "hcg_trigger", quantity: 1, doseInstruction: { en: "250 mcg once", ar: "250 مرة واحدة" } }] });
     await doc.perioperative.bookFollowUp({ encounterId, scheduledFor: "2026-07-05T09:00:00Z", bookedAt: "2026-06-22T11:00:00Z" });
 
-    // Follow-up booked but the script is not ready → still blocked (real fulfilment).
+    // Pending → discharge blocked even with the follow-up booked (real fulfilment).
     await expectCode(() => doc.perioperative.advance({ encounterId, toStage: "discharged" }), "PRECONDITION_FAILED");
 
-    await phm.pharmacy.dispense({ prescriptionId: raised.prescriptionId });
-    await expectCode(() => doc.perioperative.advance({ encounterId, toStage: "discharged" }), "PRECONDITION_FAILED"); // dispensing, not yet ready
-    await phm.pharmacy.markReady({ prescriptionId: raised.prescriptionId });
+    // Issued (printed/handed over) → still blocked (not yet confirmed fulfilled).
+    await phm.pharmacy.issue({ prescriptionId: raised.prescriptionId });
+    await expectCode(() => doc.perioperative.advance({ encounterId, toStage: "discharged" }), "PRECONDITION_FAILED");
 
-    // Ready → the discharge gate now passes on REAL fulfilment; the L2 bed frees.
+    // External pharmacy confirms the handover → the discharge gate now passes.
+    await phm.pharmacy.recordExternalFulfilment({ prescriptionId: raised.prescriptionId, externalRef: "GRD-9" });
     const discharged = await doc.perioperative.advance({ encounterId, toStage: "discharged" });
     expect(discharged.stage).toBe("discharged");
     const l2 = (await services.flow.board()).capacity.find((c) => c.level === "L2")!;
     expect(l2.occupied).toBe(0);
 
+    // The prescription path moved NO clinic stock and posted NO register movement.
+    expect((await ops.inventory.onHand({ itemId: "rfsh" })).onHand).toBe(rfshBefore); // 10, untouched
+    expect((await doc.controlledDrugs.balance({ itemId: "hcg_trigger" })).balance).toBe(cdBalanceBefore); // 4, no issue posted
+
     const integrity = await services.audit.verifyIntegrity();
     expect(integrity.ok).toBe(true);
   });
 
-  it("RBAC: reception FORBIDDEN on dispense; pharmacist FORBIDDEN on raisePrescription", async () => {
+  it("(b) theatre administration of a controlled anaesthetic (witnessed) decrements FEFO + posts a witnessed register movement that reconciles", async () => {
+    // A controlled anaesthetic — the code is in the anaesthesia formulary; the
+    // catalogue item (shared code) flags it controlled and is the register's item.
+    await services.catalogue.addItem("stores-1", { id: "fentanyl", name: "Fentanyl", category: "drug", unit: "mcg", packSize: 1, coldChain: false, controlled: true, parLevel: 5 });
+    // Two theatre lots (earlier + later expiry) — FEFO must take the earlier first.
+    await ops.inventory.receiveStock({ itemId: "fentanyl", lotNo: "FEN-LATE", locationId: THEATRE, quantity: 3, expiryDate: "2028-01-01", receivedAt: "2026-06-22T08:00:00Z" });
+    await ops.inventory.receiveStock({ itemId: "fentanyl", lotNo: "FEN-EARLY", locationId: THEATRE, quantity: 1, expiryDate: "2027-01-01", receivedAt: "2026-06-22T08:00:00Z" });
+    // The controlled-drugs register books the receipts (witnessed).
+    await doc.controlledDrugs.record({ itemId: "fentanyl", lotNo: "FEN-LATE", type: "receipt", quantity: 3, reason: "stock receipt", witnessedBy: "phm-2", occurredAt: "2026-06-22T08:00:00Z" });
+    await doc.controlledDrugs.record({ itemId: "fentanyl", lotNo: "FEN-EARLY", type: "receipt", quantity: 1, reason: "stock receipt", witnessedBy: "phm-2", occurredAt: "2026-06-22T08:00:00Z" });
+    expect((await ops.inventory.onHand({ itemId: "fentanyl" })).onHand).toBe(4);
+
+    const admin = await phm.pharmacy.administerTheatreDrugs({ encounterId: "enc-op", patientId: "pat-op", drugs: [{ drugId: "fentanyl", quantity: 2 }], witnessStaffId: "phm-2" });
+    // FEFO consumes FEN-EARLY (1) then FEN-LATE (1); theatre stock drops by 2.
+    expect(admin.allocations).toEqual([
+      { drugId: "fentanyl", lotNo: "FEN-EARLY", expiry: "2027-01-01", quantity: 1 },
+      { drugId: "fentanyl", lotNo: "FEN-LATE", expiry: "2028-01-01", quantity: 1 },
+    ]);
+    expect((await ops.inventory.onHand({ itemId: "fentanyl" })).onHand).toBe(2);
+
+    // A witnessed issue movement is present and the register reconciles (4 − 2 = 2).
+    const report = await doc.controlledDrugs.periodReport({ itemId: "fentanyl", from: "2026-01-01T00:00:00Z", to: "2027-12-31T00:00:00Z" });
+    expect(report.movements.some((m) => m.type === "issue" && m.quantity === 1 && m.witnessedBy === "phm-2" && m.patientRef === "pat-op")).toBe(true);
+    expect((await doc.controlledDrugs.balance({ itemId: "fentanyl" })).balance).toBe(2);
+
+    const integrity = await services.audit.verifyIntegrity();
+    expect(integrity.ok).toBe(true);
+  });
+
+  it("(b) a controlled theatre drug WITHOUT a witness is rejected (no stock decrement)", async () => {
+    await services.catalogue.addItem("stores-1", { id: "fentanyl", name: "Fentanyl", category: "drug", unit: "mcg", packSize: 1, coldChain: false, controlled: true, parLevel: 5 });
+    await ops.inventory.receiveStock({ itemId: "fentanyl", lotNo: "FEN-1", locationId: THEATRE, quantity: 4, expiryDate: "2028-01-01", receivedAt: "2026-06-22T08:00:00Z" });
+    await expectCode(() => phm.pharmacy.administerTheatreDrugs({ encounterId: "enc-op", patientId: "pat-op", drugs: [{ drugId: "fentanyl", quantity: 2 }] }), "BAD_REQUEST");
+    expect((await ops.inventory.onHand({ itemId: "fentanyl" })).onHand).toBe(4); // untouched
+  });
+
+  it("(b) a cold-chain theatre drug with the cold-chain unasserted is rejected", async () => {
+    await services.catalogue.addItem("stores-1", { id: "sevoflurane", name: "Sevoflurane", category: "drug", unit: "ml", packSize: 1, coldChain: true, controlled: false, parLevel: 5 });
+    await ops.inventory.receiveStock({ itemId: "sevoflurane", lotNo: "SEV-1", locationId: THEATRE, quantity: 10, expiryDate: "2028-01-01", receivedAt: "2026-06-22T08:00:00Z" });
+    await expectCode(() => phm.pharmacy.administerTheatreDrugs({ encounterId: "enc-op", patientId: "pat-op", drugs: [{ drugId: "sevoflurane", quantity: 1 }] }), "BAD_REQUEST");
+    const admin = await phm.pharmacy.administerTheatreDrugs({ encounterId: "enc-op", patientId: "pat-op", drugs: [{ drugId: "sevoflurane", quantity: 1 }], coldChainHandled: true });
+    expect(admin.allocations[0]).toMatchObject({ drugId: "sevoflurane", lotNo: "SEV-1", quantity: 1 });
+  });
+
+  it("theatre administration on insufficient stock leaves no decrement (PRECONDITION_FAILED)", async () => {
+    await services.catalogue.addItem("stores-1", { id: "propofol", name: "Propofol", category: "drug", unit: "mg", packSize: 1, coldChain: false, controlled: false, parLevel: 5 });
+    await ops.inventory.receiveStock({ itemId: "propofol", lotNo: "P-1", locationId: THEATRE, quantity: 1, expiryDate: "2028-01-01", receivedAt: "2026-06-22T08:00:00Z" });
+    await expectCode(() => phm.pharmacy.administerTheatreDrugs({ encounterId: "enc-op", patientId: "pat-op", drugs: [{ drugId: "propofol", quantity: 5 }] }), "PRECONDITION_FAILED");
+    expect((await ops.inventory.onHand({ itemId: "propofol" })).onHand).toBe(1); // untouched
+  });
+
+  it("RBAC: reception FORBIDDEN on the pharmacy write surface; pharmacist FORBIDDEN on raisePrescription", async () => {
     const rec = appRouter.createCaller({ session: reception, patient: null, services });
-    await expectCode(() => rec.pharmacy.dispense({ prescriptionId: "x" }), "FORBIDDEN");
+    await expectCode(() => rec.pharmacy.recordExternalFulfilment({ prescriptionId: "x" }), "FORBIDDEN");
+    await expectCode(() => rec.pharmacy.administerTheatreDrugs({ encounterId: "e", patientId: "p", drugs: [] }), "FORBIDDEN");
     await expectCode(() => rec.pharmacy.queue({}), "FORBIDDEN");
     await expectCode(() => phm.pharmacy.raisePrescription({ patientId: "p", items: [{ drugId: "rfsh", quantity: 1, doseInstruction: dose }] }), "FORBIDDEN");
   });

@@ -10,7 +10,7 @@ import {
   thermalZpl,
 } from "@oxford/records";
 import type { FileRef, LabelPatient, IdSheetOptions } from "@oxford/records";
-import type { DoseInstruction as PharmacyDose, DispenseAllocation as PharmacyAllocation, PrescriptionStatus as PharmacyStatus } from "@oxford/pharmacy";
+import type { DoseInstruction as PharmacyDose, TheatreDrugInput as PharmacyTheatreDrug, PrescriptionStatus as PharmacyStatus } from "@oxford/pharmacy";
 import type { LanguagePref, Sex } from "@oxford/registry";
 import type { EncounterType, OrderKind } from "@oxford/clinical";
 import type { InvoiceLine, PaymentMethod, PackageInput, ChargeSource } from "@oxford/billing";
@@ -1413,11 +1413,17 @@ export const appRouter = router({
       .query(({ input }) => ({ html: thermalLabel(input), zpl: thermalZpl(input) })),
   }),
 
-  // Ground-floor pharmacy dispensing (docs/PHASE8_PLAN §8.1, ADR-0066). A
-  // clinician raises a FORMULARY-ONLY prescription (clinical:prescription.write);
-  // the pharmacy queue/dispense surface is the pharmacist's (clinical:dispense.*).
-  // Fulfilment (markReady) feeds the L2 discharge gate via the composite
-  // PharmacyPort wired in context.ts.
+  // Pharmacy (docs/PHASE8_PLAN §8.1, ADR-0069 — supersedes the dispensing model of
+  // ADR-0066). The Ground-floor pharmacy is EXTERNAL. Two flows:
+  //   (1) PRESCRIPTIONS (external fulfilment, no clinic stock): a clinician raises a
+  //       FORMULARY-ONLY prescription (clinical:prescription.write) → issue (printed)
+  //       → recordExternalFulfilment (the audited handover confirmation) feeds the L2
+  //       discharge gate via the composite PharmacyPort. The queue is the ward's
+  //       outstanding-scripts tracker (clinical:dispense.read).
+  //   (2) THEATRE DRUG ADMINISTRATION (the clinic's in-house stock): administerTheatre
+  //       Drugs FEFO-decrements theatre stock + posts witnessed controlled movements.
+  // The ward/pharmacy write surface is clinical:dispense.write ("record external
+  // fulfilment / administer theatre drugs").
   pharmacy: router({
     raisePrescription: protectedProcedure("clinical:prescription.write")
       .input((v: unknown) => v as { patientId: string; encounterId?: string; items: { drugId: string; quantity: number; doseInstruction: PharmacyDose }[] })
@@ -1436,26 +1442,26 @@ export const appRouter = router({
         if (p === null) throw new TRPCError({ code: "NOT_FOUND", message: "prescription not found" });
         return p;
       }),
-    dispense: protectedProcedure("clinical:dispense.write")
-      .input((v: unknown) => v as { prescriptionId: string; locationId?: string; coldChainHandled?: boolean; witnessStaffId?: string; allocations?: PharmacyAllocation[]; dispensedAt?: string })
-      .mutation(async ({ ctx, input }) => {
-        const r = await ctx.services.pharmacy.dispense(ctx.session.subject.staffId, input);
-        if (!r.ok) throw pharmacyError(r.error);
-        return { dispenseId: r.value.id, allocations: r.value.allocations };
-      }),
-    markReady: protectedProcedure("clinical:dispense.write")
+    issue: protectedProcedure("clinical:dispense.write")
       .input((v: unknown) => v as { prescriptionId: string })
       .mutation(async ({ ctx, input }) => {
-        const r = await ctx.services.pharmacy.markReady(ctx.session.subject.staffId, input.prescriptionId);
+        const r = await ctx.services.pharmacy.issuePrescription(ctx.session.subject.staffId, input.prescriptionId);
         if (!r.ok) throw pharmacyError(r.error);
         return { status: r.value.status };
       }),
-    markCollected: protectedProcedure("clinical:dispense.write")
-      .input((v: unknown) => v as { prescriptionId: string })
+    recordExternalFulfilment: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { prescriptionId: string; externalRef?: string; note?: string })
       .mutation(async ({ ctx, input }) => {
-        const r = await ctx.services.pharmacy.markCollected(ctx.session.subject.staffId, input.prescriptionId);
+        const r = await ctx.services.pharmacy.recordExternalFulfilment(ctx.session.subject.staffId, input);
         if (!r.ok) throw pharmacyError(r.error);
-        return { status: r.value.status };
+        return { status: r.value.status, externalRef: r.value.externalRef };
+      }),
+    administerTheatreDrugs: protectedProcedure("clinical:dispense.write")
+      .input((v: unknown) => v as { encounterId: string; patientId: string; drugs: PharmacyTheatreDrug[]; witnessStaffId?: string; coldChainHandled?: boolean; locationId?: string; administeredAt?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.pharmacy.administerTheatreDrugs(ctx.session.subject.staffId, input);
+        if (!r.ok) throw pharmacyError(r.error);
+        return { administrationId: r.value.id, allocations: r.value.allocations };
       }),
     cancel: protectedProcedure("clinical:dispense.write")
       .input((v: unknown) => v as { prescriptionId: string; reason: string })

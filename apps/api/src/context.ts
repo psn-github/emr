@@ -44,6 +44,7 @@ import {
   type SchedulingPort,
   type PerioperativeBillingPort,
   type PharmacyPort,
+  ANAESTHESIA_FORMULARY,
 } from "@oxford/perioperative";
 import { CatalogueService, PgCatalogueStore, InventoryService, PgStockStore, ProcurementService, PgProcurementStore, ControlledDrugsService, PgControlledRegisterStore, DemandPlanningService, PgConsumptionProfileStore } from "@oxford/inventory";
 import { AssetService, PgAssetStore } from "@oxford/assets";
@@ -143,9 +144,11 @@ const PGT_PERMITTED_INDICATIONS: readonly string[] = [];
  *  reserving more than this is flagged (not blocked). Configuration, not code. */
 const L2_BED_CAPACITY = 6;
 
-/** The Ground-floor pharmacy's stock location — the dispensing seam issues from
- *  here by default (ADR-0066). Configuration, not code. */
-const PHARMACY_LOCATION_ID = "pharmacy-ground";
+/** The clinic's own in-house theatre stock location (ADR-0069). Theatre drug
+ *  administration (anaesthetic + controlled, L1) decrements stock from here by
+ *  default. The Ground-floor pharmacy is EXTERNAL — prescriptions never touch clinic
+ *  stock. Configuration, not code. */
+const THEATRE_STOCK_LOCATION_ID = "theatre-l1";
 
 /** Document blob store root — env-driven, defaulting to `<repo>/var/documents`
  *  locally (gitignored, OUTSIDE the deploy path like the DB — ADR-0067). The
@@ -380,13 +383,15 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
 
   const whoChecklist = new WhoChecklistService(new PgWhoChecklistStore(pool), audit, events);
 
-  // Ground-floor pharmacy dispensing (ADR-0066). A DOMAIN module wired here to
-  // three published-surface seams (module boundaries — pharmacy imports none of
-  // these): the FORMULARY (fertility's formulary is the only prescribable source;
-  // controlled/cold-chain come from the inventory catalogue by the shared drug
-  // code), the ALLERGY screen (clinical.allergicClasses; advisory only, ADR-0060),
-  // stock decrement (inventory's FEFO issue), and the CONTROLLED-DRUGS REGISTER
-  // (a controlled item's dispense posts a witnessed issue movement).
+  // Pharmacy (ADR-0069 — supersedes the dispensing model of ADR-0066). The
+  // Ground-floor pharmacy is EXTERNAL: the clinic ISSUES formulary-only prescriptions
+  // that the external pharmacy fulfils (no clinic stock movement). The clinic's own
+  // stock is the THEATRE anaesthetic + controlled drugs (L1), administered in theatre.
+  // A DOMAIN module wired here to published-surface seams (module boundaries —
+  // pharmacy imports none of these).
+  //
+  // PRESCRIPTION formulary — the stim formulary is the only prescribable source;
+  // controlled/cold-chain come from the inventory catalogue by the shared drug code.
   const pharmacyFormulary: FormularyPort = {
     async isPrescribable(drugId) {
       return formularyItem(drugId) !== null;
@@ -394,23 +399,50 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
     async drugInfo(drugId) {
       const f = formularyItem(drugId);
       if (f === null) return null;
-      // controlled/cold-chain are inventory-catalogue attributes; a catalogue item
-      // sharing the drug's formulary code carries them (absent ⇒ neither).
       const cat = await catalogue.item(asId<"CatalogueItem">(drugId));
       return { nameEn: f.name.en, nameAr: f.name.ar, drugClass: f.drugClass, controlled: cat?.controlled ?? false, coldChain: cat?.coldChain ?? false };
+    },
+  };
+  // THEATRE-ADMINISTRATION formulary — a COMPOSITE of perioperative's anaesthesia
+  // formulary PLUS the stim formulary (ADR-0069), composed here in the app layer from
+  // both packages' published exports. Anaesthesia entries carry code + unit only, so
+  // the name falls back to the catalogue item (or the code) and the class is
+  // "anaesthetic"; controlled/cold-chain resolve via the inventory-catalogue join, as
+  // for prescriptions.
+  const anaesthesiaByCode = new Map(ANAESTHESIA_FORMULARY.map((d) => [d.code, d]));
+  const theatreFormulary: FormularyPort = {
+    async isPrescribable(drugId) {
+      return formularyItem(drugId) !== null || anaesthesiaByCode.has(drugId);
+    },
+    async drugInfo(drugId) {
+      const cat = await catalogue.item(asId<"CatalogueItem">(drugId));
+      const controlled = cat?.controlled ?? false;
+      const coldChain = cat?.coldChain ?? false;
+      const stim = formularyItem(drugId);
+      if (stim !== null) {
+        return { nameEn: stim.name.en, nameAr: stim.name.ar, drugClass: stim.drugClass, controlled, coldChain };
+      }
+      const anae = anaesthesiaByCode.get(drugId);
+      if (anae !== undefined) {
+        const name = cat?.name ?? anae.code;
+        return { nameEn: name, nameAr: name, drugClass: "anaesthetic", controlled, coldChain };
+      }
+      return null;
     },
   };
   const pharmacyAllergy: PharmacyAllergyPort = {
     allergicClasses: (patientId) => clinical.allergicClasses(patientId),
   };
+  // Inventory seam — theatre administration FEFO-decrements clinic stock through the
+  // inventory module's published issue interface (prescriptions never touch it).
   const pharmacyInventory: PharmacyInventoryPort = {
     async availableAt(drugId, locationId) {
       const lots = await inventory.lotsForItem(drugId);
       return lots.filter((l) => l.locationId === locationId).reduce((s, l) => s + l.quantity, 0);
     },
     async issueFefo(actorId, drugId, locationId, quantity) {
-      // Read lots BEFORE issuing so FEFO-chosen lot ids resolve to lot/expiry for
-      // the dispense allocation record; inventory.issue does the FEFO decrement.
+      // Read lots BEFORE issuing so FEFO-chosen lot ids resolve to lot/expiry for the
+      // allocation record; inventory.issue does the FEFO decrement.
       const lotsBefore = await inventory.lotsForItem(drugId);
       const r = await inventory.issue(actorId, { itemId: drugId, locationId, quantity });
       if (!r.ok) return err(r.error);
@@ -420,10 +452,9 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       });
       return ok(allocations);
     },
-    async deductLots(actorId, allocations) {
-      return inventory.deduct(actorId, allocations.map((a) => ({ code: a.drugId, lotNo: a.lotNo, quantity: a.quantity })));
-    },
   };
+  // Controlled-drugs register — a controlled theatre drug's administration posts a
+  // witnessed issue movement.
   const pharmacyControlledRegister: ControlledRegisterPort = {
     async postIssue(actorId, input) {
       const r = await controlledDrugs.record(actorId, {
@@ -431,7 +462,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
         lotNo: input.lotNo,
         type: "issue",
         quantity: input.quantity,
-        reason: "pharmacy dispense",
+        reason: "theatre administration",
         patientRef: input.patientRef,
         witnessedBy: input.witnessStaffId,
         occurredAt: input.occurredAt,
@@ -439,7 +470,7 @@ export function buildServices(pool: pg.Pool, isProduction = false): Services {
       return r.ok ? ok(undefined) : err(r.error);
     },
   };
-  const pharmacy = new PharmacyService(new PgPharmacyStore(pool), pharmacyFormulary, pharmacyAllergy, pharmacyInventory, pharmacyControlledRegister, audit, events, clock, { pharmacyLocationId: PHARMACY_LOCATION_ID });
+  const pharmacy = new PharmacyService(new PgPharmacyStore(pool), pharmacyFormulary, theatreFormulary, pharmacyAllergy, pharmacyInventory, pharmacyControlledRegister, audit, events, clock, { theatreStockLocationId: THEATRE_STOCK_LOCATION_ID });
 
   // Recovery/post-op + the discharge gate (prescription fulfilled + follow-up).
   // The gate consumes a COMPOSITE PharmacyPort (ADR-0066): fulfilled if the dev

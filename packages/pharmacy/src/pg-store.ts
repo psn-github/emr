@@ -6,8 +6,9 @@ import type {
   PrescriptionStatus,
   PrescriptionItem,
   AllergyWarning,
-  Dispense,
-  DispenseAllocation,
+  TheatreDrugAdministration,
+  TheatreDrugItem,
+  StockAllocation,
 } from "./types.js";
 import type { PharmacyStore } from "./store.js";
 
@@ -18,10 +19,10 @@ export class PgPharmacyStore implements PharmacyStore {
 
   async savePrescription(p: Prescription): Promise<void> {
     await this.pool.query(
-      `INSERT INTO pharmacy.prescription (id, patient_id, encounter_id, prescriber_id, status, items, allergy_warnings, cancel_reason, raised_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, items=EXCLUDED.items, allergy_warnings=EXCLUDED.allergy_warnings, cancel_reason=EXCLUDED.cancel_reason, updated_at=EXCLUDED.updated_at`,
-      [p.id, p.patientId, p.encounterId, p.prescriberId, p.status, JSON.stringify(p.items), JSON.stringify(p.allergyWarnings), p.cancelReason, p.raisedAt, p.updatedAt],
+      `INSERT INTO pharmacy.prescription (id, patient_id, encounter_id, prescriber_id, status, items, allergy_warnings, external_ref, fulfilment_note, cancel_reason, raised_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, items=EXCLUDED.items, allergy_warnings=EXCLUDED.allergy_warnings, external_ref=EXCLUDED.external_ref, fulfilment_note=EXCLUDED.fulfilment_note, cancel_reason=EXCLUDED.cancel_reason, updated_at=EXCLUDED.updated_at`,
+      [p.id, p.patientId, p.encounterId, p.prescriberId, p.status, JSON.stringify(p.items), JSON.stringify(p.allergyWarnings), p.externalRef, p.fulfilmentNote, p.cancelReason, p.raisedAt, p.updatedAt],
     );
   }
   async getPrescription(id: PrescriptionId): Promise<Prescription | null> {
@@ -39,16 +40,16 @@ export class PgPharmacyStore implements PharmacyStore {
     return r.rows.map(prescriptionFrom);
   }
 
-  async saveDispense(d: Dispense): Promise<void> {
+  async saveTheatreAdministration(a: TheatreDrugAdministration): Promise<void> {
     await this.pool.query(
-      `INSERT INTO pharmacy.dispense (id, prescription_id, dispensed_by, allocations, cold_chain_handled, witness_staff_id, dispensed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
-      [d.id, d.prescriptionId, d.dispensedBy, JSON.stringify(d.allocations), d.coldChainHandled, d.witnessStaffId, d.dispensedAt],
+      `INSERT INTO pharmacy.theatre_drug_administration (id, encounter_id, patient_id, administered_by, items, allocations, cold_chain_handled, witness_staff_id, location_id, administered_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+      [a.id, a.encounterId, a.patientId, a.administeredBy, JSON.stringify(a.items), JSON.stringify(a.allocations), a.coldChainHandled, a.witnessStaffId, a.locationId, a.administeredAt],
     );
   }
-  async dispensesForPrescription(prescriptionId: string): Promise<readonly Dispense[]> {
-    const r = await this.pool.query<DispenseRow>("SELECT * FROM pharmacy.dispense WHERE prescription_id = $1 ORDER BY seq", [prescriptionId]);
-    return r.rows.map(dispenseFrom);
+  async theatreAdministrationsForEncounter(encounterId: string): Promise<readonly TheatreDrugAdministration[]> {
+    const r = await this.pool.query<TheatreAdminRow>("SELECT * FROM pharmacy.theatre_drug_administration WHERE encounter_id = $1 ORDER BY seq", [encounterId]);
+    return r.rows.map(theatreAdminFrom);
   }
 }
 
@@ -60,18 +61,23 @@ interface PrescriptionRow {
   status: string;
   items: PrescriptionItem[];
   allergy_warnings: AllergyWarning[];
+  external_ref: string | null;
+  fulfilment_note: string | null;
   cancel_reason: string | null;
   raised_at: Date;
   updated_at: Date;
 }
-interface DispenseRow {
+interface TheatreAdminRow {
   id: string;
-  prescription_id: string;
-  dispensed_by: string;
-  allocations: DispenseAllocation[];
+  encounter_id: string;
+  patient_id: string;
+  administered_by: string;
+  items: TheatreDrugItem[];
+  allocations: StockAllocation[];
   cold_chain_handled: boolean;
   witness_staff_id: string | null;
-  dispensed_at: Date;
+  location_id: string;
+  administered_at: Date;
 }
 
 const iso = (d: Date): string => new Date(d).toISOString();
@@ -85,19 +91,24 @@ function prescriptionFrom(r: PrescriptionRow): Prescription {
     items: r.items,
     status: r.status as PrescriptionStatus,
     allergyWarnings: r.allergy_warnings,
+    externalRef: r.external_ref,
+    fulfilmentNote: r.fulfilment_note,
     cancelReason: r.cancel_reason,
     raisedAt: iso(r.raised_at),
     updatedAt: iso(r.updated_at),
   };
 }
-function dispenseFrom(r: DispenseRow): Dispense {
+function theatreAdminFrom(r: TheatreAdminRow): TheatreDrugAdministration {
   return {
-    id: asId<"Dispense">(r.id),
-    prescriptionId: r.prescription_id,
-    dispensedBy: r.dispensed_by,
+    id: asId<"TheatreDrugAdministration">(r.id),
+    encounterId: r.encounter_id,
+    patientId: r.patient_id,
+    administeredBy: r.administered_by,
+    items: r.items,
     allocations: r.allocations,
     coldChainHandled: r.cold_chain_handled,
     witnessStaffId: r.witness_staff_id,
-    dispensedAt: iso(r.dispensed_at),
+    locationId: r.location_id,
+    administeredAt: iso(r.administered_at),
   };
 }
