@@ -118,6 +118,18 @@ describe("FacilityService.applyTopology", () => {
     expect((await svc.floors()).map((f) => f.level)).toEqual(["L2"]);
     expect((await svc.beds()).map((b) => b.label).sort()).toEqual(["S-1", "S-2"]);
   });
+
+  it("collapses duplicate location entries WITHIN one spec — the second entry creates nothing", async () => {
+    const { svc } = build();
+    const dup = { level: "L2" as const, type: "inpatient_bed" as const, name: { ar: "جناح", en: "Suite" }, capacity: 2, beds: ["S-1"] };
+    const r = await svc.applyTopology("ops-1", {
+      floors: [{ level: "L2", name: { ar: "الطابق الثاني", en: "Level 2" } }],
+      locations: [dup, { ...dup, beds: ["S-2"] }],
+    });
+    expect(r.created).toEqual({ floors: 1, locations: 1, beds: 1 });
+    expect(await svc.locations()).toHaveLength(1);
+    expect((await svc.beds()).map((b) => b.label)).toEqual(["S-1"]);
+  });
 });
 
 describe("seedFacility", () => {

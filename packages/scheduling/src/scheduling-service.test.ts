@@ -199,6 +199,26 @@ describe("SchedulingService config surface (defineResource / defineAppointmentTy
     expect(await svc.appointmentTypes()).toHaveLength(0);
   });
 
+  it("re-defines a resource as an audited UPDATE, allocates a fresh type id, and rejects fractional durations + bad type names", async () => {
+    const { svc, audit } = build();
+    await svc.defineResource("ops-1", { id: "res-1", kind: "room", name: N("Room 1") });
+    const renamed = await svc.defineResource("ops-1", { id: "res-1", kind: "room", name: N("Consulting Room 1") });
+    expect(renamed.ok && renamed.value.name.en).toBe("Consulting Room 1");
+    expect(await svc.resources()).toHaveLength(1);
+    const update = (await audit.entries()).find((e) => e.payload.entityType === "Resource" && e.payload.action === "UPDATE");
+    expect((update?.payload.before as { name: { en: string } }).name.en).toBe("Room 1");
+
+    // omitting requiredResourceKinds entirely defaults to [] (and a fresh id is allocated)
+    const fresh = await svc.defineAppointmentType("ops-1", { name: N("Consult"), durationMin: 20 });
+    expect(fresh.ok && fresh.value.id.length > 0).toBe(true);
+    expect(fresh.ok && fresh.value.requiredResourceKinds).toEqual([]);
+
+    const fractional = await svc.defineAppointmentType("ops-1", { name: N("T"), durationMin: 7.5, requiredResourceKinds: [] });
+    expect(!fractional.ok && fractional.error.detailKey).toBe("scheduling.appointment_type.bad_duration");
+    const badName = await svc.defineAppointmentType("ops-1", { name: { ar: "", en: "T" }, durationMin: 30, requiredResourceKinds: [] });
+    expect(!badName.ok && badName.error.detailKey).toBe("scheduling.appointment_type.bad_name");
+  });
+
   it("a defined type + resource can be booked against immediately", async () => {
     const { svc } = build();
     const doc = await svc.defineResource("ops-1", { id: "res-doc-1", kind: "practitioner", name: N("Dr A") });
