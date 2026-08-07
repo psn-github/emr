@@ -35,7 +35,8 @@ export interface AppointmentTypeInput {
   readonly id?: string;
   readonly name: BilingualName;
   readonly durationMin: number;
-  readonly requiredResourceKinds: readonly ResourceKind[];
+  /** Omitted = no resource requirements (defaults to []). */
+  readonly requiredResourceKinds?: readonly ResourceKind[];
   readonly prep?: BilingualName;
   readonly defaultBillingItem?: string;
 }
