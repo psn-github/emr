@@ -45,28 +45,22 @@ ssh-copy-id -i deploy_key.pub <user>@<vps-host>
 
 ### 3. One-time VPS prep
 
-On the VPS, create the app directory the deploy script expects and clone the repo once:
+**Nothing to do manually (ADR-0070).** The deploy workflow self-bootstraps: on its first
+run against a fresh VPS it clones the repo to `/opt/oxford-his` and runs
+`scripts/vps-bootstrap.sh` — an idempotent script that installs Node 20 + pnpm (only if
+absent), PostgreSQL (only if nothing is on :5432), creates the `oxford_staging` database with a
+generated password in `/etc/oxford-his/api.env`, installs the `oxford-his-api` systemd unit, and
+adds the nightly-backup cron line. Re-runs are no-ops. **Adding the three repo secrets above is
+therefore the ONLY manual setup step.**
 
-```bash
-sudo mkdir -p /opt/oxford-his && sudo chown $USER /opt/oxford-his
-git clone https://github.com/psn-github/emr.git /opt/oxford-his
-```
+The API binds `127.0.0.1:8060` (dev bearer tokens are not internet-grade auth) — reach it via an
+SSH tunnel (`ssh -L 8060:127.0.0.1:8060 <user>@<vps>`), or later via the optional nginx site
+template (`deploy/nginx-oxford-his.conf`) with its own hostname + TLS.
 
-Then install the runtime the API needs (ADR-0064): Node 20 + pnpm 9, Postgres 16 with an
-`oxford_staging` database, and the unit/site templates:
-
-```bash
-sudo useradd --system --home /opt/oxford-his oxfordhis
-sudo mkdir -p /etc/oxford-his && sudo cp deploy/api.env.example /etc/oxford-his/api.env  # edit values
-sudo cp deploy/oxford-his-api.service /etc/systemd/system/ && sudo systemctl daemon-reload
-sudo systemctl enable --now oxford-his-api
-sudo cp deploy/nginx-oxford-his.conf /etc/nginx/sites-available/oxford-his   # edit hostname; ln -s; nginx -t; reload
-sudo crontab -l | { cat; echo "15 2 * * * /opt/oxford-his/scripts/backup-staging-db.sh"; } | sudo crontab -
-```
-
-> **om-software isolation:** this stack lives entirely in `/opt/oxford-his` + its own systemd unit,
-> nginx site, port (8060) and database. It never touches `/opt/oxmedkw` or the om-software nginx
-> config — those tools are in daily clinical use.
+> **om-software isolation:** the bootstrap and this stack touch only `/opt/oxford-his`,
+> `/opt/oxford-his-data`, `/etc/oxford-his`, the `oxford-his-api` unit, the `oxford_staging`
+> database and their backup cron line. `/opt/oxmedkw` and the om-software nginx sites — in daily
+> clinical use — are never read or written.
 
 ### 4. (Optional) Codespaces — author without your Mac
 

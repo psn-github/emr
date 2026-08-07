@@ -28,7 +28,7 @@ RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/oxford-his
+ReadWritePaths=/opt/oxford-his /opt/oxford-his-data
 PrivateTmp=true
 
 [Install]
