@@ -160,7 +160,7 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 
 ## ADR-0020 — Oxford HIS replaces the om-software tools, tool-by-tool, never big-bang
 - **Date:** 2026-06-13
-- **Status:** accepted (product owner / Medical Director)
+- **Status:** accepted (product owner / Medical Director); **superseded in part by ADR-0072 (2026-08-07): the decommission end-state is removed — om-software is never switched off. The migration, reconciliation, and parallel-run-gate principles stand.**
 - **Context:** the first-generation om-software clinical point tools (semen-analysis, embryo follow-up, Document Ledger/patient timeline, the HTML clinical tools, the Cliniko-backed patient context) are to be **replaced** by the EMR, not run permanently alongside it. Their functionality is absorbed into the corresponding EMR modules (andrology E5, embryology E4, clinical core E2, scheduling/registry E1) as those are built.
 - **Decision (binding principles):**
   1. **Tool-by-tool replacement, never big-bang** — each tool is replaced by its EMR module individually, behind a **parallel-run gate** (EMR runs alongside the live tool; reconciliation proves they agree; only then decommission).
@@ -490,4 +490,10 @@ These are recorded as accepted ADRs because the spec pack already committed to t
 - **Decision:** the `staging` environment carries **no protection rules** — merges to `main` deploy to the staging VPS unattended (path-selective as before). The workflow keeps its `environment: staging` reference so gating can be re-introduced by adding a required reviewer in repo Settings, with no code change. **This applies to staging only:** the in-region production target, when provisioned (ADR-0007), gets its own environment **with** required review before any real-PHI deploy.
 - **Consequences:** first deploys ran 2026-08-07 — the VPS self-bootstrapped (ADR-0070) and `deploy-api` reported healthy; every later merge ships without a human in the loop. Docs updated (CLAUDE.md, CICD_SETUP.md §2).
 
-_(Claude Code: continue numbering from ADR-0071.)_
+## ADR-0072 — om-software is never decommissioned; the EMR becomes primary, the tools remain in service
+- **Status:** accepted (2026-08-07, product owner) — supersedes the retirement end-state of ADR-0020 (AMD-0010; attached to the AMD-0007 ratification)
+- **Context:** ADR-0020 planned tool-by-tool **replacement** ending in decommission after proven migration. On ratifying AMD-0007 the product owner ruled: **no decommissioning of om-software.** The tools are in daily clinical use and stay that way.
+- **Decision:** for each om-software tool, the end-state changes from "decommission on proof" to "**EMR primary on proof**": the corresponding EMR module absorbs the functionality, data is migrated/mirrored with a re-runnable reconciliation report (the Document Ledger's history-never-lost promise holds unchanged), the parallel-run gate + MD sign-off still decide when the EMR becomes the primary record for that workflow — and the om-software tool then **remains deployed, maintained, and usable** (at minimum as a read/fallback surface; in practice as long as the clinic wants it). No switch-off is planned or scheduled; retiring any tool would require a new explicit product-owner decision recorded as its own ADR. Deploy/runtime isolation between the two stacks (ADR-0064/0070: separate directories, services, databases) is permanent, not transitional.
+- **Consequences:** dual-running is the design, not a phase — so long-term data flows must be defined per tool when its EMR module goes primary (one-way mirror into the EMR vs. dual-entry vs. read-only tool), decided at that gate; the roadmap's cutover section reads accordingly; nothing in the EMR may ever assume an om-software tool has disappeared.
+
+_(Claude Code: continue numbering from ADR-0072.)_

@@ -95,7 +95,7 @@
 - **Type:** proposed-change (roadmap addition; docs/05 ends at Phase 6 + cutover)
 - **Documents involved:** docs/05_DELIVERY_ROADMAP.md, new docs/PHASE7_PLAN.md, ADR-0062/0063/0064
 - **Proposal:** adopt docs/PHASE7_PLAN.md as Phase 7. Scope: HTTP host (7.0 ✅), whole-EMR synthetic-patient simulation harness with an error-correction loop (7.1 ✅), staging VPS deploy wiring on the existing gated pipeline (7.2 ✅ first cut), simulation at scale + chaos drills + k6 baseline (7.3), staff web shell (7.4), patient portal PWA (7.5), documented exit gate (7.6). Staging holds synthetic data only (ADR-0007); om-software is untouched.
-- **Status:** **open** — proposed for product-owner ratification; build proceeding under it per session direction (the direction itself is the mandate; ratification formalises the roadmap text).
+- **Status:** **ratified & closed** (product owner, 2026-08-07) — with one condition attached at ratification: **om-software is never decommissioned** (recorded as AMD-0010 / ADR-0072).
 
 ## AMD-0008 — Add Phase 8 (whole-clinic operations: paper-file integration, pharmacy, documents, printing) + new PRD module scope
 - **Date:** 2026-07-03
@@ -112,6 +112,14 @@
 - **Documents involved:** docs/01 §E8, ADR-0066 (superseded in part), ADR-0069 (the corrected model), `@oxford/pharmacy`
 - **Decision:** (1) prescriptions (incl. discharge) are **issued** by the clinic and **fulfilled by the external Ground-floor pharmacy** — the EMR prints the prescription, tracks it to an audited fulfilment confirmation, and the L2 discharge gate consumes that confirmation; **no clinic stock movement** on prescriptions. (2) The clinic's own drug stock is **theatre anaesthetic + controlled drugs**: administration in theatre decrements clinic stock (FEFO, lot/expiry) and posts **witnessed** controlled-drugs register movements. (3) The controlled formulary + allergy advisory + no-free-text rules are unchanged.
 - **Status:** **approved & closed** — implemented per ADR-0069.
+
+## AMD-0010 — om-software is never decommissioned: supersede the retirement end-state of ADR-0020 and the docs/05 "decommission on proof" steps
+- **Date:** 2026-08-07
+- **Raised by:** product owner ("I ratify AMD-0007, but there should be no decommissioning of om-software")
+- **Type:** proposed-change (**approved by direction; recorded for the roadmap/ADR text**)
+- **Documents involved:** docs/05_DELIVERY_ROADMAP.md (om-software tool replacement block), ADR-0020 (superseded in part), ADR-0072 (the corrected end-state)
+- **Decision:** the om-software clinical tools are **not retired — ever — without a new, explicit product-owner decision**. The EMR modules still absorb each tool's functionality, still migrate/mirror its data with reconciliation reports (history-never-lost holds unchanged), and may become the **primary** system for a workflow after the parallel-run gate + MD sign-off — but the om-software tools stay deployed, maintained, and usable alongside the HIS. Every "decommission on proof" step in docs/05 becomes "EMR becomes primary on proof; om-software remains in service".
+- **Status:** **approved & closed** — implemented per ADR-0072.
 
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.

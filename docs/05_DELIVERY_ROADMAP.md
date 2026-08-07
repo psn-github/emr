@@ -48,13 +48,13 @@ Deliver (in this internal order):
 
 **Parallel run:** run the lab in parallel with existing records for an agreed number of real cycles; reconcile every RI Witness witnessing record against Oxford HIS handling events and every specimen location before cutover. **Lab cutover requires explicit Medical Director sign-off.**
 
-**om-software tool replacement (ADR-0020, docs/07) — sequenced here, tool-by-tool:**
-- **Embryo follow-up → embryology (E4):** when E4 is built, add a re-runnable, audited **migration + reconciliation report** for the embryo records; parallel-run E4 alongside the live tool; decommission only after migration is proven (+ RI Witness reconciled) and **MD sign-off**.
-- **Semen-analysis tool → andrology (E5):** migration + reconciliation of semen analyses/prep/freeze records; parallel run; decommission on proof + MD sign-off.
-- **Document Ledger / patient timeline → documents (E0) + clinical (E2):** migrate (or archive with guaranteed read access) **every document + history entry** — the "history never lost" promise must hold across the move; per-document reconciliation report; decommission only when complete.
-- **HTML clinical tools → clinical core (E2):** migrate clinical entries; parallel run; decommission on proof.
+**om-software tool absorption (ADR-0020 as corrected by ADR-0072/AMD-0010, docs/07) — sequenced here, tool-by-tool. The om-software tools are NEVER decommissioned (product owner, 2026-08-07): the EMR becomes primary on proof; the tools remain in service.**
+- **Embryo follow-up → embryology (E4):** when E4 is built, add a re-runnable, audited **migration + reconciliation report** for the embryo records; parallel-run E4 alongside the live tool; E4 becomes primary only after migration is proven (+ RI Witness reconciled) and **MD sign-off** — the tool stays in service.
+- **Semen-analysis tool → andrology (E5):** migration + reconciliation of semen analyses/prep/freeze records; parallel run; E5 becomes primary on proof + MD sign-off — the tool stays in service.
+- **Document Ledger / patient timeline → documents (E0) + clinical (E2):** migrate (or archive with guaranteed read access) **every document + history entry** — the "history never lost" promise must hold across the move; per-document reconciliation report; the EMR becomes the primary document record only when complete — the Ledger stays readable/in service.
+- **HTML clinical tools → clinical core (E2):** migrate clinical entries; parallel run; E2 becomes primary on proof — the tools stay in service.
 - (Cliniko-backed patient context → registry/scheduling E1 was handled in Phase 1, ADR-0017.)
-- Each migration reuses the `@oxford/migration` pattern (ledger + reconciliation). **Field-level mapping requires om-software read access** (STATE open item). **Retirement order and archive-vs-migrate per tool are product-owner decisions** (STATE).
+- Each migration reuses the `@oxford/migration` pattern (ledger + reconciliation). **Field-level mapping requires om-software read access** (STATE open item). **Per-tool primary-switch order and the long-term data flow (mirror vs. dual-entry vs. read-only) are product-owner decisions at each gate** (ADR-0072).
 
 ## Phase 3 — Theatres, perioperative journey & beds
 **Goal:** both theatres and all nine beds run on the system; the full surgical pathway (admit→bed→recovery→theatre→recovery→bed→discharge) is tracked, audited, and capacity-aware, with enforced WHO checklist and consumable→billing flow.
