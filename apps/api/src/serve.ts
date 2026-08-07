@@ -21,6 +21,10 @@ if (isProduction) {
   process.exit(1);
 }
 const port = Number(process.env.PORT ?? 8060);
+// Bind loopback by default: the staging API must not sit naked on a public
+// interface (dev bearer tokens are not internet-grade auth). Reverse-proxy or
+// SSH-tunnel to reach it; BIND=0.0.0.0 only for trusted local networks.
+const bind = process.env.BIND ?? "127.0.0.1";
 
 const pool = createPool(databaseUrl);
 const applied = await runMigrations(pool);
@@ -29,8 +33,8 @@ if (applied.length > 0) console.log(`serve: applied ${applied.length} migration(
 const services = buildServices(pool, isProduction);
 const server = createApiServer({ services, pool, isProduction, resolveSubject: devStaffDirectory(isProduction) });
 
-server.listen(port, () => {
-  console.log(`serve: oxford-his-api listening on :${port} (staging/synthetic-data mode)`);
+server.listen(port, bind, () => {
+  console.log(`serve: oxford-his-api listening on ${bind}:${port} (staging/synthetic-data mode)`);
 });
 
 let closing = false;

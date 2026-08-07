@@ -74,8 +74,16 @@ jobs:
           envs: DEPLOY_WEB,DEPLOY_API,DEPLOY_PORTAL,FORCE_AREA
           script: |
             set -euo pipefail
-            cd /opt/oxford-his || { echo "App dir missing — run one-time VPS setup (docs/CICD_SETUP.md)"; exit 1; }
+            # Self-bootstrap (ADR-0070): on a fresh VPS, clone the (public) repo and
+            # run the idempotent one-time setup — Node 20, pnpm, Postgres, the
+            # oxford_staging DB, systemd unit, backup cron. Touches ONLY the
+            # oxford-his stack; om-software (/opt/oxmedkw) is never read or written.
+            if [ ! -d /opt/oxford-his/.git ]; then
+              git clone https://github.com/psn-github/emr.git /opt/oxford-his
+            fi
+            cd /opt/oxford-his
             git pull origin main
+            bash scripts/vps-bootstrap.sh
 
             # Phase 0 will provide the Makefile; until then this is a safe no-op.
             if [ ! -f Makefile ]; then
