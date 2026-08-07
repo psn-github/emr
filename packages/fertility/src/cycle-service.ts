@@ -5,10 +5,10 @@ import { assertAdvance } from "./lifecycle.js";
 import { assertConsentsComplete } from "./consent.js";
 import type { FertilityGate } from "./gate.js";
 import type { CohortFilter, CycleStore } from "./store.js";
-import type { ReasonCodeStore } from "./reason-codes.js";
+import { CANCELLATION_CATEGORIES, type ReasonCodeStore } from "./reason-codes.js";
 import { InMemoryCycleTemplateStore, type CycleTemplate, type CycleTemplateStore } from "./cycle-template.js";
 import { amhNomogram, type AmhCounselling } from "./amh-nomogram.js";
-import { PERSON_SCOPED_TYPES, type Cycle, type CycleId, type CycleOwner, type CycleStatus, type CycleType } from "./types.js";
+import { PERSON_SCOPED_TYPES, type CancellationReasonCode, type Cycle, type CycleId, type CycleOwner, type CycleStatus, type CycleType } from "./types.js";
 
 /** Statuses a cycle can be converted from — before retrieval, while a change of
  *  approach (e.g. IVF→IUI on poor response) is still clinically meaningful. */
@@ -175,6 +175,46 @@ export class CycleService {
     await this.audit.record({ actorId, entityType: "Cycle", entityId: created.id, action: "CREATE", after: { type: toType, convertedFromId: cycle.id } });
     await this.events.emit({ type: "CycleConverted", aggregateType: "Cycle", aggregateId: id, data: { fromId: cycle.id, toId: created.id, fromType: cycle.type, toType, reasonCode: reason.code } });
     return ok({ source, created });
+  }
+
+  /**
+   * Define (or re-define) a cancellation/conversion reason code — VERSIONED
+   * CONFIG (docs/01 §E3 P1), audited. The config surface behind the admin-gated
+   * router procedure: reasons are CODED and bilingual so KPIs aggregate, and
+   * re-applying the same code is an idempotent upsert.
+   */
+  async defineCancellationReason(actorId: string, input: CancellationReasonCode): Promise<Result<CancellationReasonCode, AppError>> {
+    if (typeof input.code !== "string" || input.code.trim() === "") {
+      return err(validationError("a reason code is required", "fertility.cancellation.bad_code"));
+    }
+    if (!CANCELLATION_CATEGORIES.has(input.category)) {
+      return err(validationError(`unknown cancellation category '${input.category}'`, "fertility.cancellation.bad_category"));
+    }
+    if (input.name?.en === undefined || input.name.en.trim() === "" || input.name.ar === undefined || input.name.ar.trim() === "") {
+      return err(validationError("a bilingual (en + ar) reason name is required", "fertility.cancellation.bad_name"));
+    }
+    const existing = await this.reasons.get(input.code);
+    const reason: CancellationReasonCode = {
+      code: input.code,
+      category: input.category,
+      name: { ar: input.name.ar, en: input.name.en },
+      active: input.active !== false,
+    };
+    await this.reasons.save(reason);
+    await this.audit.record({
+      actorId,
+      entityType: "CancellationReason",
+      entityId: reason.code,
+      action: existing === null ? "CREATE" : "UPDATE",
+      ...(existing !== null ? { before: { category: existing.category, active: existing.active } } : {}),
+      after: { category: reason.category, active: reason.active },
+    });
+    return ok(reason);
+  }
+
+  /** The active cancellation/conversion reason codes (config read for the UI). */
+  listCancellationReasons(): Promise<readonly CancellationReasonCode[]> {
+    return this.reasons.listActive();
   }
 
   /** Disposition counts (cancellation/conversion) for the KPI read-model. */

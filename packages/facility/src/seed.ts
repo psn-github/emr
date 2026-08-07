@@ -1,58 +1,53 @@
 import type { FacilityService } from "./facility-service.js";
+import type { BilingualName, LocationSpec, TopologySpec } from "./types.js";
 
 // The real four-level building (docs/00 §1, docs/01 §E1): Ground pharmacy;
 // L1 = 2 theatres + 3 recovery beds; L2 = 6 inpatient beds; L3 = clinic + lab.
-// Bilingual config data. Idempotency/uniqueness is the caller's concern (seed
-// into an empty facility).
+// Bilingual CONFIGURATION DATA (CLAUDE.md: "configuration is data") — the shape
+// an admin APPLIES through FacilityService.applyTopology, which is idempotent,
+// so seeding is safe to repeat on a persistent database.
 export interface SeedResult {
   readonly locations: number;
   readonly beds: number;
 }
 
-export async function seedFacility(svc: FacilityService): Promise<SeedResult> {
-  let locations = 0;
-  let beds = 0;
+/** The actor recorded when the canonical topology is applied by a seed helper
+ *  rather than by a named admin through the API. */
+export const SEED_ACTOR = "system:facility-seed";
 
-  await svc.addFloor("ground", { ar: "الطابق الأرضي", en: "Ground Floor" });
-  await svc.addFloor("L1", { ar: "الطابق الأول", en: "Level 1" });
-  await svc.addFloor("L2", { ar: "الطابق الثاني", en: "Level 2" });
-  await svc.addFloor("L3", { ar: "الطابق الثالث", en: "Level 3" });
+const N = (ar: string, en: string): BilingualName => ({ ar, en });
 
-  // Ground — pharmacy
-  await svc.addLocation("ground", "pharmacy", { ar: "الصيدلية", en: "Pharmacy" }, 1);
-  locations++;
+function bedded(level: LocationSpec["level"], type: LocationSpec["type"], ar: string, en: string, label: string): LocationSpec {
+  return { level, type, name: N(ar, en), capacity: 1, beds: [label] };
+}
 
-  // L1 — two theatres + three recovery beds
-  for (const n of [1, 2]) {
-    await svc.addLocation("L1", "theatre", { ar: `غرفة العمليات ${n}`, en: `Theatre ${n}` }, 1);
-    locations++;
-  }
-  for (const n of [1, 2, 3]) {
-    const node = await svc.addLocation("L1", "recovery_bed", { ar: `سرير الإفاقة ${n}`, en: `Recovery Bed ${n}` }, 1);
-    locations++;
-    await svc.addBed(node.id, `L1-R${n}`);
-    beds++;
-  }
+/** The canonical Oxford Medical Kuwait topology. */
+export const OXFORD_TOPOLOGY: TopologySpec = {
+  floors: [
+    { level: "ground", name: N("الطابق الأرضي", "Ground Floor") },
+    { level: "L1", name: N("الطابق الأول", "Level 1") },
+    { level: "L2", name: N("الطابق الثاني", "Level 2") },
+    { level: "L3", name: N("الطابق الثالث", "Level 3") },
+  ],
+  locations: [
+    // Ground — pharmacy (external operator; the location is ours)
+    { level: "ground", type: "pharmacy", name: N("الصيدلية", "Pharmacy"), capacity: 1 },
+    // L1 — two theatres + three recovery beds
+    ...[1, 2].map((n): LocationSpec => ({ level: "L1", type: "theatre", name: N(`غرفة العمليات ${n}`, `Theatre ${n}`), capacity: 1 })),
+    ...[1, 2, 3].map((n): LocationSpec => bedded("L1", "recovery_bed", `سرير الإفاقة ${n}`, `Recovery Bed ${n}`, `L1-R${n}`)),
+    // L2 — six inpatient beds
+    ...[1, 2, 3, 4, 5, 6].map((n): LocationSpec => bedded("L2", "inpatient_bed", `سرير التنويم ${n}`, `Inpatient Bed ${n}`, `L2-${n}`)),
+    // L3 — clinic (consult + scan rooms) and the IVF lab
+    ...[1, 2, 3, 4].map((n): LocationSpec => ({ level: "L3", type: "consult_room", name: N(`غرفة الاستشارة ${n}`, `Consult Room ${n}`), capacity: 1 })),
+    ...[1, 2].map((n): LocationSpec => ({ level: "L3", type: "scan_room", name: N(`غرفة الأشعة ${n}`, `Ultrasound Room ${n}`), capacity: 1 })),
+    { level: "L3", type: "lab", name: N("مختبر الأجنة", "IVF Laboratory"), capacity: 1 },
+  ],
+};
 
-  // L2 — six inpatient beds
-  for (const n of [1, 2, 3, 4, 5, 6]) {
-    const node = await svc.addLocation("L2", "inpatient_bed", { ar: `سرير التنويم ${n}`, en: `Inpatient Bed ${n}` }, 1);
-    locations++;
-    await svc.addBed(node.id, `L2-${n}`);
-    beds++;
-  }
-
-  // L3 — clinic (consult + scan rooms) and the IVF lab
-  for (const n of [1, 2, 3, 4]) {
-    await svc.addLocation("L3", "consult_room", { ar: `غرفة الاستشارة ${n}`, en: `Consult Room ${n}` }, 1);
-    locations++;
-  }
-  for (const n of [1, 2]) {
-    await svc.addLocation("L3", "scan_room", { ar: `غرفة الأشعة ${n}`, en: `Ultrasound Room ${n}` }, 1);
-    locations++;
-  }
-  await svc.addLocation("L3", "lab", { ar: "مختبر الأجنة", en: "IVF Laboratory" }, 1);
-  locations++;
-
-  return { locations, beds };
+/** Apply the canonical topology (idempotent — see FacilityService.applyTopology).
+ *  Returns what this call CREATED, so seeding an empty facility reports the full
+ *  layout and re-seeding reports zero. */
+export async function seedFacility(svc: FacilityService, actorId: string = SEED_ACTOR): Promise<SeedResult> {
+  const r = await svc.applyTopology(actorId, OXFORD_TOPOLOGY);
+  return { locations: r.created.locations, beds: r.created.beds };
 }

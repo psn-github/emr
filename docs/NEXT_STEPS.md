@@ -51,9 +51,14 @@ self-bootstrapping, which turns the manual VPS checklist into mostly one command
 
 Ten minutes of decisions that are formally still "awaiting PO".
 
-- [ ] **[YOU]** Ratify **AMD-0007** (adopt `docs/PHASE7_PLAN.md` as Phase 7)
-- [ ] **[YOU]** Ratify **AMD-0008** (Phase 8 whole-clinic-operations addition)
-      *(AMD-0009 — external pharmacy correction — is already approved & closed)*
+- [x] **[YOU]** Ratify **AMD-0007** (adopt `docs/PHASE7_PLAN.md` as Phase 7) — ratified
+      2026-08-07 with one condition: **om-software is never decommissioned** (ADR-0072 /
+      AMD-0010); `docs/AMENDMENTS.md` shows AMD-0007 closed
+- [x] **[YOU]** Ratify **AMD-0008** (Phase 8 whole-clinic-operations addition) — ratified
+      2026-08-07 ("ratify both"); `docs/AMENDMENTS.md` shows AMD-0008 closed
+      *(AMD-0009 — external pharmacy correction — is already approved & closed)*.
+      The config values it left open (MRN format, records-room names, relabel timing)
+      are **still with the PO** — the unticked boxes below
 - [ ] **[YOU]** Confirm the **MRN format** (current default `OM-<year>-<seq>`) and the
       **records-room location names** (config values, `@oxford/records`)
 - [ ] **[YOU]** Decide: existing paper files **relabelled at import or on first pull** (ops)
@@ -71,15 +76,24 @@ Ten minutes of decisions that are formally still "awaiting PO".
 All build work — run as Claude sessions. Each gap is a **thin tRPC router over an existing,
 fully-tested service** (no new domain logic). Full spec: `docs/PHASE7_PLAN.md` §7.3.
 
-- [ ] **[CLAUDE]** Router gap 1 — scheduling config (define appointment types / resources)
-- [ ] **[CLAUDE]** Router gap 2 — facility topology seed/read (unblocks `flow.checkIn` +
-      perioperative admit on a fresh staging DB)
-- [ ] **[CLAUDE]** Router gap 3 — fertility cycle engine over HTTP (`createTreatmentCycle`,
-      staff consent recording, reason-coded cancel/convert)
+- [x] **[CLAUDE]** Router gap 1 — scheduling config (define appointment types / resources) —
+      `scheduling.defineAppointmentType` / `defineResource` (admin-gated, audited, stable-id
+      upsert) + `appointmentTypes` / `resources` reads for the booking UI
+- [x] **[CLAUDE]** Router gap 2 — facility topology seed/read (unblocks `flow.checkIn` +
+      perioperative admit on a fresh staging DB) — `facility.applyTopology` (admin-gated,
+      **idempotent**, defaults to the canonical Oxford building) + `locations` / `beds` reads
+- [x] **[CLAUDE]** Router gap 3 — fertility cycle engine over HTTP (`createTreatmentCycle`,
+      staff consent recording, reason-coded cancel/convert) — `fertility.createCycle` /
+      `recordConsent` / `advanceCycle` / `cancelCycle` / `convertCycle` / `cycle` +
+      `defineCancellationReason` / `cancellationReasons`; `portal.cycleTimeline`,
+      `medicationSchedule`, `outstandingConsents` and `signConsent` are now drivable
 - [ ] **[CLAUDE]** Router gap 4 — stimulation charting (`recordDay`) + formulary config surface
 - [ ] **[CLAUDE]** Router gap 5 — embryology micro-steps (`recordOocyte`, fertilisation check, grading)
 - [ ] **[CLAUDE]** Router gap 6 — witnessing ingest/read surface (low priority)
-- [ ] **[CLAUDE]** Router gap 7 — perioperative admission path (depends on gap 2)
+- [x] **[CLAUDE]** Router gap 7 — perioperative admission path (depends on gap 2) — no new
+      procedures were needed: with the topology surface in place, admit → theatre (WHO-gated)
+      → recovery → ward → **pharmacy-gated discharge** → bed turnaround runs over HTTP on a
+      fresh DB (proven in `apps/api/src/phase73.e2e.test.ts` and driven every simulator loop)
 - [ ] **[CLAUDE]** Grow simulator journey coverage until **every router procedure is
       exercised** (coverage table in the report): IUI + FET + preservation cycles, theatre
       day-list, cryostore disposition, procurement/inventory, HR rota, dashboards,

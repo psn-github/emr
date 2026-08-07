@@ -21,7 +21,7 @@ export class PgSchedulingStore implements SchedulingStore {
     await this.pool.query(
       `INSERT INTO scheduling.appointment_type (id, name_ar, name_en, duration_min, required_resource_kinds, prep_ar, prep_en, default_billing_item)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (id) DO UPDATE SET name_ar=EXCLUDED.name_ar, name_en=EXCLUDED.name_en, duration_min=EXCLUDED.duration_min, required_resource_kinds=EXCLUDED.required_resource_kinds`,
+       ON CONFLICT (id) DO UPDATE SET name_ar=EXCLUDED.name_ar, name_en=EXCLUDED.name_en, duration_min=EXCLUDED.duration_min, required_resource_kinds=EXCLUDED.required_resource_kinds, prep_ar=EXCLUDED.prep_ar, prep_en=EXCLUDED.prep_en, default_billing_item=EXCLUDED.default_billing_item`,
       [t.id, t.name.ar, t.name.en, t.durationMin, JSON.stringify(t.requiredResourceKinds), t.prep?.ar ?? null, t.prep?.en ?? null, t.defaultBillingItem ?? null],
     );
   }
@@ -70,6 +70,16 @@ export class PgSchedulingStore implements SchedulingStore {
   async listAppointments(): Promise<readonly Appointment[]> {
     const r = await this.pool.query<AppointmentRow>("SELECT * FROM scheduling.appointment ORDER BY start_at");
     return r.rows.map(rowToAppt);
+  }
+
+  async listResources(): Promise<readonly Resource[]> {
+    const r = await this.pool.query<ResourceRow>("SELECT * FROM scheduling.resource ORDER BY kind, name_en");
+    return r.rows.map(rowToResource);
+  }
+
+  async listAppointmentTypes(): Promise<readonly AppointmentType[]> {
+    const r = await this.pool.query<AppointmentTypeRow>("SELECT * FROM scheduling.appointment_type ORDER BY name_en");
+    return r.rows.map(rowToType);
   }
 }
 

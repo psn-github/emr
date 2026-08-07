@@ -24,10 +24,24 @@ export const SEED_CANCELLATION_REASONS: readonly CancellationReasonCode[] = [
   { code: "converted_to_icsi", category: "converted", name: { ar: "تحويل إلى الحقن المجهري", en: "Converted to ICSI" }, active: true },
 ];
 
-/** Lookup surface for cancellation reason codes (own-module config). */
+/** The KPI categories a reason code may carry (config values are validated
+ *  against this set — an unknown category would break KPI aggregation). */
+export const CANCELLATION_CATEGORIES: ReadonlySet<string> = new Set<CancellationCategory>([
+  "clinical",
+  "poor_response",
+  "ohss_risk",
+  "patient_choice",
+  "administrative",
+  "converted",
+]);
+
+/** Lookup + config-write surface for cancellation reason codes (own-module
+ *  config). `save` is an upsert on the code — configuration is data, so
+ *  re-applying the same code set is idempotent. */
 export interface ReasonCodeStore {
   get(code: string): Promise<CancellationReasonCode | null>;
   listActive(): Promise<readonly CancellationReasonCode[]>;
+  save(reason: CancellationReasonCode): Promise<void>;
 }
 
 /** In-memory reason store seeded from a code set (defaults to the seed list). */
@@ -41,5 +55,8 @@ export class InMemoryReasonCodeStore implements ReasonCodeStore {
   }
   async listActive(): Promise<readonly CancellationReasonCode[]> {
     return [...this.byCode.values()].filter((r) => r.active);
+  }
+  async save(reason: CancellationReasonCode): Promise<void> {
+    this.byCode.set(reason.code, reason);
   }
 }

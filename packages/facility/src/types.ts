@@ -48,3 +48,29 @@ export interface Bed {
   readonly label: string;
   readonly status: BedStatus;
 }
+
+// ── Topology as CONFIGURATION DATA (CLAUDE.md: "configuration is data") ───────
+// The building layout is a declarative spec that an admin APPLIES; applying it
+// is idempotent (see FacilityService.applyTopology), so it is safe to re-run on
+// every deploy/simulation against a persistent database.
+
+/** A location in the spec, with the beds (by label) it holds. */
+export interface LocationSpec {
+  readonly level: FloorLevel;
+  readonly type: LocationNodeType;
+  readonly name: BilingualName;
+  readonly capacity: number;
+  /** Bed labels belonging to this location (empty for non-bedded locations). */
+  readonly beds?: readonly string[];
+}
+
+export interface TopologySpec {
+  readonly floors: readonly { readonly level: FloorLevel; readonly name: BilingualName }[];
+  readonly locations: readonly LocationSpec[];
+}
+
+/** What an applyTopology run created (and the resulting totals). */
+export interface TopologyResult {
+  readonly created: { readonly floors: number; readonly locations: number; readonly beds: number };
+  readonly totals: { readonly floors: number; readonly locations: number; readonly beds: number };
+}

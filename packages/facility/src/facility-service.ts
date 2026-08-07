@@ -2,7 +2,7 @@ import type { Result, AppError } from "@oxford/core";
 import { ok, err, newId, notFound, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import { assertTransition } from "./bed.js";
-import type { Bed, BedId, BedStatus, BilingualName, Floor, FloorLevel, LocationNode, LocationNodeType } from "./types.js";
+import type { Bed, BedId, BedStatus, BilingualName, Floor, FloorLevel, LocationNode, LocationNodeType, TopologyResult, TopologySpec } from "./types.js";
 import type { FacilityStore } from "./store.js";
 
 // Facility configuration + bed-status operations. Bed-status changes are audited
@@ -87,4 +87,65 @@ export class FacilityService {
   async locations(): Promise<readonly LocationNode[]> {
     return this.store.listLocations();
   }
+  async floors(): Promise<readonly Floor[]> {
+    return this.store.listFloors();
+  }
+
+  /**
+   * Apply a building topology (CONFIGURATION DATA) — the admin surface behind
+   * the router's `facility.applyTopology`. **Idempotent**: a floor is matched by
+   * its level, a location by (level, type, English name) and a bed by its label,
+   * and only MISSING entities are created. Nothing existing is overwritten — in
+   * particular a bed's STATUS is never reset, so re-applying the topology can
+   * never free an occupied bed. One audit entry records what the run created.
+   */
+  async applyTopology(actorId: string, spec: TopologySpec): Promise<TopologyResult> {
+    const [floors, locations, beds] = await Promise.all([this.store.listFloors(), this.store.listLocations(), this.store.listBeds()]);
+    const floorLevels = new Set(floors.map((f) => f.level));
+    const locationKeys = new Set(locations.map(locationKey));
+    const bedLabels = new Set(beds.map((b) => b.label));
+
+    let floorsCreated = 0;
+    let locationsCreated = 0;
+    let bedsCreated = 0;
+
+    for (const f of spec.floors) {
+      if (floorLevels.has(f.level)) continue;
+      await this.addFloor(f.level, f.name);
+      floorLevels.add(f.level);
+      floorsCreated += 1;
+    }
+
+    for (const l of spec.locations) {
+      const key = locationKey(l);
+      let node = locations.find((n) => locationKey(n) === key) ?? null;
+      if (node === null && !locationKeys.has(key)) {
+        node = await this.addLocation(l.level, l.type, l.name, l.capacity);
+        locationKeys.add(key);
+        locationsCreated += 1;
+      }
+      if (node === null) continue;
+      for (const label of l.beds ?? []) {
+        if (bedLabels.has(label)) continue;
+        await this.addBed(node.id, label);
+        bedLabels.add(label);
+        bedsCreated += 1;
+      }
+    }
+
+    const created = { floors: floorsCreated, locations: locationsCreated, beds: bedsCreated };
+    const totals = { floors: floorLevels.size, locations: locationKeys.size, beds: bedLabels.size };
+    // A no-op re-apply mutates nothing, so it writes nothing: the audit log
+    // records mutations, and re-running configuration must stay clean.
+    if (floorsCreated + locationsCreated + bedsCreated > 0) {
+      await this.audit.record({ actorId, entityType: "FacilityTopology", entityId: "topology", action: "CREATE", after: { created, totals } });
+      await this.events.emit({ type: "FacilityTopologyApplied", aggregateType: "FacilityTopology", aggregateId: "topology", data: created });
+    }
+    return { created, totals };
+  }
+}
+
+/** Identity of a location in the topology spec: level + type + English name. */
+function locationKey(l: { level: FloorLevel; type: LocationNodeType; name: BilingualName }): string {
+  return `${l.level}|${l.type}|${l.name.en}`;
 }

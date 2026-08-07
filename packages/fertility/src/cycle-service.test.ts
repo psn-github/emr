@@ -268,3 +268,57 @@ describe("CycleService.cohort", () => {
     if (!badAge.ok) expect(badAge.error.detailKey).toBe("fertility.amh.bad_age");
   });
 });
+
+describe("CycleService cancellation-reason config surface", () => {
+  it("defines a reason code (audited CREATE), re-defines it idempotently (UPDATE), and lists active codes", async () => {
+    const { svc, audit } = build(allowGate, new InMemoryReasonCodeStore([]));
+    expect(await svc.listCancellationReasons()).toHaveLength(0);
+
+    const created = await svc.defineCancellationReason("ops-1", { code: "poor_ovarian_response", category: "poor_response", name: { ar: "استجابة ضعيفة", en: "Poor ovarian response" }, active: true });
+    expect(created.ok).toBe(true);
+    expect((await svc.listCancellationReasons()).map((r) => r.code)).toEqual(["poor_ovarian_response"]);
+
+    // re-applying the same code is an upsert (config-as-data), audited as UPDATE
+    const again = await svc.defineCancellationReason("ops-1", { code: "poor_ovarian_response", category: "poor_response", name: { ar: "استجابة مبيضية ضعيفة", en: "Poor ovarian response" }, active: true });
+    expect(again.ok).toBe(true);
+    expect(await svc.listCancellationReasons()).toHaveLength(1);
+
+    // an inactive code drops out of the list but stays defined
+    await svc.defineCancellationReason("ops-1", { code: "retired_reason", category: "administrative", name: { ar: "متقاعد", en: "Retired" }, active: false });
+    expect((await svc.listCancellationReasons()).map((r) => r.code)).toEqual(["poor_ovarian_response"]);
+
+    const trail = (await audit.entries()).filter((e) => e.payload.entityType === "CancellationReason");
+    expect(trail.map((e) => e.payload.action)).toEqual(["CREATE", "UPDATE", "CREATE"]);
+  });
+
+  it("a defined code is immediately usable to cancel a cycle", async () => {
+    const { svc } = build(allowGate, new InMemoryReasonCodeStore([]));
+    const c = await svc.createTreatmentCycle("doc-1", "icsi", "couple-1");
+    if (!c.ok) throw new Error("setup");
+    // before the config exists, the coded cancel is rejected
+    const early = await svc.cancel("doc-1", c.value.id, "ohss_risk");
+    expect(early.ok).toBe(false);
+    if (!early.ok) expect(early.error.detailKey).toBe("fertility.cancellation.unknown_reason");
+
+    await svc.defineCancellationReason("ops-1", { code: "ohss_risk", category: "ohss_risk", name: { ar: "خطر فرط التنبيه", en: "OHSS risk" }, active: true });
+    const cancelled = await svc.cancel("doc-1", c.value.id, "ohss_risk");
+    expect(cancelled.ok && cancelled.value.cancellationCategory).toBe("ohss_risk");
+  });
+
+  it("rejects invalid config: blank code, unknown category, non-bilingual name", async () => {
+    const { svc } = build(allowGate, new InMemoryReasonCodeStore([]));
+    const blank = await svc.defineCancellationReason("ops-1", { code: "  ", category: "clinical", name: { ar: "أ", en: "A" }, active: true });
+    expect(blank.ok).toBe(false);
+    if (!blank.ok) expect(blank.error.detailKey).toBe("fertility.cancellation.bad_code");
+
+    const badCategory = await svc.defineCancellationReason("ops-1", { code: "x", category: "made_up" as never, name: { ar: "أ", en: "A" }, active: true });
+    expect(badCategory.ok).toBe(false);
+    if (!badCategory.ok) expect(badCategory.error.detailKey).toBe("fertility.cancellation.bad_category");
+
+    const noArabic = await svc.defineCancellationReason("ops-1", { code: "x", category: "clinical", name: { ar: "", en: "A" }, active: true });
+    expect(noArabic.ok).toBe(false);
+    if (!noArabic.ok) expect(noArabic.error.detailKey).toBe("fertility.cancellation.bad_name");
+
+    expect(await svc.listCancellationReasons()).toHaveLength(0);
+  });
+});

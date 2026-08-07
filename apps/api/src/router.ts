@@ -21,6 +21,10 @@ import type { PgtType, PgtResultStatus } from "@oxford/embryology";
 import type { ItemCategory } from "@oxford/inventory";
 import type { AssetCategory } from "@oxford/assets";
 import { cycleTimeline, buildMedicationSchedule, requiredConsents } from "@oxford/fertility";
+import type { CancellationReasonCode, CycleStatus, CycleType } from "@oxford/fertility";
+import { OXFORD_TOPOLOGY } from "@oxford/facility";
+import type { TopologySpec } from "@oxford/facility";
+import type { AppointmentTypeInput, ResourceInput } from "@oxford/scheduling";
 import type { JourneyStage, WhoPhase, AnaesthesiaUnit, ConsumableUseInput } from "@oxford/perioperative";
 import type { RiWitnessRecord } from "@oxford/witnessing";
 import type { Permission, Session } from "@oxford/identity";
@@ -54,12 +58,30 @@ async function ownedCycle(services: Services, patient: PatientPrincipal, patient
   return c;
 }
 
+/** Consents still to sign for a cycle (required set − already signed). */
+function outstanding(c: Cycle): readonly string[] {
+  const signed = new Set(c.signedConsents);
+  return requiredConsents(c.type).filter((k) => !signed.has(k));
+}
+
 /** Portal READ access: the principal is the patient, OR holds an active
  *  consent-gated partner grant for them (ADR-0042). Throws FORBIDDEN otherwise. */
 async function assertPortalRead(services: Services, patient: PatientPrincipal, patientId: string): Promise<void> {
   if (patient.patientId === patientId) return;
   if (await services.consent.mayAccess(patientId, patient.patientId)) return;
   throw new TRPCError({ code: "FORBIDDEN", message: "no access to this patient's data" });
+}
+
+/** Map ANY domain AppError to the matching tRPC transport code. The older
+ *  per-module mappers below predate it and behave identically. */
+function domainError(error: AppError, fallback: string): TRPCError {
+  const code =
+    error.code === "NOT_FOUND" ? "NOT_FOUND"
+    : error.code === "CONFLICT" ? "CONFLICT"
+    : error.code === "FORBIDDEN" ? "FORBIDDEN"
+    : error.code === "PRECONDITION_FAILED" ? "PRECONDITION_FAILED"
+    : "BAD_REQUEST";
+  return new TRPCError({ code, message: error.detailKey ?? fallback });
 }
 
 /** Map a records domain error to the matching tRPC transport code. */
@@ -333,6 +355,87 @@ export const appRouter = router({
         }
         return { started: true };
       }),
+
+    // ── The cycle engine over HTTP (docs/PHASE7_PLAN §7.3 gap 3) ─────────────
+    // Thin exposure of CycleService: EVERY rule lives in the service — the
+    // marriage hard-gate on a treatment cycle (PRECONDITION_FAILED for an
+    // unverified couple; preservation is person-scoped and needs no couple,
+    // ADR-0015), the consent gate on leaving `planned`, and CODED cancellation/
+    // conversion reasons (config, never free text — ADR-0044).
+    createCycle: protectedProcedure("clinical:cycle.create")
+      .input((v: unknown) => v as { type: CycleType; coupleId?: string; personId?: string; protocolId?: string })
+      .mutation(async ({ ctx, input }) => {
+        const actor = ctx.session.subject.staffId;
+        if (input.personId !== undefined && input.coupleId === undefined) {
+          const c = await ctx.services.cycle.createPreservationCycle(actor, input.personId, input.protocolId);
+          return { cycleId: c.id, type: c.type, status: c.status, outstandingConsents: outstanding(c) };
+        }
+        if (input.coupleId === undefined) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "a treatment cycle needs a coupleId (preservation needs a personId)" });
+        }
+        const r = await ctx.services.cycle.createTreatmentCycle(actor, input.type, input.coupleId, input.protocolId);
+        if (!r.ok) throw domainError(r.error, "cycle creation blocked");
+        return { cycleId: r.value.id, type: r.value.type, status: r.value.status, outstandingConsents: outstanding(r.value) };
+      }),
+
+    // Staff-side consent recording (the clinician witnesses a signed paper/tablet
+    // consent). The patient's own e-sign is `portal.signConsent`.
+    recordConsent: protectedProcedure("clinical:cycle.write")
+      .input((v: unknown) => v as { cycleId: string; consentKey: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cycle.recordConsent(ctx.session.subject.staffId, asId<"Cycle">(input.cycleId), input.consentKey);
+        if (!r.ok) throw domainError(r.error, "consent not recorded");
+        return { signed: r.value.signedConsents, outstanding: outstanding(r.value) };
+      }),
+
+    // Advance the cycle's status. Leaving `planned` is BLOCKED by the service
+    // until every required consent is signed (PRECONDITION_FAILED).
+    advanceCycle: protectedProcedure("clinical:cycle.write")
+      .input((v: unknown) => v as { cycleId: string; toStatus: CycleStatus })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cycle.advanceStatus(ctx.session.subject.staffId, asId<"Cycle">(input.cycleId), input.toStatus);
+        if (!r.ok) throw domainError(r.error, "advance blocked");
+        return { status: r.value.status };
+      }),
+
+    cancelCycle: protectedProcedure("clinical:cycle.write")
+      .input((v: unknown) => v as { cycleId: string; reasonCode: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cycle.cancel(ctx.session.subject.staffId, asId<"Cycle">(input.cycleId), input.reasonCode, input.note);
+        if (!r.ok) throw domainError(r.error, "cancel failed");
+        return { status: r.value.status, reasonCode: r.value.cancellationReasonCode, category: r.value.cancellationCategory };
+      }),
+
+    // Convert (e.g. IVF→IUI): the source is cancelled with a `converted`-category
+    // reason and a NEW linked cycle is created, so KPIs separate conversions from
+    // true cancellations.
+    convertCycle: protectedProcedure("clinical:cycle.write")
+      .input((v: unknown) => v as { cycleId: string; toType: CycleType; reasonCode: string; note?: string })
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cycle.convertCycle(ctx.session.subject.staffId, asId<"Cycle">(input.cycleId), input.toType, input.reasonCode, input.note);
+        if (!r.ok) throw domainError(r.error, "convert failed");
+        return { sourceCycleId: r.value.source.id, sourceStatus: r.value.source.status, cycleId: r.value.created.id, type: r.value.created.type, convertedFromId: r.value.created.convertedFromId };
+      }),
+
+    cycle: protectedProcedure("clinical:cycle.read")
+      .input((v: unknown) => v as { cycleId: string })
+      .query(async ({ ctx, input }) => {
+        const c = await ctx.services.cycle.get(asId<"Cycle">(input.cycleId));
+        if (c === null) throw new TRPCError({ code: "NOT_FOUND", message: "cycle not found" });
+        return { cycle: c, timeline: cycleTimeline(c.status), outstandingConsents: outstanding(c) };
+      }),
+
+    // Coded cancellation/conversion reasons — versioned config (ADR-0044).
+    // Defining is admin; the list is a clinical read for the cancel dialog.
+    defineCancellationReason: protectedProcedure("admin:fertility.write")
+      .input((v: unknown) => v as CancellationReasonCode)
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.cycle.defineCancellationReason(ctx.session.subject.staffId, input);
+        if (!r.ok) throw domainError(r.error, "invalid cancellation reason");
+        return { code: r.value.code, category: r.value.category, active: r.value.active };
+      }),
+    cancellationReasons: protectedProcedure("clinical:cycle.read")
+      .query(async ({ ctx }) => ({ reasons: await ctx.services.cycle.listCancellationReasons() })),
   }),
 
   embryology: router({
@@ -787,6 +890,29 @@ export const appRouter = router({
       }),
   }),
 
+  // The building itself — floors, locations, beds (docs/PHASE7_PLAN §7.3 gap 2).
+  // The topology is CONFIGURATION DATA, not code: `applyTopology` applies a spec
+  // (defaulting to the canonical Oxford layout — Ground pharmacy, L1 2 theatres +
+  // 3 recovery beds, L2 6 inpatient beds, L3 clinic + lab, ADR-0023) and is
+  // IDEMPOTENT — only missing floors/locations/beds are created and a bed's status
+  // is never reset, so re-applying on a populated database cannot free an occupied
+  // bed. Admin-gated (admin:facility.write); the reads are the front-desk/flow-board
+  // lookups that `flow.checkIn` and the perioperative admit path need, so they sit
+  // on the non-PHI flow-board permission.
+  facility: router({
+    applyTopology: protectedProcedure("admin:facility.write")
+      .input((v: unknown) => (v ?? {}) as { spec?: TopologySpec })
+      .mutation(async ({ ctx, input }) => ctx.services.facility.applyTopology(ctx.session.subject.staffId, input.spec ?? OXFORD_TOPOLOGY)),
+    locations: protectedProcedure("scheduling:flowboard.read")
+      .query(async ({ ctx }) => ({
+        locations: (await ctx.services.facility.locations()).map((l) => ({ locationNodeId: l.id, level: l.level, type: l.type, name: l.name, capacity: l.capacity })),
+      })),
+    beds: protectedProcedure("scheduling:flowboard.read")
+      .query(async ({ ctx }) => ({
+        beds: (await ctx.services.facility.beds()).map((b) => ({ bedId: b.id, locationNodeId: b.locationNodeId, label: b.label, status: b.status })),
+      })),
+  }),
+
   // Front-desk check-in: advance the appointment and place the patient on the
   // flow board (location/status only).
   flow: router({
@@ -813,8 +939,33 @@ export const appRouter = router({
       .query(async ({ ctx }) => ({ beds: (await ctx.services.facility.bedsAwaitingTurnaround()).map((b) => ({ bedId: b.id, label: b.label })) })),
   }),
 
-  // Staff scheduling (books on a patient's behalf at reception).
+  // Staff scheduling (books on a patient's behalf at reception) + the SCHEDULING
+  // CONFIG surface (docs/PHASE7_PLAN §7.3 gap 1). Appointment types and bookable
+  // resources are versioned configuration ("configuration is data", CLAUDE.md):
+  // defining them is an ADMIN action (admin:scheduling.write — reception may book,
+  // never re-configure the clinic) and is audited by the service; the LISTS are
+  // front-desk reads the booking UI needs (scheduling:appointment.read). Passing a
+  // stable `id` makes a re-apply an idempotent upsert.
   scheduling: router({
+    defineAppointmentType: protectedProcedure("admin:scheduling.write")
+      .input((v: unknown) => v as AppointmentTypeInput)
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.scheduling.defineAppointmentType(ctx.session.subject.staffId, input);
+        if (!r.ok) throw domainError(r.error, "invalid appointment type");
+        return { typeId: r.value.id, durationMin: r.value.durationMin };
+      }),
+    defineResource: protectedProcedure("admin:scheduling.write")
+      .input((v: unknown) => v as ResourceInput)
+      .mutation(async ({ ctx, input }) => {
+        const r = await ctx.services.scheduling.defineResource(ctx.session.subject.staffId, input);
+        if (!r.ok) throw domainError(r.error, "invalid resource");
+        return { resourceId: r.value.id, kind: r.value.kind };
+      }),
+    appointmentTypes: protectedProcedure("scheduling:appointment.read")
+      .query(async ({ ctx }) => ({ types: await ctx.services.scheduling.appointmentTypes() })),
+    resources: protectedProcedure("scheduling:appointment.read")
+      .query(async ({ ctx }) => ({ resources: await ctx.services.scheduling.resources() })),
+
     book: protectedProcedure("scheduling:appointment.book")
       .input((v: unknown) => v as { patientId: string; typeId: string; practitionerId: string; resourceIds: string[]; start: string; end: string })
       .mutation(async ({ ctx, input }) => {

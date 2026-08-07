@@ -14,6 +14,9 @@ export interface SchedulingStore {
   /** Appointments whose start falls in the half-open instant range [from, to). */
   appointmentsInRange(fromIso: string, toIso: string): Promise<readonly Appointment[]>;
   listAppointments(): Promise<readonly Appointment[]>;
+  /** Config reads for the booking UI. */
+  listResources(): Promise<readonly Resource[]>;
+  listAppointmentTypes(): Promise<readonly AppointmentType[]>;
 }
 
 export class InMemorySchedulingStore implements SchedulingStore {
@@ -50,5 +53,11 @@ export class InMemorySchedulingStore implements SchedulingStore {
   }
   async listAppointments(): Promise<readonly Appointment[]> {
     return [...this.appts.values()];
+  }
+  async listResources(): Promise<readonly Resource[]> {
+    return [...this.resources.values()];
+  }
+  async listAppointmentTypes(): Promise<readonly AppointmentType[]> {
+    return [...this.types.values()];
   }
 }

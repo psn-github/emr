@@ -3,7 +3,7 @@ import { fixedClock, asId } from "@oxford/core";
 import { AuditLog, DomainEventLog, InMemoryChainStore, type AuditPayload, type DomainEventPayload } from "@oxford/audit";
 import { FacilityService } from "./facility-service.js";
 import { InMemoryFacilityStore } from "./store.js";
-import { seedFacility } from "./seed.js";
+import { seedFacility, OXFORD_TOPOLOGY } from "./seed.js";
 import type { BedId } from "./types.js";
 
 function build() {
@@ -64,6 +64,59 @@ describe("FacilityService.completeTurnaround", () => {
     if (!notCleaning.ok) expect(notCleaning.error.detailKey).toBe("facility.bed.not_cleaning");
     // unknown bed
     expect((await svc.completeTurnaround("housekeeping", "nope" as never)).ok).toBe(false);
+  });
+});
+
+describe("FacilityService.applyTopology", () => {
+  it("is IDEMPOTENT: a second apply creates nothing, audits nothing, and never resets bed status", async () => {
+    const { svc, audit, events } = build();
+    const first = await svc.applyTopology("ops-1", OXFORD_TOPOLOGY);
+    expect(first.created).toEqual({ floors: 4, locations: 19, beds: 9 });
+    expect(first.totals).toEqual({ floors: 4, locations: 19, beds: 9 });
+
+    // occupy a bed, then re-apply the very same configuration
+    const bed = (await svc.beds())[0]!;
+    await svc.setBedStatus("nurse-1", bed.id, "occupied");
+    const auditCountBefore = (await audit.entries()).length;
+
+    const second = await svc.applyTopology("ops-1", OXFORD_TOPOLOGY);
+    expect(second.created).toEqual({ floors: 0, locations: 0, beds: 0 });
+    expect(second.totals).toEqual({ floors: 4, locations: 19, beds: 9 });
+    expect(await svc.locations()).toHaveLength(19);
+    expect(await svc.beds()).toHaveLength(9);
+    // the occupied bed is STILL occupied — re-applying config never frees a bed
+    expect((await svc.getBed(bed.id))?.status).toBe("occupied");
+    // a no-op apply mutates nothing, so it audits nothing
+    expect((await audit.entries()).length).toBe(auditCountBefore);
+
+    const topologyAudits = (await audit.entries()).filter((e) => e.payload.entityType === "FacilityTopology");
+    expect(topologyAudits).toHaveLength(1);
+    expect(topologyAudits[0]!.payload.action).toBe("CREATE");
+    expect((await events.events()).filter((e) => e.payload.type === "FacilityTopologyApplied")).toHaveLength(1);
+  });
+
+  it("fills in only what is MISSING from a partially-built facility", async () => {
+    const { svc } = build();
+    // an operator hand-built one L2 bed with exactly the canonical naming
+    const node = await svc.addLocation("L2", "inpatient_bed", { ar: "سرير التنويم 1", en: "Inpatient Bed 1" }, 1);
+    await svc.addBed(node.id, "L2-1");
+
+    const r = await svc.applyTopology("ops-1", OXFORD_TOPOLOGY);
+    expect(r.created).toEqual({ floors: 4, locations: 18, beds: 8 });
+    expect(r.totals).toEqual({ floors: 4, locations: 19, beds: 9 });
+    expect(await svc.locations()).toHaveLength(19);
+    expect(await svc.beds()).toHaveLength(9);
+  });
+
+  it("applies a non-canonical (clinic-specific) spec too — topology is config, not code", async () => {
+    const { svc } = build();
+    const r = await svc.applyTopology("ops-1", {
+      floors: [{ level: "L2", name: { ar: "الطابق الثاني", en: "Level 2" } }],
+      locations: [{ level: "L2", type: "inpatient_bed", name: { ar: "جناح", en: "Suite" }, capacity: 2, beds: ["S-1", "S-2"] }],
+    });
+    expect(r.created).toEqual({ floors: 1, locations: 1, beds: 2 });
+    expect((await svc.floors()).map((f) => f.level)).toEqual(["L2"]);
+    expect((await svc.beds()).map((b) => b.label).sort()).toEqual(["S-1", "S-2"]);
   });
 });
 

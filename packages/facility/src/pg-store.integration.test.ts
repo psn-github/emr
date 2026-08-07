@@ -41,5 +41,14 @@ describe.skipIf(!DATABASE_URL)("PgFacilityStore", () => {
     await svc.setBedStatus("nurse-1", first.id, "occupied");
     const raw = await pool.query<{ status: string }>("SELECT status FROM facility.bed WHERE id = $1", [first.id]);
     expect(raw.rows[0]!.status).toBe("occupied");
+
+    // re-applying the same topology on a populated database is a NO-OP: no
+    // duplicate rows, and the occupied bed is not freed (idempotent config).
+    const again = await seedFacility(svc);
+    expect(again).toEqual({ locations: 0, beds: 0 });
+    expect(await svc.beds()).toHaveLength(9);
+    expect(await svc.locations()).toHaveLength(19);
+    expect((await svc.floors()).map((f) => f.level).sort()).toEqual(["L1", "L2", "L3", "ground"]);
+    expect((await svc.getBed(first.id))?.status).toBe("occupied");
   });
 });

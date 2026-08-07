@@ -2,17 +2,26 @@
 // whole harness talks to the dev/staging HTTP host, which refuses production
 // boot). Each "couple" drives a whole-EMR journey OVER REAL HTTP through the
 // same tRPC surface the clinic will use: registration → verified marriage →
-// booking → clinical encounter/orders/results → embryology with RI Witness
-// reconciliation (the stub is fed via the `dev` router — never overridden) →
-// outcomes → packages/instalments/KNET → the patient portal — and verifies the
-// audit hash-chain every loop. A step failure NEVER stops the run: it is
-// recorded in the report and the journey continues where sensible.
+// a real treatment cycle (consents, consent-gated progression) → booking +
+// front-desk check-in → clinical encounter/orders/results → the perioperative
+// day case (WHO-gated theatre, pharmacy-gated discharge) → embryology with RI
+// Witness reconciliation (the stub is fed via the `dev` router — never
+// overridden) → outcomes → packages/instalments/KNET → the patient portal — and
+// verifies the audit hash-chain every loop. A step failure NEVER stops the run:
+// it is recorded in the report and the journey continues where sensible.
+//
+// The clinic CONFIGURATION the journeys need (facility topology, appointment
+// types/resources, cancellation reason codes, charge codes, the package) is
+// applied once per run through the admin surfaces, all of which are idempotent —
+// re-running against a persistent staging database adds no configuration rows.
 //
 // Determinism: all VARIATION (couple variant, oocyte counts) comes from the
 // seeded PRNG (prng.ts) — no Math.random. Identity strings additionally carry a
 // per-run tag so repeated runs against a persistent staging database cannot
 // collide on civil ids, storage positions or booked slots.
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import { SEED_CANCELLATION_REASONS } from "@oxford/fertility";
+import { WHO_REQUIRED_ITEMS } from "@oxford/perioperative";
 import type { AppRouter } from "../router.js";
 import { mulberry32, pickInt, type Rng } from "./prng.js";
 
@@ -51,15 +60,14 @@ export interface SimulationReport {
 }
 
 /** Target-journey steps the router exposes no procedure for (the phase e2es
- *  drive these through in-process services). The simulator skips them. */
+ *  drive these through in-process services). The simulator skips them.
+ *  Gaps 1–3 + 7 of docs/PHASE7_PLAN §7.3 are CLOSED — scheduling config, the
+ *  facility topology, the cycle engine and the perioperative admission path are
+ *  all driven over HTTP below. */
 export const ROUTER_GAPS: readonly string[] = [
-  "scheduling config: no addAppointmentType/addResource procedure — bookings use synthetic type/resource ids",
-  "flow.checkIn: needs a facility locationNodeId, but there is no facility topology read/seed surface (serve.ts does not seed the topology)",
-  "fertility cycle engine: no createTreatmentCycle / staff consent-recording / reason-coded cycle-cancel surface — so portal.cycleTimeline, portal.medicationSchedule, portal.outstandingConsents and portal.signConsent cannot be driven (they need a real cycle row)",
-  "stimulation: no stim.recordDay or formulary-config surface — stimulation days with formulary drugs cannot be recorded over HTTP",
+  "stimulation: no stim.recordDay or formulary-config surface — stimulation days with formulary drugs cannot be recorded over HTTP (so the portal medication schedule reads empty)",
   "embryology: no recordOocyte / recordFertilisationCheck / recordGrading surface — retrieval and fert-check are represented by synthetic ids around recordInsemination/recordTransfer",
   "witnessing: no ingest/reconciliation read surface (sign-off reconciles live against the provider, so dev.seedWitnessRecord suffices)",
-  "perioperative: admit/advance need the seeded facility topology (no API/seed surface on a fresh staging DB), so the pharmacy-gated discharge behind dev.markPharmacyFulfilled is not reachable end-to-end",
 ];
 
 type Api = ReturnType<typeof apiClient>;
@@ -131,22 +139,65 @@ const CONSULT_CODE = "SIM-CONSULT";
 const PACKAGE_CODE = "SIM-ICSI-PKG";
 const PACKAGE_PRICE_FILS = 1_500_000;
 
+// Stable configuration keys (config-as-data): re-applying them is an idempotent
+// upsert, so a re-run against a persistent staging DB adds no config rows.
+const MONITORING_TYPE_ID = "sim-type-monitoring";
+const THEATRE_TYPE_ID = "sim-type-theatre";
+const SCANNER_RESOURCE_ID = "sim-res-scanner-1";
+
 interface SimPackage {
   readonly packageId: string;
   readonly priceFils: number;
 }
 
+/** Clinic configuration the journeys need, resolved once per run. */
+interface ClinicConfig {
+  readonly pkg: SimPackage | undefined;
+  /** An L3 consult room the front desk checks patients in to. */
+  readonly waitingLocationNodeId: string | undefined;
+}
+
 /** Config-as-data setup, tolerant of re-runs against a persistent staging DB:
- *  charge codes upsert; the package is find-by-code-or-define. */
-async function ensureConfig(env: Env, at: StepAt): Promise<SimPackage | undefined> {
-  const { fin, j } = env;
+ *  charge codes upsert; the package is find-by-code-or-define; the facility
+ *  topology, scheduling config and cancellation-reason codes are applied through
+ *  the Phase-7.3 admin surfaces, all of which are idempotent. */
+async function ensureConfig(env: Env, at: StepAt): Promise<ClinicConfig> {
+  const { doc, fin, ops, j } = env;
+
+  // ── the building (gap 2): idempotent apply of the canonical Oxford topology
+  await j.step(at, "config: facility topology", "facility.applyTopology", async () => {
+    const r = await ops.facility.applyTopology.mutate({});
+    ensure(r.totals.beds === 9 && r.totals.locations === 19, `expected the canonical topology (19 locations, 9 beds), got ${r.totals.locations}/${r.totals.beds}`);
+  });
+  const waitingLocationNodeId = await j.step(at, "config: read topology for check-in", "facility.locations", async () => {
+    const consult = (await doc.facility.locations.query()).locations.find((l) => l.type === "consult_room");
+    ensure(consult !== undefined, "expected an L3 consult room in the topology");
+    return consult!.locationNodeId;
+  });
+
+  // ── scheduling config (gap 1): appointment types + the shared scanner room
+  await j.step(at, "config: appointment types + resources", "scheduling.defineAppointmentType", async () => {
+    await ops.scheduling.defineAppointmentType.mutate({ id: MONITORING_TYPE_ID, name: N("Monitoring scan (simulator)"), durationMin: 30, requiredResourceKinds: ["practitioner"], prep: N("Attend with a full bladder") });
+    await ops.scheduling.defineAppointmentType.mutate({ id: THEATRE_TYPE_ID, name: N("Theatre case (simulator)"), durationMin: 60, requiredResourceKinds: ["theatre", "practitioner"] });
+    await ops.scheduling.defineResource.mutate({ id: SCANNER_RESOURCE_ID, kind: "scanner", name: N("Ultrasound room (simulator)"), level: "L3" });
+    const types = (await doc.scheduling.appointmentTypes.query()).types;
+    ensure(types.some((t) => t.id === MONITORING_TYPE_ID), "expected the monitoring appointment type to be listed");
+  });
+
+  // ── coded cancellation/conversion reasons (gap 3): versioned config
+  await j.step(at, "config: cancellation reason codes", "fertility.defineCancellationReason", async () => {
+    for (const reason of SEED_CANCELLATION_REASONS) await ops.fertility.defineCancellationReason.mutate(reason);
+    const active = (await doc.fertility.cancellationReasons.query()).reasons;
+    ensure(active.length >= SEED_CANCELLATION_REASONS.length, `expected the seeded reason codes to be active, got ${active.length}`);
+  });
+
   await j.step(at, "config: charge code SIM-SCAN", "charges.defineCode", () =>
     fin.charges.defineCode.mutate({ code: SCAN_CODE, description: N("Monitoring scan (simulator)"), unitAmountFils: 15_000 }),
   );
   await j.step(at, "config: charge code SIM-CONSULT", "charges.defineCode", () =>
     fin.charges.defineCode.mutate({ code: CONSULT_CODE, description: N("Consultation (simulator)"), unitAmountFils: 25_000 }),
   );
-  return j.step(at, "config: ICSI package", "packages.define", async () => {
+  const pkg = await j.step(at, "config: ICSI package", "packages.define", async () => {
     const existing = (await fin.packages.list.query()).packages.find((p) => p.code === PACKAGE_CODE && p.active);
     if (existing !== undefined) return { packageId: existing.id, priceFils: existing.priceFils };
     const defined = await fin.packages.define.mutate({
@@ -157,6 +208,7 @@ async function ensureConfig(env: Env, at: StepAt): Promise<SimPackage | undefine
     });
     return { packageId: defined.packageId, priceFils: PACKAGE_PRICE_FILS };
   });
+  return { pkg, waitingLocationNodeId };
 }
 
 type Variant = "transfer" | "freeze" | "cancel";
@@ -177,8 +229,9 @@ function planCouple(rng: Rng, couple: number): CouplePlan {
   return { variant, oocytes, partnerAccess: couple === 0 };
 }
 
-async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: SimPackage | undefined): Promise<void> {
+async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, config: ClinicConfig): Promise<void> {
   const { doc, emb, fin, phm, ops, j, runTag } = env;
+  const pkg = config.pkg;
   const tag = `${runTag}-${at.loop}-${at.couple}`;
   const T0 = "2026-09-01T08:00:00.000Z";
   // Captured for the print pack (ADR-0068) at the end of the journey.
@@ -230,18 +283,63 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
   });
   await j.step(at, "fertility intake gate", "fertility.startIntake", () => doc.fertility.startIntake.mutate({ coupleId: couple.coupleId }));
 
-  // ── scheduling (synthetic type/resource ids — config has no API surface) ──
-  await j.step(at, "book monitoring appointment", "scheduling.book", () =>
-    doc.scheduling.book.mutate({
+  // ── the treatment cycle (gap 3) ───────────────────────────────────────────
+  // A REAL cycle row: the marriage gate above is what let it be created, and the
+  // whole lab/portal journey below is keyed by its id. Consents are recorded on
+  // both sides — one by the clinician, the rest e-signed by the patient — and
+  // the cycle cannot leave `planned` until they are complete (service gate).
+  const wifePortal = env.patient(wifeId);
+  const cycle = await j.step(at, "create treatment cycle (marriage-gated)", "fertility.createCycle", async () => {
+    const c = await doc.fertility.createCycle.mutate({ type: "icsi", coupleId: couple.coupleId, protocolId: "antagonist" });
+    ensure(c.status === "planned", `expected a planned cycle, got ${c.status}`);
+    ensure(c.outstandingConsents.length > 0, "expected outstanding consents on a new cycle");
+    return c;
+  });
+  if (cycle === undefined) return;
+  const cycleId = cycle.cycleId;
+
+  await j.step(at, "cycle consents: staff records one, patient e-signs the rest", "fertility.recordConsent", async () => {
+    const first = cycle.outstandingConsents[0]!;
+    await doc.fertility.recordConsent.mutate({ cycleId, consentKey: first });
+    const outstanding = await wifePortal.portal.outstandingConsents.query({ patientId: wifeId, cycleId });
+    for (const key of outstanding.outstanding) await wifePortal.portal.signConsent.mutate({ patientId: wifeId, cycleId, consentKey: key });
+    const after = await wifePortal.portal.outstandingConsents.query({ patientId: wifeId, cycleId });
+    ensure(after.outstanding.length === 0, `expected no outstanding consents, got ${after.outstanding.length}`);
+  });
+  await j.step(at, "cycle advances to stimulating (consent gate satisfied)", "fertility.advanceCycle", async () => {
+    const r = await doc.fertility.advanceCycle.mutate({ cycleId, toStatus: "stimulating" });
+    ensure(r.status === "stimulating", `expected a stimulating cycle, got ${r.status}`);
+  });
+  await j.step(at, "portal: cycle timeline + medication schedule", "portal.cycleTimeline", async () => {
+    const t = await wifePortal.portal.cycleTimeline.query({ patientId: wifeId, cycleId });
+    ensure(t.timeline.current === "stimulating", `expected the timeline at stimulating, got ${t.timeline.current}`);
+    // The chart itself has no HTTP surface yet (router gap 4), so the schedule
+    // is legitimately empty — what matters is that it is now REACHABLE.
+    const meds = await wifePortal.portal.medicationSchedule.query({ patientId: wifeId, cycleId });
+    ensure(Array.isArray(meds.schedule), "expected a medication schedule for an owned cycle");
+  });
+
+  // ── scheduling against REAL config + front-desk check-in (gaps 1 + 2) ─────
+  // The practitioner resource is defined per couple/run so slots never collide
+  // across loops or re-runs; the appointment type is the shared clinic config.
+  const practitionerId = `sim-res-doc-${tag}`;
+  const appointment = await j.step(at, "define practitioner + book monitoring appointment", "scheduling.book", async () => {
+    await ops.scheduling.defineResource.mutate({ id: practitionerId, kind: "practitioner", name: N(`Sim Consultant ${tag}`), level: "L3" });
+    return doc.scheduling.book.mutate({
       patientId: wifeId,
-      typeId: "sim-type-monitoring",
-      practitionerId: `sim-doc-${tag}`,
+      typeId: MONITORING_TYPE_ID,
+      practitionerId,
       resourceIds: [],
       start: T0,
       end: "2026-09-01T08:30:00.000Z",
-    }),
-  );
-  // flow.checkIn is skipped: no facility-topology surface (see ROUTER_GAPS).
+    });
+  });
+  if (appointment !== undefined && config.waitingLocationNodeId !== undefined) {
+    const locationNodeId = config.waitingLocationNodeId;
+    await j.step(at, "front desk: check the patient in", "flow.checkIn", () =>
+      doc.flow.checkIn.mutate({ appointmentId: appointment.appointmentId, patientId: wifeId, locationNodeId }),
+    );
+  }
 
   // ── clinical encounter → note → order → result → release ─────────────────
   const enc = await j.step(at, "open encounter", "clinical.openEncounter", () =>
@@ -262,8 +360,8 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
         await j.step(at, "release result to portal", "clinical.releaseResult", () => doc.clinical.releaseResult.mutate({ resultId: result.resultId }));
       }
     }
-    // Exercises the dev pharmacy stub feed; the perioperative discharge gate it
-    // backs is not reachable over HTTP on a fresh DB (see ROUTER_GAPS).
+    // Exercises the dev pharmacy stub feed (the real fulfilment loop below is
+    // what actually gates the perioperative discharge).
     await j.step(at, "mark pharmacy fulfilled (dev stub)", "dev.markPharmacyFulfilled", () => doc.dev.markPharmacyFulfilled.mutate({ encounterId: enc.encounterId }));
 
     // External-pharmacy prescription loop (ADR-0069): the clinician raises a
@@ -316,13 +414,58 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
     }),
   );
 
-  // ── embryology + RI Witness reconciliation ────────────────────────────────
-  // The cycle id is synthetic (no cycle-creation surface — see ROUTER_GAPS).
+  // ── perioperative day case: retrieval under GA (gaps 2 + 7) ───────────────
+  // Drivable end-to-end now that the topology exists: admit on L3 → L2 bed → L1
+  // pre-op → theatre (WHO-gated) → recovery → L2 → PHARMACY-GATED discharge, with
+  // housekeeping returning the vacated beds to the pool so re-runs stay clean.
+  const surgical = await j.step(at, "perioperative: admit → theatre → recovery → ward", "perioperative.admit", async () => {
+    const admitted = await doc.perioperative.admit.mutate({ patientId: wifeId, indication: "Oocyte retrieval (simulated)", admittedAt: "2026-09-05T07:00:00.000Z" });
+    ensure(admitted.stage === "admitted", `expected an admitted encounter, got ${admitted.stage}`);
+    const encounterId = admitted.encounterId;
+    await doc.perioperative.advance.mutate({ encounterId, toStage: "ward_bed" });
+    await doc.perioperative.advance.mutate({ encounterId, toStage: "pre_theatre" });
+    await doc.perioperative.completeChecklistPhase.mutate({ encounterId, phase: "sign_in", confirmedItems: [...WHO_REQUIRED_ITEMS.sign_in], completedAt: "2026-09-05T07:30:00.000Z" });
+    await doc.perioperative.completeChecklistPhase.mutate({ encounterId, phase: "time_out", confirmedItems: [...WHO_REQUIRED_ITEMS.time_out], completedAt: "2026-09-05T07:40:00.000Z" });
+    await doc.perioperative.advance.mutate({ encounterId, toStage: "in_theatre" });
+    await doc.perioperative.completeChecklistPhase.mutate({ encounterId, phase: "sign_out", confirmedItems: [...WHO_REQUIRED_ITEMS.sign_out], completedAt: "2026-09-05T08:30:00.000Z" });
+    await doc.perioperative.advance.mutate({ encounterId, toStage: "recovery" });
+    await doc.perioperative.recordObservation.mutate({ encounterId, phase: "recovery", aldreteScore: 10, systolicBp: 118, heartRate: 72, spo2: 99, recordedAt: "2026-09-05T09:00:00.000Z" });
+    const ward = await doc.perioperative.advance.mutate({ encounterId, toStage: "post_op_ward" });
+    ensure(ward.stage === "post_op_ward", `expected the patient on the post-op ward, got ${ward.stage}`);
+    return encounterId;
+  });
+  if (surgical !== undefined) {
+    const encounterId = surgical;
+    await j.step(at, "perioperative: pharmacy-gated discharge + bed turnaround", "perioperative.advance", async () => {
+      const rx = await doc.pharmacy.raisePrescription.mutate({
+        patientId: wifeId,
+        encounterId,
+        items: [{ drugId: "progesterone", quantity: 1, doseInstruction: { en: "400 mg twice daily", ar: "400 ملغ مرتين يومياً" } }],
+      });
+      await phm.pharmacy.issue.mutate({ prescriptionId: rx.prescriptionId });
+      await phm.pharmacy.recordExternalFulfilment.mutate({ prescriptionId: rx.prescriptionId, externalRef: `GRD-OP-${tag}` });
+      await doc.perioperative.bookFollowUp.mutate({ encounterId, scheduledFor: "2026-09-19T09:00:00.000Z", bookedAt: "2026-09-05T10:00:00.000Z" });
+      const discharged = await doc.perioperative.advance.mutate({ encounterId, toStage: "discharged" });
+      ensure(discharged.stage === "discharged", `expected a discharged encounter, got ${discharged.stage}`);
+      // housekeeping: return every vacated bed to the pool (keeps re-runs clean)
+      for (const bed of (await doc.flow.bedsAwaitingTurnaround.query()).beds) {
+        await doc.flow.completeTurnaround.mutate({ bedId: bed.bedId });
+      }
+    });
+  }
+
+  // ── the cycle reaches retrieval, then embryology + RI Witness reconciliation ─
   // Every handling event gets a MATCHING RI record seeded into the stub (as the
   // device would have returned it) so cycle-step sign-off reconciles; seeding
   // happens strictly AFTER the Oxford event so an early record can never sit as
   // an orphan (orphans block sign-off — no override).
-  const cycleId = `sim-cycle-${tag}`;
+  if (plan.variant !== "cancel") {
+    await j.step(at, "cycle: trigger → retrieval", "fertility.advanceCycle", async () => {
+      await doc.fertility.advanceCycle.mutate({ cycleId, toStatus: "triggered" });
+      const r = await doc.fertility.advanceCycle.mutate({ cycleId, toStatus: "retrieval" });
+      ensure(r.status === "retrieval", `expected the cycle at retrieval, got ${r.status}`);
+    });
+  }
   for (let i = 0; i < plan.oocytes; i += 1) {
     const oocyteId = `sim-ooc-${tag}-${i}`;
     const insem = await j.step(at, `record insemination ${i + 1}/${plan.oocytes}`, "embryology.recordInsemination", () =>
@@ -400,6 +543,13 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
       const s = await doc.outcomes.summary.query({ cycleId });
       ensure(s.kpi.liveBirth, "expected liveBirth KPI to be true");
     });
+    await j.step(at, "cycle: fertilisation → transfer → luteal → outcome", "fertility.advanceCycle", async () => {
+      for (const to of ["fertilisation", "culture", "transfer", "luteal", "outcome"] as const) {
+        await doc.fertility.advanceCycle.mutate({ cycleId, toStatus: to });
+      }
+      const t = await wifePortal.portal.cycleTimeline.query({ patientId: wifeId, cycleId });
+      ensure(t.timeline.current === "outcome" && t.timeline.next === null, `expected the cycle completed at outcome, got ${t.timeline.current}`);
+    });
   } else if (plan.variant === "freeze") {
     const embryoId = `sim-emb-${tag}-0`;
     const disposition = await j.step(at, "freeze disposition (witness-gated)", "embryology.recordDisposition", () =>
@@ -453,12 +603,17 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
     await j.step(at, "record pregnancy test (freeze-all)", "outcomes.recordTest", () =>
       doc.outcomes.recordTest.mutate({ cycleId, betaHcgMiuMl: 2, testedAt: "2026-09-21T08:00:00.000Z" }),
     );
+    await j.step(at, "cycle: fertilisation → culture (freeze-all)", "fertility.advanceCycle", async () => {
+      await doc.fertility.advanceCycle.mutate({ cycleId, toStatus: "fertilisation" });
+      const r = await doc.fertility.advanceCycle.mutate({ cycleId, toStatus: "culture" });
+      ensure(r.status === "culture", `expected the cycle at culture, got ${r.status}`);
+    });
   } else {
-    // Coded cancellation instead of transfer: the only reason-coded cancel the
-    // router exposes is the theatre case (cycle lifecycle has no API surface).
+    // Coded cancellation: the CYCLE is cancelled with a reason code from the
+    // versioned config (never free text), and the booked theatre case with it.
     const theatreCase = await j.step(at, "schedule retrieval theatre case", "perioperative.scheduleCase", () =>
       doc.perioperative.scheduleCase.mutate({
-        typeId: "sim-type-theatre",
+        typeId: THEATRE_TYPE_ID,
         patientId: wifeId,
         procedure: "Oocyte retrieval (simulated)",
         theatreResourceId: `sim-theatre-${tag}`,
@@ -474,6 +629,20 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
         ensure(r.status === "cancelled", `expected cancelled case, got ${r.status}`);
       });
     }
+    await j.step(at, "reason-coded cycle cancellation", "fertility.cancelCycle", async () => {
+      // free text is REJECTED — only a configured code may cancel a cycle
+      let rejected = false;
+      try {
+        await doc.fertility.cancelCycle.mutate({ cycleId, reasonCode: "she changed her mind" });
+      } catch {
+        rejected = true;
+      }
+      ensure(rejected, "expected a free-text cancellation reason to be rejected");
+      const r = await doc.fertility.cancelCycle.mutate({ cycleId, reasonCode: "ohss_risk", note: "sim: E2 rising steeply" });
+      ensure(r.status === "cancelled" && r.category === "ohss_risk", `expected an OHSS-coded cancellation, got ${r.status}/${r.category ?? "none"}`);
+      const timeline = await wifePortal.portal.cycleTimeline.query({ patientId: wifeId, cycleId });
+      ensure(timeline.timeline.cancelled, "expected the portal timeline to show the cycle cancelled");
+    });
   }
 
   // ── revenue cycle ─────────────────────────────────────────────────────────
@@ -559,7 +728,6 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
   }
 
   // ── the patient portal (own-data only) ────────────────────────────────────
-  const wifePortal = env.patient(wifeId);
   await j.step(at, "portal: balances", "portal.balances", async () => {
     const r = await wifePortal.portal.balances.query({ patientId: wifeId });
     ensure(r.invoices.length >= 1, "expected at least one invoice on the portal");
@@ -583,8 +751,8 @@ async function runCoupleJourney(env: Env, at: StepAt, plan: CouplePlan, pkg: Sim
   await j.step(at, "portal: self-service booking", "portal.book", () =>
     wifePortal.portal.book.mutate({
       patientId: wifeId,
-      typeId: "sim-type-monitoring",
-      practitionerId: `sim-doc2-${tag}`,
+      typeId: MONITORING_TYPE_ID,
+      practitionerId,
       resourceIds: [],
       start: "2026-09-08T09:00:00.000Z",
       end: "2026-09-08T09:30:00.000Z",
@@ -658,13 +826,13 @@ export async function runSimulation(opts: SimulationOptions): Promise<Simulation
     runTag,
   };
 
-  const pkg = await ensureConfig(env, { loop: 0, couple: -1 });
+  const config = await ensureConfig(env, { loop: 0, couple: -1 });
 
   let auditChainIntact = false;
   for (let loop = 0; loop < opts.loops; loop += 1) {
     for (let couple = 0; couple < opts.couples; couple += 1) {
       const at: StepAt = { loop, couple };
-      await runCoupleJourney(env, at, planCouple(rng, couple), pkg);
+      await runCoupleJourney(env, at, planCouple(rng, couple), config);
     }
     // The audit hash-chain must verify EVERY loop — a broken chain is a failure.
     const check = await j.step({ loop, couple: -1 }, "audit hash-chain verification", "dev.verifyAuditChain", async () => {

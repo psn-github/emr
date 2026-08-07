@@ -3,7 +3,7 @@
 // FertilityGate seam (wired to registry in the app layer).
 export type { Cycle, CycleId, CycleType, CycleStatus, CycleOwner, Protocol, CancellationCategory, CancellationReasonCode } from "./types.js";
 export { PERSON_SCOPED_TYPES } from "./types.js";
-export { SEED_CANCELLATION_REASONS, CONVERSION_CATEGORY, type ReasonCodeStore, InMemoryReasonCodeStore } from "./reason-codes.js";
+export { SEED_CANCELLATION_REASONS, CONVERSION_CATEGORY, CANCELLATION_CATEGORIES, type ReasonCodeStore, InMemoryReasonCodeStore } from "./reason-codes.js";
 export { PgReasonCodeStore, seedCancellationReasons } from "./reason-pg-store.js";
 export { SEED_CYCLE_TEMPLATES, type CycleTemplate, type CycleTemplateStore, InMemoryCycleTemplateStore } from "./cycle-template.js";
 export { PgCycleTemplateStore, seedCycleTemplates } from "./cycle-template-pg-store.js";
