@@ -42,8 +42,11 @@ describe.skipIf(!DATABASE_URL)("synthetic-patient simulator (e2e over real HTTP 
     expect(report.errors).toEqual([]);
     expect(report.stepsFailed).toBe(0);
     expect(report.stepsPassed).toBe(report.stepsRun);
-    // Sanity: the run actually drove a whole-EMR journey, not a no-op.
-    expect(report.stepsRun).toBeGreaterThan(40);
+    // Sanity: the run actually drove a whole-EMR journey, not a no-op. Since
+    // Phase 7.3 that includes the clinic config + topology apply, the treatment
+    // cycle (consents → advance → cancel/complete) and the perioperative day
+    // case with its pharmacy-gated discharge — ~110 steps for 2 couples/1 loop.
+    expect(report.stepsRun).toBeGreaterThan(100);
     expect(report.auditChainIntact).toBe(true);
   });
 

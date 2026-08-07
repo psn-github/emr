@@ -66,4 +66,15 @@ export class PgFacilityStore implements FacilityStore {
       capacity: row.capacity,
     }));
   }
+
+  async listFloors(): Promise<readonly Floor[]> {
+    const r = await this.pool.query<{ id: string; level: string; name_ar: string; name_en: string }>(
+      "SELECT id, level, name_ar, name_en FROM facility.floor ORDER BY level",
+    );
+    return r.rows.map((row) => ({
+      id: asId<"Floor">(row.id),
+      level: row.level as Floor["level"],
+      name: { ar: row.name_ar, en: row.name_en },
+    }));
+  }
 }

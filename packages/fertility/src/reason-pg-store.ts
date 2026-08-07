@@ -15,18 +15,24 @@ export class PgReasonCodeStore implements ReasonCodeStore {
     const r = await this.pool.query<ReasonRow>("SELECT * FROM fertility.cancellation_reason WHERE active = true ORDER BY category, code");
     return r.rows.map(fromRow);
   }
+
+  async save(reason: CancellationReasonCode): Promise<void> {
+    await upsertReason(this.pool, reason);
+  }
 }
 
 /** Idempotently seed the cancellation-reason config (config-as-data; safe to re-run). */
 export async function seedCancellationReasons(pool: Pool, reasons: readonly CancellationReasonCode[]): Promise<void> {
-  for (const r of reasons) {
-    await pool.query(
-      `INSERT INTO fertility.cancellation_reason (code, category, name_ar, name_en, active)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (code) DO UPDATE SET category=EXCLUDED.category, name_ar=EXCLUDED.name_ar, name_en=EXCLUDED.name_en, active=EXCLUDED.active`,
-      [r.code, r.category, r.name.ar, r.name.en, r.active],
-    );
-  }
+  for (const r of reasons) await upsertReason(pool, r);
+}
+
+async function upsertReason(pool: Pool, r: CancellationReasonCode): Promise<void> {
+  await pool.query(
+    `INSERT INTO fertility.cancellation_reason (code, category, name_ar, name_en, active)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (code) DO UPDATE SET category=EXCLUDED.category, name_ar=EXCLUDED.name_ar, name_en=EXCLUDED.name_en, active=EXCLUDED.active`,
+    [r.code, r.category, r.name.ar, r.name.en, r.active],
+  );
 }
 
 interface ReasonRow {

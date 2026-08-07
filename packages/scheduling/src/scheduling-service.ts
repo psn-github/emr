@@ -1,5 +1,5 @@
 import type { Result, AppError } from "@oxford/core";
-import { ok, err, newId, notFound, conflict, validationError } from "@oxford/core";
+import { ok, err, asId, newId, notFound, conflict, validationError } from "@oxford/core";
 import type { AuditLog, DomainEventLog } from "@oxford/audit";
 import { findConflicts } from "./conflict.js";
 import { assertTransition } from "./status.js";
@@ -15,6 +15,33 @@ import type {
   ResourceKind,
 } from "./types.js";
 import type { SchedulingStore } from "./store.js";
+
+/** Config input for a bookable resource (practitioner/room/scanner/theatre/kit).
+ *  `id` is OPTIONAL and, when given, is the resource's STABLE config key — so
+ *  re-applying the same configuration is an idempotent upsert, not a duplicate
+ *  ("configuration is data", CLAUDE.md). Omit it and a fresh id is allocated. */
+export interface ResourceInput {
+  readonly id?: string;
+  readonly kind: ResourceKind;
+  readonly name: BilingualName;
+  readonly level?: Resource["level"];
+  readonly locationRef?: string;
+}
+
+/** Config input for an appointment type. Same stable-key upsert rule as
+ *  ResourceInput; `prep` is the bilingual patient preparation instruction the
+ *  appointment slip prints. */
+export interface AppointmentTypeInput {
+  readonly id?: string;
+  readonly name: BilingualName;
+  readonly durationMin: number;
+  /** Omitted = no resource requirements (defaults to []). */
+  readonly requiredResourceKinds?: readonly ResourceKind[];
+  readonly prep?: BilingualName;
+  readonly defaultBillingItem?: string;
+}
+
+const RESOURCE_KINDS: ReadonlySet<string> = new Set<ResourceKind>(["practitioner", "room", "scanner", "theatre", "equipment"]);
 
 export interface BookInput {
   readonly typeId: AppointmentType["id"];
@@ -57,6 +84,88 @@ export class SchedulingService {
     const type: AppointmentType = { id: newId<"AppointmentType">(), name, durationMin, requiredResourceKinds };
     await this.store.saveAppointmentType(type);
     return type;
+  }
+
+  /**
+   * Define (or re-define) a bookable resource — VERSIONED CONFIG, audited. The
+   * config surface behind the admin-gated router procedure; `addResource` stays
+   * as the unaudited test/seed helper.
+   */
+  async defineResource(actorId: string, input: ResourceInput): Promise<Result<Resource, AppError>> {
+    if (!RESOURCE_KINDS.has(input.kind)) {
+      return err(validationError(`unknown resource kind '${input.kind}'`, "scheduling.resource.bad_kind"));
+    }
+    const named = assertBilingual(input.name, "scheduling.resource.bad_name");
+    if (!named.ok) return err(named.error);
+    const id = input.id !== undefined ? asId<"Resource">(input.id) : newId<"Resource">();
+    const existing = await this.store.getResource(id);
+    const resource: Resource = {
+      id,
+      kind: input.kind,
+      name: input.name,
+      ...(input.level !== undefined ? { level: input.level } : {}),
+      ...(input.locationRef !== undefined ? { locationRef: input.locationRef } : {}),
+    };
+    await this.store.saveResource(resource);
+    await this.audit.record({
+      actorId,
+      entityType: "Resource",
+      entityId: id,
+      action: existing === null ? "CREATE" : "UPDATE",
+      ...(existing !== null ? { before: { kind: existing.kind, name: existing.name } } : {}),
+      after: { kind: resource.kind, name: resource.name },
+    });
+    await this.events.emit({ type: "ResourceDefined", aggregateType: "Resource", aggregateId: id, data: { kind: resource.kind } });
+    return ok(resource);
+  }
+
+  /**
+   * Define (or re-define) an appointment type — VERSIONED CONFIG, audited.
+   * Duration must be a positive whole number of minutes; the resource kinds it
+   * requires must all be known kinds.
+   */
+  async defineAppointmentType(actorId: string, input: AppointmentTypeInput): Promise<Result<AppointmentType, AppError>> {
+    const named = assertBilingual(input.name, "scheduling.appointment_type.bad_name");
+    if (!named.ok) return err(named.error);
+    if (!Number.isInteger(input.durationMin) || input.durationMin <= 0) {
+      return err(validationError("duration must be a positive whole number of minutes", "scheduling.appointment_type.bad_duration"));
+    }
+    const kinds = input.requiredResourceKinds ?? [];
+    const unknown = kinds.find((k) => !RESOURCE_KINDS.has(k));
+    if (unknown !== undefined) {
+      return err(validationError(`unknown resource kind '${unknown}'`, "scheduling.resource.bad_kind"));
+    }
+    const id = input.id !== undefined ? asId<"AppointmentType">(input.id) : newId<"AppointmentType">();
+    const existing = await this.store.getAppointmentType(id);
+    const type: AppointmentType = {
+      id,
+      name: input.name,
+      durationMin: input.durationMin,
+      requiredResourceKinds: [...kinds],
+      ...(input.prep !== undefined ? { prep: input.prep } : {}),
+      ...(input.defaultBillingItem !== undefined ? { defaultBillingItem: input.defaultBillingItem } : {}),
+    };
+    await this.store.saveAppointmentType(type);
+    await this.audit.record({
+      actorId,
+      entityType: "AppointmentType",
+      entityId: id,
+      action: existing === null ? "CREATE" : "UPDATE",
+      ...(existing !== null ? { before: { name: existing.name, durationMin: existing.durationMin } } : {}),
+      after: { name: type.name, durationMin: type.durationMin },
+    });
+    await this.events.emit({ type: "AppointmentTypeDefined", aggregateType: "AppointmentType", aggregateId: id, data: { durationMin: type.durationMin } });
+    return ok(type);
+  }
+
+  /** All bookable resources (config read for the booking UI). */
+  resources(): Promise<readonly Resource[]> {
+    return this.store.listResources();
+  }
+
+  /** All appointment types (config read for the booking UI). */
+  appointmentTypes(): Promise<readonly AppointmentType[]> {
+    return this.store.listAppointmentTypes();
   }
 
   /** Book a slot — rejects on resource/time conflict. */
@@ -150,6 +259,15 @@ export class SchedulingService {
     const inRange = await this.store.appointmentsInRange(from, to);
     return inRange.filter((a) => a.status === "booked" || a.status === "checked_in" || a.status === "in_progress");
   }
+}
+
+/** Bilingual config names are mandatory in BOTH languages (CLAUDE.md: no
+ *  hardcoded user-facing strings — config carries en + ar). */
+function assertBilingual(name: BilingualName | undefined, detailKey: string): Result<void, AppError> {
+  if (name === undefined || name.en.trim() === "" || name.ar.trim() === "") {
+    return err(validationError("a bilingual (en + ar) name is required", detailKey));
+  }
+  return ok(undefined);
 }
 
 function dedupe(ids: readonly ResourceId[]): ResourceId[] {

@@ -42,4 +42,23 @@ describe.skipIf(!DATABASE_URL)("PgSchedulingStore", () => {
 
     expect(await svc.list()).toHaveLength(1);
   });
+
+  it("persists defined config with stable ids (idempotent re-apply) and lists it back", async () => {
+    const audit = new AuditLog(new InMemoryChainStore<AuditPayload>(), clock);
+    const events = new DomainEventLog(new InMemoryChainStore<DomainEventPayload>(), clock);
+    const svc = new SchedulingService(new PgSchedulingStore(pool), audit, events);
+
+    await svc.defineResource("ops-1", { id: "res-doc-1", kind: "practitioner", name: N("Dr A"), level: "L3" });
+    await svc.defineAppointmentType("ops-1", { id: "type-scan", name: N("Scan"), durationMin: 30, requiredResourceKinds: ["practitioner"], prep: N("Full bladder") });
+    // re-apply the same configuration — an upsert, never a duplicate row
+    await svc.defineAppointmentType("ops-1", { id: "type-scan", name: N("Scan"), durationMin: 45, requiredResourceKinds: ["practitioner"], prep: N("Full bladder please") });
+
+    const resources = await svc.resources();
+    expect(resources).toHaveLength(1);
+    expect(resources[0]).toMatchObject({ id: "res-doc-1", kind: "practitioner", level: "L3" });
+    const types = await svc.appointmentTypes();
+    expect(types).toHaveLength(1);
+    expect(types[0]).toMatchObject({ id: "type-scan", durationMin: 45 });
+    expect(types[0]?.prep?.en).toBe("Full bladder please");
+  });
 });

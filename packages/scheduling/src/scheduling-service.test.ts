@@ -133,3 +133,98 @@ describe("SchedulingService lifecycle", () => {
     expect(await ctx.svc.appointmentsOn("2026-06-17")).toHaveLength(0);
   });
 });
+
+describe("SchedulingService config surface (defineResource / defineAppointmentType)", () => {
+  it("defines a resource + appointment type with STABLE ids, audits CREATE then UPDATE, and lists them", async () => {
+    const { svc, audit, events } = build();
+
+    const created = await svc.defineResource("ops-1", { id: "res-scanner-1", kind: "scanner", name: N("Ultrasound 1"), level: "L3", locationRef: "loc-scan-1" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.id).toBe("res-scanner-1");
+    expect(created.value.locationRef).toBe("loc-scan-1");
+
+    const type = await svc.defineAppointmentType("ops-1", {
+      id: "type-monitoring",
+      name: N("Monitoring scan"),
+      durationMin: 30,
+      requiredResourceKinds: ["practitioner", "scanner"],
+      prep: N("Attend with a full bladder"),
+      defaultBillingItem: "SCAN",
+    });
+    expect(type.ok && type.value.prep?.en).toBe("Attend with a full bladder");
+
+    // config reads (the booking UI's lists)
+    expect((await svc.resources()).map((r) => r.id)).toEqual(["res-scanner-1"]);
+    expect((await svc.appointmentTypes()).map((t) => t.id)).toEqual(["type-monitoring"]);
+
+    // re-applying the SAME stable ids is an idempotent upsert (no duplicates),
+    // audited as an UPDATE rather than a CREATE
+    const again = await svc.defineAppointmentType("ops-1", { id: "type-monitoring", name: N("Monitoring scan"), durationMin: 20, requiredResourceKinds: ["practitioner"] });
+    expect(again.ok && again.value.durationMin).toBe(20);
+    expect(await svc.appointmentTypes()).toHaveLength(1);
+
+    const actions = (await audit.entries()).map((e) => `${e.payload.entityType}:${e.payload.action}`);
+    expect(actions).toEqual(["Resource:CREATE", "AppointmentType:CREATE", "AppointmentType:UPDATE"]);
+    expect((await events.events()).map((e) => e.payload.type)).toEqual(["ResourceDefined", "AppointmentTypeDefined", "AppointmentTypeDefined"]);
+  });
+
+  it("allocates a fresh id when none is supplied", async () => {
+    const { svc } = build();
+    const r = await svc.defineResource("ops-1", { kind: "practitioner", name: N("Dr B") });
+    expect(r.ok && r.value.id.length > 0).toBe(true);
+    expect(await svc.resources()).toHaveLength(1);
+  });
+
+  it("rejects invalid config: unknown kind, non-bilingual name, non-positive duration", async () => {
+    const { svc } = build();
+    const badKind = await svc.defineResource("ops-1", { kind: "spaceship" as never, name: N("X") });
+    expect(badKind.ok).toBe(false);
+    if (!badKind.ok) expect(badKind.error.detailKey).toBe("scheduling.resource.bad_kind");
+
+    const noArabic = await svc.defineResource("ops-1", { kind: "room", name: { ar: "", en: "Room 1" } });
+    expect(noArabic.ok).toBe(false);
+    if (!noArabic.ok) expect(noArabic.error.detailKey).toBe("scheduling.resource.bad_name");
+
+    const badDuration = await svc.defineAppointmentType("ops-1", { name: N("T"), durationMin: 0, requiredResourceKinds: [] });
+    expect(badDuration.ok).toBe(false);
+    if (!badDuration.ok) expect(badDuration.error.detailKey).toBe("scheduling.appointment_type.bad_duration");
+
+    const badTypeKind = await svc.defineAppointmentType("ops-1", { name: N("T"), durationMin: 30, requiredResourceKinds: ["hovercraft" as never] });
+    expect(badTypeKind.ok).toBe(false);
+    if (!badTypeKind.ok) expect(badTypeKind.error.detailKey).toBe("scheduling.resource.bad_kind");
+
+    // nothing invalid was persisted
+    expect(await svc.resources()).toHaveLength(0);
+    expect(await svc.appointmentTypes()).toHaveLength(0);
+  });
+
+  it("re-defines a resource as an audited UPDATE, allocates a fresh type id, and rejects fractional durations + bad type names", async () => {
+    const { svc, audit } = build();
+    await svc.defineResource("ops-1", { id: "res-1", kind: "room", name: N("Room 1") });
+    const renamed = await svc.defineResource("ops-1", { id: "res-1", kind: "room", name: N("Consulting Room 1") });
+    expect(renamed.ok && renamed.value.name.en).toBe("Consulting Room 1");
+    expect(await svc.resources()).toHaveLength(1);
+    const update = (await audit.entries()).find((e) => e.payload.entityType === "Resource" && e.payload.action === "UPDATE");
+    expect((update?.payload.before as { name: { en: string } }).name.en).toBe("Room 1");
+
+    // omitting requiredResourceKinds entirely defaults to [] (and a fresh id is allocated)
+    const fresh = await svc.defineAppointmentType("ops-1", { name: N("Consult"), durationMin: 20 });
+    expect(fresh.ok && fresh.value.id.length > 0).toBe(true);
+    expect(fresh.ok && fresh.value.requiredResourceKinds).toEqual([]);
+
+    const fractional = await svc.defineAppointmentType("ops-1", { name: N("T"), durationMin: 7.5, requiredResourceKinds: [] });
+    expect(!fractional.ok && fractional.error.detailKey).toBe("scheduling.appointment_type.bad_duration");
+    const badName = await svc.defineAppointmentType("ops-1", { name: { ar: "", en: "T" }, durationMin: 30, requiredResourceKinds: [] });
+    expect(!badName.ok && badName.error.detailKey).toBe("scheduling.appointment_type.bad_name");
+  });
+
+  it("a defined type + resource can be booked against immediately", async () => {
+    const { svc } = build();
+    const doc = await svc.defineResource("ops-1", { id: "res-doc-1", kind: "practitioner", name: N("Dr A") });
+    const type = await svc.defineAppointmentType("ops-1", { id: "type-consult", name: N("Consultation"), durationMin: 30, requiredResourceKinds: ["practitioner"] });
+    if (!doc.ok || !type.ok) throw new Error("setup");
+    const booked = await svc.book("rec-1", { typeId: type.value.id, patientId: "pat-1", practitionerId: doc.value.id, resourceIds: [], start: "2026-06-13T09:00:00.000Z", end: "2026-06-13T09:30:00.000Z" });
+    expect(booked.ok).toBe(true);
+  });
+});

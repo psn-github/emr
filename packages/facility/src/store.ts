@@ -7,6 +7,7 @@ export interface FacilityStore {
   getBed(id: BedId): Promise<Bed | null>;
   listBeds(): Promise<readonly Bed[]>;
   listLocations(): Promise<readonly LocationNode[]>;
+  listFloors(): Promise<readonly Floor[]>;
 }
 
 export class InMemoryFacilityStore implements FacilityStore {
@@ -31,5 +32,8 @@ export class InMemoryFacilityStore implements FacilityStore {
   }
   async listLocations(): Promise<readonly LocationNode[]> {
     return [...this.locations.values()];
+  }
+  async listFloors(): Promise<readonly Floor[]> {
+    return [...this.floors.values()];
   }
 }

@@ -12,12 +12,15 @@ export type {
   Bed,
   BedId,
   BilingualName,
+  LocationSpec,
+  TopologySpec,
+  TopologyResult,
 } from "./types.js";
 export { canTransition, assertTransition } from "./bed.js";
 export { FacilityService } from "./facility-service.js";
 export { type FacilityStore, InMemoryFacilityStore } from "./store.js";
 export { PgFacilityStore } from "./pg-store.js";
-export { seedFacility, type SeedResult } from "./seed.js";
+export { seedFacility, OXFORD_TOPOLOGY, SEED_ACTOR, type SeedResult } from "./seed.js";
 export { facilitySchema, floor, locationNode, bed, patientLocation, locationMovement } from "./schema.js";
 
 // Patient-flow & bed board (PHI: who is where).

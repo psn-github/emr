@@ -15,7 +15,7 @@ export type {
 } from "./types.js";
 export { intervalsOverlap, findConflicts, type ProposedSlot } from "./conflict.js";
 export { canTransition, assertTransition } from "./status.js";
-export { SchedulingService, type BookInput } from "./scheduling-service.js";
+export { SchedulingService, type BookInput, type ResourceInput, type AppointmentTypeInput } from "./scheduling-service.js";
 export { type SchedulingStore, InMemorySchedulingStore } from "./store.js";
 export { PgSchedulingStore } from "./pg-store.js";
 export { schedulingSchema, resource, appointmentType, appointment } from "./schema.js";
