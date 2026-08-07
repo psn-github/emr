@@ -37,7 +37,7 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[legal]** Medical-record retention period (docs/03 §3). Blocks retention job.
 - **[integration, in progress — ADR-0018]** RI Witness integration path with CooperSurgical (sync-tool version, EMR-integration licence, pull-back mechanism, image transfer, RI-server residency review). **PO initiating scoping;** Phase 2 builds the reconciliation/blocking behind a stub meanwhile. Gates real witnessing wiring + lab cutover.
 - **[clinical — ADR-0019]** No time-lapse incubator today; vendor-neutral morphokinetic import seam built. Pick a platform if/when one is acquired.
-- **[decision, assigned: PO/MD — ADR-0020]** om-software tool **retirement order** and **archive-vs-migrate per tool** (semen-analysis, embryo follow-up, Document Ledger/timeline, HTML clinical tools). See docs/07 replacement map.
+- **[decision, assigned: PO/MD — ADR-0072]** per-tool **primary-switch order** and, at each gate, the **long-term data flow** (one-way mirror / dual-entry / read-only tool). (The former "retirement order" and "archive-vs-migrate" questions are superseded by ADR-0072: om-software is never decommissioned; all data migrates with the tool staying in service.) See docs/07 map.
 - **[access, assigned: PO — ADR-0020/0016]** Grant **om-software read access** to this build (or supply the relevant logic/specs): needed for field-level data-model mapping per tool migration **and** the stimulation dosing-calculator port (PR 2.2 follow-on). Currently out of session scope.
 - **[ops]** KNET integration: direct bank vs gateway aggregator (docs/01 §G). Affects billing + residency review.
 - **[DECIDED — ADR-0017]** Cliniko migration: **Option B (cutover + archive)** chosen. Residency check still needed on Cliniko's hosting region before relying on it as the archive (docs/03 §4).
@@ -46,6 +46,11 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 - **[data]** On-site HL7/DICOM availability for lab analyser + PACS interfaces (docs/01 §G).
 
 ## Build log
+
+## 2026-08-07 — AMD-0007 + AMD-0008 RATIFIED; condition: om-software is never decommissioned (ADR-0072, AMD-0010)
+**Product owner ratified AMD-0007 and AMD-0008** ("ratify both" — Phases 7 and 8 are now formal roadmap). AMD-0007 carried one condition: **no decommissioning of om-software — ever** (without a new explicit PO decision). Recorded as **ADR-0072** (supersedes ADR-0020's retirement end-state; migration/reconciliation/parallel-run-gate principles stand) and **AMD-0010** (approved & closed). Docs updated: docs/05 cutover block and docs/07 replacement map now read "EMR becomes **primary** on proof; the tool stays in service"; the STATE open item reshaped from "retirement order/archive-vs-migrate" to "primary-switch order + long-term data flow per gate". Also today (earlier entries this session): staging VPS live via self-bootstrap deploy (ADR-0070), unattended auto-deploy confirmed (ADR-0071).
+**Next:** unchanged — 7.3 router gaps + simulation scale, then UI shells.
+
 
 ## 2026-08-07 — STAGING IS LIVE: secrets added, PR #98 + #99 merged, first deploys green (ADR-0071)
 **Shipped:** the PO added the three VPS secrets; PR #98 (self-bootstrap deploy, ADR-0070) reviewed against PATIENT-DATA/ADR-0064 and merged (`fc4f498`) — all invariants hold; the one cross-stack risk (Node upgrade vs om-software's ledger API) verified impossible (ledger runs Fastify 5 ⇒ VPS already on Node ≥20). PR #99 merged: `docs/NEXT_STEPS.md` — the tick-box map from here to go-live (Step 1 staging ✅ → 7.3 → UI shells → exit gates ∥ long-lead blockers). First deploy runs bootstrapped the VPS and a confirming dispatched run shows steady state: bootstrap no-ops, 59 additive migrations clean, `migrate: up to date`, **`deploy-api: healthy`** — the staging API is live (loopback :8060).

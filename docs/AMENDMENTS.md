@@ -95,7 +95,7 @@
 - **Type:** proposed-change (roadmap addition; docs/05 ends at Phase 6 + cutover)
 - **Documents involved:** docs/05_DELIVERY_ROADMAP.md, new docs/PHASE7_PLAN.md, ADR-0062/0063/0064
 - **Proposal:** adopt docs/PHASE7_PLAN.md as Phase 7. Scope: HTTP host (7.0 ✅), whole-EMR synthetic-patient simulation harness with an error-correction loop (7.1 ✅), staging VPS deploy wiring on the existing gated pipeline (7.2 ✅ first cut), simulation at scale + chaos drills + k6 baseline (7.3), staff web shell (7.4), patient portal PWA (7.5), documented exit gate (7.6). Staging holds synthetic data only (ADR-0007); om-software is untouched.
-- **Status:** **open** — proposed for product-owner ratification; build proceeding under it per session direction (the direction itself is the mandate; ratification formalises the roadmap text).
+- **Status:** **ratified & closed** (product owner, 2026-08-07) — with one condition attached at ratification: **om-software is never decommissioned** (recorded as AMD-0010 / ADR-0072).
 
 ## AMD-0008 — Add Phase 8 (whole-clinic operations: paper-file integration, pharmacy, documents, printing) + new PRD module scope
 - **Date:** 2026-07-03
@@ -103,7 +103,7 @@
 - **Type:** proposed-change (roadmap addition + PRD scope addition)
 - **Documents involved:** docs/01 (new module scope: medical records & paper-file management; E8 dispensing delivery), docs/05, new docs/PHASE8_PLAN.md, ADR-0065..0068
 - **Proposal:** adopt docs/PHASE8_PLAN.md as Phase 8. The gap analysis found: (A) paper medical records & filing entirely absent (MRN, file registry, movement tracking, pull lists, label printing) — new `@oxford/records`; (B) two PRD P0s promised but unbuilt — pharmacy dispensing (E8; only a stub today) → new `@oxford/pharmacy`, and the documents module (E0; built but never wired) → blob-store port + API; (C) a server-rendered bilingual print pack. UI shells + router gaps remain Phase 7. External adapters/hosting unchanged.
-- **Status:** **open** — proposed for PO ratification; build proceeding under the 2026-07-03 direction.
+- **Status:** **ratified & closed** (product owner, 2026-08-07 — "ratify both", together with AMD-0007). Open config values remain with the PO: MRN format + records-room location naming, label/scanner hardware, relabel-at-import vs first-pull (STATE open items).
 
 ## AMD-0009 — Pharmacy is external: supersede PRD §E8 "dispensing & stock decrement" for retail
 - **Date:** 2026-07-04
@@ -112,6 +112,14 @@
 - **Documents involved:** docs/01 §E8, ADR-0066 (superseded in part), ADR-0069 (the corrected model), `@oxford/pharmacy`
 - **Decision:** (1) prescriptions (incl. discharge) are **issued** by the clinic and **fulfilled by the external Ground-floor pharmacy** — the EMR prints the prescription, tracks it to an audited fulfilment confirmation, and the L2 discharge gate consumes that confirmation; **no clinic stock movement** on prescriptions. (2) The clinic's own drug stock is **theatre anaesthetic + controlled drugs**: administration in theatre decrements clinic stock (FEFO, lot/expiry) and posts **witnessed** controlled-drugs register movements. (3) The controlled formulary + allergy advisory + no-free-text rules are unchanged.
 - **Status:** **approved & closed** — implemented per ADR-0069.
+
+## AMD-0010 — om-software is never decommissioned: supersede the retirement end-state of ADR-0020 and the docs/05 "decommission on proof" steps
+- **Date:** 2026-08-07
+- **Raised by:** product owner ("I ratify AMD-0007, but there should be no decommissioning of om-software")
+- **Type:** proposed-change (**approved by direction; recorded for the roadmap/ADR text**)
+- **Documents involved:** docs/05_DELIVERY_ROADMAP.md (om-software tool replacement block), ADR-0020 (superseded in part), ADR-0072 (the corrected end-state)
+- **Decision:** the om-software clinical tools are **not retired — ever — without a new, explicit product-owner decision**. The EMR modules still absorb each tool's functionality, still migrate/mirror its data with reconciliation reports (history-never-lost holds unchanged), and may become the **primary** system for a workflow after the parallel-run gate + MD sign-off — but the om-software tools stay deployed, maintained, and usable alongside the HIS. Every "decommission on proof" step in docs/05 becomes "EMR becomes primary on proof; om-software remains in service".
+- **Status:** **approved & closed** — implemented per ADR-0072.
 
 ## Standing reminder for the build
 If a requirement touches **money, drugs, gametes/embryos, identity, or Kuwaiti law** and is ambiguous: do **not** build the permissive path. Log it here as `clarification-needed` and ask the product owner before proceeding.
