@@ -47,6 +47,12 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
+## 2026-08-07 — STAGING IS LIVE: secrets added, PR #98 + #99 merged, first deploys green (ADR-0071)
+**Shipped:** the PO added the three VPS secrets; PR #98 (self-bootstrap deploy, ADR-0070) reviewed against PATIENT-DATA/ADR-0064 and merged (`fc4f498`) — all invariants hold; the one cross-stack risk (Node upgrade vs om-software's ledger API) verified impossible (ledger runs Fastify 5 ⇒ VPS already on Node ≥20). PR #99 merged: `docs/NEXT_STEPS.md` — the tick-box map from here to go-live (Step 1 staging ✅ → 7.3 → UI shells → exit gates ∥ long-lead blockers). First deploy runs bootstrapped the VPS and a confirming dispatched run shows steady state: bootstrap no-ops, 59 additive migrations clean, `migrate: up to date`, **`deploy-api: healthy`** — the staging API is live (loopback :8060).
+**Decisions:** ADR-0071 — **no approval gate on staging** (PO, 2026-08-07): merges to `main` deploy unattended (synthetic-only VPS; production will be gated). CLAUDE.md + CICD_SETUP.md updated.
+**Open / needs product owner:** work `docs/NEXT_STEPS.md` (Step 2 ratifications; Step 7 long-lead items can start now).
+**Next:** run the simulator against staging (needs a small simulate workflow/cron — first task of Phase 7.3), then close the 7 router gaps.
+
 ## 2026-07-04 — PR #97 MERGED to main; deploy made self-bootstrapping (ADR-0070)
 **Merged:** Phases 7+8 squash-merged as `86c10c6` (919 tests green at merge). First auto-deploy failed as expected: the `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY` secrets are unset (`missing server host`). Confirmed the om-software pathway cannot supply them — Actions secrets are write-only and the sandbox has no SSH route to the VPS.
 **Shipped:** `scripts/vps-bootstrap.sh` + deploy-workflow self-bootstrap (ADR-0070): on a fresh VPS the workflow clones the repo and runs the idempotent setup (Node 20 if absent, pnpm, Postgres if absent, `oxford_staging` DB + generated password → `/etc/oxford-his/api.env`, systemd unit, backup cron) — touches ONLY the oxford-his stack, never `/opt/oxmedkw`. **The three repo secrets are now the only manual setup step.** Hardening: `serve.ts` binds `127.0.0.1` by default (`BIND` to override) so dev-token auth is never internet-exposed; document store relocated to `/opt/oxford-his-data` (outside the deploy path); unit `ReadWritePaths` updated.
