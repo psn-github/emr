@@ -20,27 +20,21 @@
 The deploy pipeline exists but has never run against a real VPS. PR #98 makes the deploy
 self-bootstrapping, which turns the manual VPS checklist into mostly one command.
 
-- [ ] **[YOU]** Review + merge **PR #98** (`feat(deploy): self-bootstrapping staging deploy; API binds loopback, ADR-0070`).
-      If you'd rather not review it yourself, start a Claude session: *"Review PR #98 on
-      psn-github/emr against docs/PATIENT-DATA.md and ADR-0064, then merge if clean."*
-- [ ] **[YOU]** Add the three repo secrets on GitHub — `psn-github/emr` → Settings →
-      Secrets and variables → Actions:
-  - [ ] `VPS_HOST` — the staging VPS IP/hostname
-  - [ ] `VPS_USER` — the SSH user
-  - [ ] `VPS_SSH_KEY` — a **dedicated** private deploy key (generate per `docs/CICD_SETUP.md`:
-        `ssh-keygen -t ed25519 -C "github-actions-deploy" -f deploy_key`, put the `.pub` half
-        in the VPS's `authorized_keys`, paste the private file into the secret)
-- [ ] **[YOU]** Create the gated environment — Settings → Environments → new environment
-      **`staging`** → add yourself as **required reviewer** (this is what makes deploys
-      wait for your one-click approval)
-- [ ] **[YOU]** One-time VPS prep per `docs/CICD_SETUP.md` §3 (Node 20 + pnpm 9, Postgres 16
-      with an `oxford_staging` DB, systemd unit, nginx site, backup cron). With PR #98 merged
-      most of this is scripted — follow the updated instructions in that PR.
-      ⚠️ Everything lives in `/opt/oxford-his`, its own port (8060) and database — it must
-      **never touch `/opt/oxmedkw`** (om-software is in daily clinical use) and the VPS holds
+- [x] **[YOU]** Review + merge **PR #98** — reviewed against `docs/PATIENT-DATA.md` +
+      ADR-0064 and merged 2026-08-07 (`fc4f498`); all invariants hold, om-software untouched
+- [x] **[YOU]** Add the three repo secrets (`VPS_HOST` / `VPS_USER` / `VPS_SSH_KEY`) —
+      done 2026-08-07
+- [x] **[YOU]** ~~Create the gated `staging` environment with a required reviewer~~ —
+      **PO decision 2026-08-07: staging auto-deploys, no approval gate** (the `staging`
+      environment carries no protection rules, so merges to `main` deploy unattended).
+      To add gating later: Settings → Environments → `staging` → required reviewers.
+- [x] **[YOU]** One-time VPS prep — automatic since PR #98: the first deploy run
+      self-bootstraps (`scripts/vps-bootstrap.sh`, idempotent).
+      ⚠️ Everything lives in `/opt/oxford-his`, its own port (8060) and database — it never
+      touches `/opt/oxmedkw` (om-software is in daily clinical use) and the VPS holds
       **synthetic data only, never real PHI** (ADR-0007).
-- [ ] **[YOU]** Trigger the first deploy (merge anything to `main`, or Actions tab → run the
-      deploy workflow) and approve it on the `staging` environment
+- [ ] **[YOU]** Trigger the first deploy (merge anything touching `apps/`/`packages/` to
+      `main`, or Actions tab → run the Deploy workflow with area `api`)
 - [ ] Verify: `https://<vps>/health` returns OK; then run the simulator against staging once
       and confirm zero errors — **[CLAUDE]** *"Run the whole-EMR simulator against staging
       and report; fix nothing yet."*
