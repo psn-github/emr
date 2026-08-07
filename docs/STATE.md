@@ -47,8 +47,8 @@ These do **not** block starting Phase 0, but must be resolved before the depende
 
 ## Build log
 
-## 2026-08-07 — AMD-0007 RATIFIED with condition: om-software is never decommissioned (ADR-0072, AMD-0010)
-**Product owner ratified AMD-0007** (Phase 7 roadmap addition) with one condition: **no decommissioning of om-software — ever** (without a new explicit PO decision). Recorded as **ADR-0072** (supersedes ADR-0020's retirement end-state; migration/reconciliation/parallel-run-gate principles stand) and **AMD-0010** (approved & closed). Docs updated: docs/05 cutover block and docs/07 replacement map now read "EMR becomes **primary** on proof; the tool stays in service"; the STATE open item reshaped from "retirement order/archive-vs-migrate" to "primary-switch order + long-term data flow per gate". Also today (earlier entries this session): staging VPS live via self-bootstrap deploy (ADR-0070), unattended auto-deploy confirmed (ADR-0071).
+## 2026-08-07 — AMD-0007 + AMD-0008 RATIFIED; condition: om-software is never decommissioned (ADR-0072, AMD-0010)
+**Product owner ratified AMD-0007 and AMD-0008** ("ratify both" — Phases 7 and 8 are now formal roadmap). AMD-0007 carried one condition: **no decommissioning of om-software — ever** (without a new explicit PO decision). Recorded as **ADR-0072** (supersedes ADR-0020's retirement end-state; migration/reconciliation/parallel-run-gate principles stand) and **AMD-0010** (approved & closed). Docs updated: docs/05 cutover block and docs/07 replacement map now read "EMR becomes **primary** on proof; the tool stays in service"; the STATE open item reshaped from "retirement order/archive-vs-migrate" to "primary-switch order + long-term data flow per gate". Also today (earlier entries this session): staging VPS live via self-bootstrap deploy (ADR-0070), unattended auto-deploy confirmed (ADR-0071).
 **Next:** unchanged — 7.3 router gaps + simulation scale, then UI shells.
 
 

@@ -103,7 +103,7 @@
 - **Type:** proposed-change (roadmap addition + PRD scope addition)
 - **Documents involved:** docs/01 (new module scope: medical records & paper-file management; E8 dispensing delivery), docs/05, new docs/PHASE8_PLAN.md, ADR-0065..0068
 - **Proposal:** adopt docs/PHASE8_PLAN.md as Phase 8. The gap analysis found: (A) paper medical records & filing entirely absent (MRN, file registry, movement tracking, pull lists, label printing) — new `@oxford/records`; (B) two PRD P0s promised but unbuilt — pharmacy dispensing (E8; only a stub today) → new `@oxford/pharmacy`, and the documents module (E0; built but never wired) → blob-store port + API; (C) a server-rendered bilingual print pack. UI shells + router gaps remain Phase 7. External adapters/hosting unchanged.
-- **Status:** **open** — proposed for PO ratification; build proceeding under the 2026-07-03 direction.
+- **Status:** **ratified & closed** (product owner, 2026-08-07 — "ratify both", together with AMD-0007). Open config values remain with the PO: MRN format + records-room location naming, label/scanner hardware, relabel-at-import vs first-pull (STATE open items).
 
 ## AMD-0009 — Pharmacy is external: supersede PRD §E8 "dispensing & stock decrement" for retail
 - **Date:** 2026-07-04
