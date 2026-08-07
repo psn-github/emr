@@ -33,14 +33,17 @@ self-bootstrapping, which turns the manual VPS checklist into mostly one command
       ⚠️ Everything lives in `/opt/oxford-his`, its own port (8060) and database — it never
       touches `/opt/oxmedkw` (om-software is in daily clinical use) and the VPS holds
       **synthetic data only, never real PHI** (ADR-0007).
-- [ ] **[YOU]** Trigger the first deploy (merge anything touching `apps/`/`packages/` to
-      `main`, or Actions tab → run the Deploy workflow with area `api`)
-- [ ] Verify: `https://<vps>/health` returns OK; then run the simulator against staging once
-      and confirm zero errors — **[CLAUDE]** *"Run the whole-EMR simulator against staging
-      and report; fix nothing yet."*
+- [x] **[YOU]** Trigger the first deploy — done 2026-08-07: VPS self-bootstrapped on the
+      first runs; a follow-up dispatched run confirmed steady state (`bootstrap` no-ops,
+      59 additive migrations clean, `migrate: up to date`, **`deploy-api: healthy`**).
+      Staging API is live on the VPS (loopback :8060, ADR-0070/0071).
+- [ ] Run the simulator against staging once and confirm zero errors — **[CLAUDE]** *"Run
+      the whole-EMR simulator against staging and report; fix nothing yet."* (Needs to run
+      on the VPS — the sandbox has no SSH route; a small simulate workflow/cron per
+      Phase 7.3 covers this.)
 
-**Done when:** a merge to `main` auto-deploys to staging after your approval, and one
-simulation run against the deployed staging is green.
+**Done when:** a merge to `main` auto-deploys to staging unattended (✅ confirmed
+2026-08-07), and one simulation run against the deployed staging is green.
 
 ---
 

@@ -38,10 +38,15 @@ ssh-copy-id -i deploy_key.pub <user>@<vps-host>
 # paste the contents of the PRIVATE file `deploy_key` into the VPS_SSH_KEY secret
 ```
 
-### 2. Protect the deploy (Settings → Environments → New environment → `staging`)
+### 2. Deploy gating — none on staging (PO decision, ADR-0071)
 
-- Add yourself as a **required reviewer** so deploys wait for your one-click approval.
-- This is what makes deploy gated, not automatic.
+- **Staging auto-deploys on merge to `main` with no approval gate** (product owner,
+  2026-08-07): the `staging` environment carries no protection rules, so the workflow's
+  `environment: staging` reference passes straight through. Synthetic data only, so an
+  unattended deploy risks nothing clinical.
+- To re-introduce gating later: Settings → Environments → `staging` → add a required
+  reviewer. **Production (in-region, real PHI) will be gated when it exists** — the
+  no-gate decision is staging-only.
 
 ### 3. One-time VPS prep
 
